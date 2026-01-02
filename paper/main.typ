@@ -98,6 +98,8 @@ where $lambda_f, lambda_gamma > 0$ are decay rates. Decay ensures that stability
 
 *Phase 2: Action.* For each region $i$ where pressure exceeds activation threshold ($P_i > tau_"act"$) and the region is not inhibited, an *actor* $a: cal(C) times cal(H) times RR^d -> cal(C)$ proposes a content transformation. The actor observes only local state $(c_i, h_i, sigma(c_i))$.
 
+*Phase 2b: Parallel Validation.* When multiple patches are proposed, each is validated on an independent *fork* of the artifact. Forks are created by cloning artifact state; validation (e.g., compilation, test execution) proceeds in parallel across forks. This addresses a fundamental resource constraint: a single artifact cannot be used to test multiple patches simultaneously without cloning.
+
 *Phase 3: Reinforcement.* Regions where actions were applied receive fitness and confidence boosts, and enter an inhibition period preventing immediate re-modification:
 
 $ f_i^(t+1) = min(f_i^t + Delta_f, 1), quad gamma_i^(t+1) = min(gamma_i^t + Delta_gamma, 1) $
@@ -180,9 +182,14 @@ The tick loop implements greedy local improvement with decay-driven exploration:
   #h(3em) $delta <- a_k(c_i, h_i, bold(sigma)_i)$
   #h(3em) $cal(P) <- cal(P) union {(i, delta, hat(Delta)(delta))}$
 
-  *Phase 3: Selection*
-  #h(1em) Sort $cal(P)$ by predicted improvement $hat(Delta)$
-  #h(1em) Select top-$kappa$ non-conflicting patches
+  *Phase 3: Parallel Validation and Selection*
+  #h(1em) For each candidate patch $(i, delta, hat(Delta)) in cal(P)$:
+  #h(2em) Fork artifact: $(f_"id", A_f) <- A."fork"()$
+  #h(2em) Apply $delta$ to fork $A_f$
+  #h(2em) Validate fork (run tests, check compilation)
+  #h(1em) Collect validation results ${(i, delta, Delta_"actual", "valid")}$
+  #h(1em) Sort validated patches by $Delta_"actual"$
+  #h(1em) Greedily select top-$kappa$ non-conflicting patches
 
   *Phase 4: Application and Reinforcement*
   #h(1em) For each selected patch $(i, delta, dot)$:
@@ -262,6 +269,14 @@ This explains why decay is necessary: without decay, the system can become trapp
 
 The key observation: adding agents increases throughput (more patches proposed per tick) without increasing coordination cost. This contrasts with hierarchical schemes where coordination overhead grows with agent count.
 
+#theorem(name: "Parallel Convergence")[
+  Under the same alignment conditions as Theorem 1, with $K$ patches validated in parallel per tick where patches affect disjoint regions, the system reaches a stable basin within:
+  $ T <= P_0 / (K dot.c (delta_"min" - n epsilon)) $
+  This improves convergence time by factor $K$ while maintaining guarantees.
+]
+
+*Proof sketch.* When $K$ non-conflicting patches are applied per tick, each reduces global pressure by at least $delta_"min" - n epsilon$. The combined reduction is $K dot.c (delta_"min" - n epsilon)$ per tick. The bound follows directly. Note that if patches conflict (target the same region), only one is selected per region, and effective speedup is reduced. $square$
+
 == Comparison to Alternatives
 
 We compare against three coordination paradigms:
@@ -279,9 +294,9 @@ We compare against three coordination paradigms:
     [Centralized], [$O(m dot.c a)$], [None], [Single point of failure],
     [Hierarchical], [$O(n log n)$], [Limited by tree], [Manager failure cascades],
     [Message-passing], [$O(n^2)$], [Consensus-bound], [Partition-sensitive],
-    [Pressure-field], [$O(1)$], [Full ($min(n, m)$)], [Graceful degradation],
+    [Pressure-field], [$O(1)$], [Full ($min(n, m, K)$)], [Graceful degradation],
   ),
-  caption: [Coordination overhead comparison],
+  caption: [Coordination overhead comparison. $K$ denotes the fork pool size for parallel validation.],
 )
 
 Pressure-field coordination achieves $O(1)$ coordination overhead because agents share state only through the artifact itself—a form of stigmergy. Agents can fail, join, or leave without protocol overhead.
@@ -334,6 +349,7 @@ Pressure-field coordination achieves $O(1)$ coordination overhead because agents
 - Decay parameters require tuning
 - May not suit tasks requiring global planning
 - Goodhart's Law: agents may game metrics
+- Resource cost of parallel validation: testing $K$ patches in parallel requires $K$ artifact forks, with memory cost $O(K dot.c |A|)$ where $|A|$ is artifact size. For large artifacts, this may require fork pooling or lazy cloning strategies.
 
 == When Hierarchical Coordination Is Appropriate
 
