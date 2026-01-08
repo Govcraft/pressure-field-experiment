@@ -8,8 +8,6 @@ use std::sync::Arc;
 
 use acton_reactive::prelude::*;
 use anyhow::Result;
-use ollama_rs::generation::completion::request::GenerationRequest;
-use ollama_rs::Ollama;
 use rand::Rng;
 use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, info, warn};
@@ -18,6 +16,7 @@ use survival_kernel::messages::{PatchProposal, ProposeForRegion};
 use survival_kernel::region::{Patch, PatchOp};
 
 use crate::example_bank::ExampleBank;
+use crate::vllm_client::VllmClient;
 
 /// Sampling configuration for diversity.
 #[derive(Debug, Clone)]
@@ -109,8 +108,8 @@ pub struct LlmActorConfig {
 impl Default for LlmActorConfig {
     fn default() -> Self {
         Self {
-            host: "http://localhost:11434".to_string(),
-            model: "qwen2.5:1.5b".to_string(),
+            host: "http://localhost:8000".to_string(),
+            model: "Qwen/Qwen2.5-1.5B".to_string(),
             sampling: SamplingConfig::balanced(),
             max_tokens: 256,
             band: SamplingBand::Balanced,
@@ -339,23 +338,26 @@ Return ONLY the complete row as space-separated numbers. Example: "1 2 3 4 5 6""
         "Generating patch with LLM"
     );
 
-    // Determine sampling parameters (stored for future use with advanced API)
-    let _sampling = if config.randomize_sampling {
+    // Determine sampling parameters
+    let sampling = if config.randomize_sampling {
         SamplingConfig::random_in_band(config.band)
     } else {
         config.sampling.clone()
     };
 
-    // Call Ollama
-    let ollama = Ollama::try_new(config.host.clone())?;
+    // Call vLLM
+    let client = VllmClient::new(&config.host);
 
-    // Note: ollama-rs 0.3 doesn't expose temperature/top_p directly
-    // The model will use its defaults. For production, we'd need to
-    // upgrade ollama-rs or use raw HTTP requests.
-    let request = GenerationRequest::new(config.model.clone(), prompt);
-
-    let response = ollama.generate(request).await?;
-    let response_text = response.response.trim();
+    let response_text = client
+        .generate(
+            &config.model,
+            &prompt,
+            sampling.temperature,
+            sampling.top_p,
+            config.max_tokens,
+        )
+        .await?;
+    let response_text = response_text.trim();
 
     debug!(response = %response_text, "LLM response");
 

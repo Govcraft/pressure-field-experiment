@@ -32,17 +32,17 @@ fn timestamped_path(path: &Path) -> PathBuf {
 #[command(version)]
 #[command(about = "Latin Square coordination experiments")]
 struct Cli {
-    /// Ollama host URL
-    #[arg(long, env = "OLLAMA_HOST", default_value = "http://localhost:11434")]
+    /// vLLM host URL
+    #[arg(long, env = "VLLM_HOST", default_value = "http://localhost:8000")]
     ollama_host: String,
 
     /// Model name (base model, first in escalation chain)
-    #[arg(long, default_value = "qwen2.5:1.5b")]
+    #[arg(long, default_value = "Qwen/Qwen2.5-0.5B")]
     model: String,
 
-    /// Model escalation chain (comma-separated, e.g., "qwen2.5:1.5b,qwen2.5:7b,qwen2.5:14b")
+    /// Model escalation chain (comma-separated, smallest to largest)
     /// When stuck at local minimum, escalates to larger models
-    #[arg(long, default_value = "qwen2.5:1.5b,qwen2.5:7b,qwen2.5:14b", value_delimiter = ',')]
+    #[arg(long, default_value = "Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B", value_delimiter = ',')]
     model_chain: Vec<String>,
 
     /// Ticks with zero progress before escalating to larger model
@@ -81,6 +81,10 @@ enum Commands {
         #[arg(long, default_value = "50")]
         max_ticks: usize,
 
+        /// Maximum turns per conversation tick (for conversation strategy)
+        #[arg(long, default_value = "5")]
+        max_turns: usize,
+
         /// Random seed
         #[arg(long)]
         seed: Option<u64>,
@@ -103,6 +107,10 @@ enum Commands {
         /// Maximum ticks
         #[arg(long, default_value = "50")]
         max_ticks: usize,
+
+        /// Maximum turns per conversation tick (for conversation strategy)
+        #[arg(long, default_value = "5")]
+        max_turns: usize,
 
         /// Output file for results
         #[arg(long, default_value = "results.json")]
@@ -171,6 +179,7 @@ async fn main() -> Result<()> {
             n,
             empty,
             max_ticks,
+            max_turns,
             seed,
         } => {
             let strategy = parse_strategy(&strategy)?;
@@ -181,6 +190,7 @@ async fn main() -> Result<()> {
                 model_chain: cli.model_chain,
                 escalation_threshold: cli.escalation_threshold,
                 max_ticks,
+                conversation_max_turns: max_turns,
                 difficulty: Difficulty::Custom {
                     n,
                     empty_cells: empty,
@@ -206,6 +216,18 @@ async fn main() -> Result<()> {
                 println!("  Total uses: {}", stats.total_uses);
             }
 
+            if let Some(stats) = &result.conversation_stats {
+                println!("\nConversation Stats:");
+                println!("  Total messages: {}", stats.total_messages);
+                println!("  Avg messages/tick: {:.2}", stats.avg_messages_per_tick);
+                println!("  Total LLM calls: {}", stats.total_llm_calls);
+                println!("  Consensus rate: {:.1}%", stats.consensus_rate * 100.0);
+                println!(
+                    "  Avg turns to consensus: {:.2}",
+                    stats.avg_turns_to_consensus
+                );
+            }
+
             println!("\nPressure history:");
             for (i, p) in result.pressure_history.iter().enumerate() {
                 println!("  Tick {}: {:.2}", i, p);
@@ -217,6 +239,7 @@ async fn main() -> Result<()> {
             n,
             empty,
             max_ticks,
+            max_turns,
             output,
             agents,
         } => {
@@ -242,6 +265,7 @@ async fn main() -> Result<()> {
                             model_chain: cli.model_chain.clone(),
                             escalation_threshold: cli.escalation_threshold,
                             max_ticks,
+                            conversation_max_turns: max_turns,
                             difficulty: Difficulty::Custom {
                                 n,
                                 empty_cells: empty,
@@ -379,6 +403,10 @@ fn parse_strategy(s: &str) -> Result<Strategy> {
         "sequential" | "seq" => Ok(Strategy::Sequential),
         "random" | "rand" => Ok(Strategy::Random),
         "hierarchical" | "hier" => Ok(Strategy::Hierarchical),
-        _ => anyhow::bail!("Unknown strategy: {}", s),
+        "conversation" | "autogen" | "conv" => Ok(Strategy::Conversation),
+        _ => anyhow::bail!(
+            "Unknown strategy: {}. Valid: pressure_field, sequential, random, hierarchical, conversation",
+            s
+        ),
     }
 }

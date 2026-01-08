@@ -60,6 +60,9 @@ pub struct ExperimentResult {
     pub escalation_events: Vec<EscalationEvent>,
     /// Which model tier was active when solved (or last model if unsolved)
     pub final_model: String,
+    /// Conversation statistics (for Conversation strategy only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_stats: Option<ConversationStats>,
 }
 
 /// Configuration for an experiment.
@@ -97,6 +100,24 @@ pub struct TickMetrics {
     pub violations: usize,
     pub llm_calls: usize,
     pub duration_ms: u64,
+    /// Number of conversation messages exchanged (for Conversation strategy only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub messages_per_tick: Option<usize>,
+}
+
+/// Statistics about conversation-based coordination (AutoGen-style baseline).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationStats {
+    /// Total messages across all ticks
+    pub total_messages: usize,
+    /// Average messages per tick
+    pub avg_messages_per_tick: f64,
+    /// Total LLM calls (each message = 1 call)
+    pub total_llm_calls: usize,
+    /// Consensus rate (percentage of ticks reaching explicit consensus)
+    pub consensus_rate: f64,
+    /// Average turns to consensus
+    pub avg_turns_to_consensus: f64,
 }
 
 /// Aggregate results from a grid experiment.
@@ -114,7 +135,13 @@ pub struct ConfigSummary {
     pub config_key: String,
     pub trials: usize,
     pub solve_rate: f64,
+    /// Standard error of solve rate: sqrt(p(1-p)/n)
+    pub solve_rate_se: f64,
+    /// 95% confidence interval for solve rate: (lower, upper)
+    pub solve_rate_ci: (f64, f64),
     pub avg_ticks: f64,
+    /// Standard error of avg_ticks
+    pub avg_ticks_se: f64,
     pub avg_final_pressure: f64,
     pub min_ticks: usize,
     pub max_ticks: usize,
@@ -152,16 +179,41 @@ impl GridResults {
 
         for (key, results) in by_config {
             let trials = results.len();
+            let n = trials as f64;
             let solved_count = results.iter().filter(|r| r.solved).count();
-            let solve_rate = solved_count as f64 / trials as f64;
+            let solve_rate = solved_count as f64 / n;
 
-            let ticks: Vec<usize> = results.iter().map(|r| r.total_ticks).collect();
-            let avg_ticks = ticks.iter().sum::<usize>() as f64 / trials as f64;
-            let min_ticks = *ticks.iter().min().unwrap_or(&0);
-            let max_ticks = *ticks.iter().max().unwrap_or(&0);
+            // Standard error for proportion: SE = sqrt(p(1-p)/n)
+            let solve_rate_se = if trials > 1 {
+                (solve_rate * (1.0 - solve_rate) / n).sqrt()
+            } else {
+                0.0
+            };
+
+            // 95% CI: p ± 1.96 * SE, clamped to [0, 1]
+            let z = 1.96;
+            let solve_rate_ci = (
+                (solve_rate - z * solve_rate_se).max(0.0),
+                (solve_rate + z * solve_rate_se).min(1.0),
+            );
+
+            let ticks: Vec<f64> = results.iter().map(|r| r.total_ticks as f64).collect();
+            let avg_ticks = ticks.iter().sum::<f64>() / n;
+
+            // Standard error for continuous: SE = std_dev / sqrt(n)
+            let avg_ticks_se = if trials > 1 {
+                let variance =
+                    ticks.iter().map(|t| (t - avg_ticks).powi(2)).sum::<f64>() / (n - 1.0);
+                variance.sqrt() / n.sqrt()
+            } else {
+                0.0
+            };
+
+            let min_ticks = ticks.iter().map(|t| *t as usize).min().unwrap_or(0);
+            let max_ticks = ticks.iter().map(|t| *t as usize).max().unwrap_or(0);
 
             let avg_final_pressure =
-                results.iter().map(|r| r.final_pressure).sum::<f64>() / trials as f64;
+                results.iter().map(|r| r.final_pressure).sum::<f64>() / n;
 
             self.summary.insert(
                 key.clone(),
@@ -169,7 +221,10 @@ impl GridResults {
                     config_key: key,
                     trials,
                     solve_rate,
+                    solve_rate_se,
+                    solve_rate_ci,
                     avg_ticks,
+                    avg_ticks_se,
                     avg_final_pressure,
                     min_ticks,
                     max_ticks,
@@ -244,6 +299,7 @@ mod tests {
                 tick_metrics: vec![],
                 escalation_events: vec![],
                 final_model: "test-model".to_string(),
+                conversation_stats: None,
             });
         }
 
@@ -254,5 +310,10 @@ mod tests {
 
         assert_eq!(summary.trials, 3);
         assert!((summary.solve_rate - 0.666).abs() < 0.01);
+
+        // Verify new SE/CI fields
+        assert!(summary.solve_rate_se > 0.0);
+        assert!(summary.solve_rate_ci.0 <= summary.solve_rate);
+        assert!(summary.solve_rate_ci.1 >= summary.solve_rate);
     }
 }

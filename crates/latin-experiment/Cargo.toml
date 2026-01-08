@@ -27,9 +27,6 @@ serde_json.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 
-# LLM integration
-ollama-rs = { version = "0.3", features = ["default"] }
-
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 
@@ -42,3 +39,5 @@ chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures = "0.3.31"
+regex = "1.12.2"
+reqwest = { version = "0.13.1", features = ["json"] }

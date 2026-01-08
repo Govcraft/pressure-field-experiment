@@ -6,9 +6,11 @@
 //! - Implements swarm intelligence via few-shot accumulation (pheromone-like)
 
 pub mod artifact;
+pub mod conversation;
 pub mod example_bank;
 pub mod experiment;
 pub mod generator;
 pub mod llm_actor;
 pub mod results;
 pub mod sensors;
+pub mod vllm_client;

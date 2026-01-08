@@ -1,7 +1,7 @@
 #import "template.typ": *
 
 #show: neurips.with(
-  title: [Emergent Coordination in Multi-Agent Systems via Gradient Fields and Temporal Decay],
+  title: [Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay],
   authors: (
     (
       name: "Roland Rodriguez",
@@ -69,7 +69,7 @@ We formalize artifact refinement as a dynamical system over a pressure landscape
 
 == State Space
 
-An *artifact* consists of $n$ regions with content $c_i in cal(C)$ for $i in {1, ..., n}$, where $cal(C)$ is an arbitrary content space (strings, AST nodes, etc.). Each region also carries auxiliary state $h_i in cal(H)$ representing confidence, fitness, and history.
+An *artifact* consists of $n$ regions with content $c_i in cal(C)$ for $i in {1, ..., n}$, where $cal(C)$ is an arbitrary content space (strings, AST nodes, etc.). Each region also carries auxiliary state $h_i in cal(H)$ representing confidence, fitness, and history. Regions are passive subdivisions of the artifact; agents are active proposers that observe regions and generate patches.
 
 The full system state is:
 $ s = ((c_1, h_1), ..., (c_n, h_n)) in (cal(C) times cal(H))^n $
@@ -264,9 +264,9 @@ This explains why decay is necessary: without decay, the system can become trapp
   - *Pressure computation:* $O(m dot.c k)$ where $k$ is the number of pressure axes
   - *Patch proposal:* $O(m dot.c a)$ where $a$ is the number of actors
   - *Selection:* $O(m dot.c a dot.c log(m dot.c a))$ for sorting candidates
-  - *Coordination overhead:* $O(1)$ — no inter-agent communication
+  - *Coordination overhead:* $O(1)$ — no inter-agent communication (fork pool is $O(K)$ where $K$ is fixed)
 
-  Total: $O(m dot.c (d + k + a dot.c log(m a)))$, independent of $n$.
+  Total: $O(m dot.c (d + k + a dot.c log(m a)))$, independent of agent count $n$.
 ]
 
 The key observation: adding agents increases throughput (more patches proposed per tick) without increasing coordination cost. This contrasts with hierarchical schemes where coordination overhead grows with agent count.
@@ -307,7 +307,7 @@ Pressure-field coordination achieves $O(1)$ coordination overhead because agents
 
 We evaluate pressure-field coordination on Latin Square constraint satisfaction: filling partially-completed $n times n$ grids such that each row and column contains each number $1$ to $n$ exactly once. This domain provides clear pressure signals (constraint violations), measurable success criteria, and scalable difficulty.
 
-*Key findings*: Pressure-field coordination achieves 100% solve rate with 4 agents versus 40% for the best baseline (§5.2). Temporal decay is critical---disabling it drops performance to 0% (§5.3). Most surprisingly, few-shot prompting *degrades* performance from 100% to 40% (§5.3), challenging conventional LLM prompting wisdom. The approach scales linearly from 1 to 32 agents (§5.4), and model escalation provides 2--4$times$ improvement on difficult cases (§5.5).
+*Key findings*: Pressure-field coordination achieves 100% solve rate with 4 agents versus 40% for the best baseline (§6.2). Temporal decay is critical---disabling it drops performance to 0% (§6.3). Most surprisingly, few-shot prompting *degrades* performance from 100% to 40% (§6.3), challenging conventional LLM prompting wisdom. The approach scales linearly from 1 to 32 agents (§6.4), and model escalation provides 2--4$times$ improvement on difficult cases (§6.5).
 
 == Setup
 
@@ -323,7 +323,7 @@ where $"empty"_i$ counts unfilled cells in row $i$, $"row\_dups"_i$ counts dupli
 
 We compare four coordination strategies, all using identical LLMs (`qwen2.5-coder:1.5b` via Ollama) to isolate coordination effects:
 
-*Pressure-field (ours)*: Full system with decay ($lambda = 0.1$), inhibition ($tau_"inh" = 4$ ticks), and parallel validation.
+*Pressure-field (ours)*: Full system with decay ($lambda_f = 0.1$), inhibition ($tau_"inh" = 4$ ticks), and parallel validation.
 
 *Sequential*: Single agent iterates through rows in fixed order, proposing one value per tick. No parallelism or pressure guidance.
 
@@ -374,7 +374,7 @@ Decay proves essential---without it, solve rate drops to zero:
     columns: 3,
     [*Configuration*], [*Solve Rate*], [*Final Pressure*],
     [With decay], [100%], [0.0],
-    [Without decay ($lambda = 0$)], [*0%*], [22.8],
+    [Without decay ($lambda_f = 0$)], [*0%*], [22.8],
   ),
   caption: [Decay ablation (2 agents, 10 trials). Without decay, the system stabilizes in high-pressure local minima, unable to escape.],
 )
@@ -467,7 +467,7 @@ Our experiments reveal several important limitations and unexpected findings:
 
 *Additional practical limitations:*
 - Requires well-designed pressure functions (not learned from data)
-- Decay rate $lambda$ and inhibition period require task-specific tuning
+- Decay rates $lambda_f, lambda_gamma$ and inhibition period require task-specific tuning
 - May not suit tasks requiring long-horizon global planning
 - Goodhart's Law: agents may game poorly-designed metrics
 - Resource cost of parallel validation: testing $K$ patches requires $O(K dot.c |A|)$ memory where $|A|$ is artifact size

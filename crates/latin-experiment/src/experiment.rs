@@ -13,9 +13,6 @@ use std::time::Instant;
 use anyhow::Result;
 use chrono::Utc;
 use futures::future::join_all;
-use ollama_rs::generation::completion::request::GenerationRequest;
-use ollama_rs::models::ModelOptions;
-use ollama_rs::Ollama;
 use rand::Rng;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -23,10 +20,12 @@ use tracing::{debug, info, warn};
 use survival_kernel::artifact::Artifact;
 
 use crate::artifact::LatinSquareArtifact;
+use crate::conversation::ConversationRunner;
 use crate::example_bank::{Example, ExampleBank, ExampleBankConfig};
 use crate::generator::{Difficulty, GeneratorConfig, LatinSquareGenerator};
-use crate::results::{EscalationEvent, ExperimentConfig, ExperimentResult, TickMetrics};
+use crate::results::{ConversationStats, EscalationEvent, ExperimentConfig, ExperimentResult, TickMetrics};
 use crate::sensors::{update_shared_grid, LatinSquareSensor, SharedGrid};
+use crate::vllm_client::VllmClient;
 
 /// Configuration for the experiment runner.
 #[derive(Debug, Clone)]
@@ -54,17 +53,21 @@ pub struct ExperimentRunnerConfig {
     pub examples_enabled: bool,
     /// Example bank configuration
     pub example_bank_config: ExampleBankConfig,
+    /// Maximum turns per conversation (for Conversation strategy)
+    pub conversation_max_turns: usize,
 }
 
 impl Default for ExperimentRunnerConfig {
     fn default() -> Self {
         Self {
-            ollama_host: "http://localhost:11434".to_string(),
-            model: "qwen2.5:1.5b".to_string(),
+            ollama_host: "http://localhost:8000".to_string(),
+            model: "Qwen/Qwen2.5-0.5B".to_string(),
             model_chain: vec![
-                "qwen2.5:1.5b".to_string(),
-                "qwen2.5:7b".to_string(),
-                "qwen2.5:14b".to_string(),
+                "Qwen/Qwen2.5-0.5B".to_string(),
+                "Qwen/Qwen2.5-1.5B".to_string(),
+                "Qwen/Qwen2.5-3B".to_string(),
+                "Qwen/Qwen2.5-7B".to_string(),
+                "Qwen/Qwen2.5-14B".to_string(),
             ],
             escalation_threshold: 5, // Escalate after 5 ticks with no progress
             max_ticks: 50,
@@ -74,6 +77,7 @@ impl Default for ExperimentRunnerConfig {
             inhibition_enabled: true,
             examples_enabled: true,
             example_bank_config: ExampleBankConfig::default(),
+            conversation_max_turns: 5, // For Conversation strategy
         }
     }
 }
@@ -89,6 +93,8 @@ pub enum Strategy {
     Random,
     /// Hierarchical (simulated manager)
     Hierarchical,
+    /// Conversation-based coordination (AutoGen-style baseline)
+    Conversation,
 }
 
 impl Strategy {
@@ -99,6 +105,7 @@ impl Strategy {
             Self::Sequential,
             Self::Random,
             Self::Hierarchical,
+            Self::Conversation,
         ]
     }
 
@@ -109,6 +116,7 @@ impl Strategy {
             Self::Sequential => "sequential",
             Self::Random => "random",
             Self::Hierarchical => "hierarchical",
+            Self::Conversation => "conversation",
         }
     }
 }
@@ -186,6 +194,24 @@ impl ExperimentRunner {
         let mut zero_velocity_ticks: usize = 0;
         let mut escalation_events: Vec<EscalationEvent> = Vec::new();
 
+        // Conversation-specific state
+        let mut conversation_runner: Option<ConversationRunner> = None;
+        let mut total_conversation_messages: usize = 0;
+        let mut total_consensus_ticks: usize = 0;
+
+        if strategy == Strategy::Conversation {
+            let model = if self.config.model_chain.is_empty() {
+                self.config.model.clone()
+            } else {
+                self.config.model_chain[0].clone()
+            };
+            conversation_runner = Some(ConversationRunner::new(
+                &self.config.ollama_host,
+                &model,
+                self.config.conversation_max_turns,
+            )?);
+        }
+
         // Run tick loop
         for tick in 0..self.config.max_ticks {
             let tick_start = Instant::now();
@@ -196,98 +222,163 @@ impl ExperimentRunner {
                 bank.apply_decay();
             }
 
-            // Select region based on strategy
-            let region_id = match strategy {
-                Strategy::PressureField => {
-                    self.select_highest_pressure_region(&artifact, &sensor)?
+            // Handle Conversation strategy separately (different flow)
+            let (patches_applied, messages_this_tick) = if strategy == Strategy::Conversation {
+                let runner = conversation_runner.as_ref().unwrap();
+                let (patch_opt, conv_state) = runner.run_tick(&artifact, &shared_grid).await?;
+
+                let messages_count = conv_state.total_messages();
+                total_conversation_messages += messages_count;
+                if conv_state.final_patch.is_some() {
+                    total_consensus_ticks += 1;
                 }
-                Strategy::Sequential => {
-                    let regions = artifact.region_ids();
-                    regions[tick % regions.len()]
-                }
-                Strategy::Random => {
-                    use rand::seq::IndexedRandom;
-                    let regions = artifact.region_ids();
-                    *regions.choose(&mut rand::rng()).unwrap()
-                }
-                Strategy::Hierarchical => {
-                    // Simulate hierarchical by picking region with most empty cells
-                    self.select_most_incomplete_region(&artifact)?
-                }
-            };
 
-            // Get region view
-            let region_view = artifact.read_region(region_id)?;
-            let pressure_before = self.measure_region_pressure(&region_view, &sensor)?;
+                let mut applied = 0;
+                if let Some(new_content) = patch_opt {
+                    // Find the target region (coordinator selected it)
+                    if let Some(region_id) = conv_state.target_region {
+                        let region_view = artifact.read_region(region_id)?;
+                        let patch = survival_kernel::region::Patch {
+                            region: region_id,
+                            op: survival_kernel::region::PatchOp::Replace(new_content.clone()),
+                            rationale: "Conversation consensus".to_string(),
+                            expected_delta: HashMap::new(),
+                        };
 
-            // Get examples for few-shot prompting
-            let examples = {
-                let bank = example_bank.read().await;
-                bank.get_examples_for_prompt()
-            };
+                        match artifact.apply_patch(patch) {
+                            Ok(()) => {
+                                update_shared_grid(&shared_grid, artifact.grid())?;
 
-            // Get current model (with escalation for PressureField)
-            let current_model = if self.config.model_chain.is_empty() {
-                self.config.model.clone()
-            } else {
-                self.config.model_chain[current_model_idx.min(self.config.model_chain.len() - 1)].clone()
-            };
+                                // Add to example bank if enabled
+                                if self.config.examples_enabled {
+                                    let pressure_before =
+                                        self.measure_region_pressure(&region_view, &sensor)?;
+                                    let temp_view = survival_kernel::region::RegionView {
+                                        id: region_id,
+                                        kind: "row".to_string(),
+                                        content: new_content.clone(),
+                                        metadata: region_view.metadata.clone(),
+                                    };
+                                    let pressure_after =
+                                        self.measure_region_pressure(&temp_view, &sensor)?;
 
-            // Generate multiple patches concurrently using LLM
-            let patch_results = self
-                .generate_concurrent_patches(&artifact, region_id, &examples, &current_model)
-                .await?;
+                                    let bank = example_bank.read().await;
+                                    bank.add_example(
+                                        region_view.content.clone(),
+                                        new_content,
+                                        pressure_before,
+                                        pressure_after,
+                                    );
+                                }
 
-            // Try each patch result until one succeeds
-            let mut patches_applied = 0;
-            let _llm_calls = patch_results.len();
-            for new_content in patch_results {
-                // Validate that the patch reduces pressure
-                let temp_view = survival_kernel::region::RegionView {
-                    id: region_id,
-                    kind: "row".to_string(),
-                    content: new_content.clone(),
-                    metadata: region_view.metadata.clone(),
-                };
-                let pressure_after = self.measure_region_pressure(&temp_view, &sensor)?;
-
-                if pressure_after < pressure_before || !self.config.decay_enabled {
-                    // Apply patch
-                    let patch = survival_kernel::region::Patch {
-                        region: region_id,
-                        op: survival_kernel::region::PatchOp::Replace(new_content.clone()),
-                        rationale: "Filled row".to_string(),
-                        expected_delta: HashMap::new(),
-                    };
-
-                    // Try to apply - may fail if LLM changed fixed cells
-                    match artifact.apply_patch(patch) {
-                        Ok(()) => {
-                            // Update shared grid
-                            update_shared_grid(&shared_grid, artifact.grid())?;
-
-                            // Add to example bank
-                            {
-                                let bank = example_bank.read().await;
-                                bank.add_example(
-                                    region_view.content.clone(),
-                                    new_content,
-                                    pressure_before,
-                                    pressure_after,
-                                );
+                                applied = 1;
                             }
-
-                            patches_applied = 1;
-                            break; // Stop after first successful patch
-                        }
-                        Err(e) => {
-                            debug!(tick = tick, error = %e, "Patch rejected - invalid");
+                            Err(e) => {
+                                debug!(tick = tick, error = %e, "Conversation patch rejected");
+                            }
                         }
                     }
-                } else {
-                    debug!(tick = tick, "Patch rejected - did not reduce pressure");
                 }
-            }
+
+                (applied, Some(messages_count))
+            } else {
+                // Standard strategies: PressureField, Sequential, Random, Hierarchical
+                let region_id = match strategy {
+                    Strategy::PressureField => {
+                        self.select_highest_pressure_region(&artifact, &sensor)?
+                    }
+                    Strategy::Sequential => {
+                        let regions = artifact.region_ids();
+                        regions[tick % regions.len()]
+                    }
+                    Strategy::Random => {
+                        use rand::seq::IndexedRandom;
+                        let regions = artifact.region_ids();
+                        *regions.choose(&mut rand::rng()).unwrap()
+                    }
+                    Strategy::Hierarchical => {
+                        // Simulate hierarchical by picking region with most empty cells
+                        self.select_most_incomplete_region(&artifact)?
+                    }
+                    Strategy::Conversation => unreachable!(), // Handled above
+                };
+
+                // Get region view
+                let region_view = artifact.read_region(region_id)?;
+                let pressure_before = self.measure_region_pressure(&region_view, &sensor)?;
+
+                // Get examples for few-shot prompting
+                let examples = {
+                    let bank = example_bank.read().await;
+                    bank.get_examples_for_prompt()
+                };
+
+                // Get current model (with escalation for PressureField)
+                let current_model = if self.config.model_chain.is_empty() {
+                    self.config.model.clone()
+                } else {
+                    self.config.model_chain[current_model_idx.min(self.config.model_chain.len() - 1)]
+                        .clone()
+                };
+
+                // Generate multiple patches concurrently using LLM
+                let patch_results = self
+                    .generate_concurrent_patches(&artifact, region_id, &examples, &current_model)
+                    .await?;
+
+                // Try each patch result until one succeeds
+                let mut patches_applied = 0;
+                let _llm_calls = patch_results.len();
+                for new_content in patch_results {
+                    // Validate that the patch reduces pressure
+                    let temp_view = survival_kernel::region::RegionView {
+                        id: region_id,
+                        kind: "row".to_string(),
+                        content: new_content.clone(),
+                        metadata: region_view.metadata.clone(),
+                    };
+                    let pressure_after = self.measure_region_pressure(&temp_view, &sensor)?;
+
+                    if pressure_after < pressure_before || !self.config.decay_enabled {
+                        // Apply patch
+                        let patch = survival_kernel::region::Patch {
+                            region: region_id,
+                            op: survival_kernel::region::PatchOp::Replace(new_content.clone()),
+                            rationale: "Filled row".to_string(),
+                            expected_delta: HashMap::new(),
+                        };
+
+                        // Try to apply - may fail if LLM changed fixed cells
+                        match artifact.apply_patch(patch) {
+                            Ok(()) => {
+                                // Update shared grid
+                                update_shared_grid(&shared_grid, artifact.grid())?;
+
+                                // Add to example bank
+                                {
+                                    let bank = example_bank.read().await;
+                                    bank.add_example(
+                                        region_view.content.clone(),
+                                        new_content,
+                                        pressure_before,
+                                        pressure_after,
+                                    );
+                                }
+
+                                patches_applied = 1;
+                                break; // Stop after first successful patch
+                            }
+                            Err(e) => {
+                                debug!(tick = tick, error = %e, "Patch rejected - invalid");
+                            }
+                        }
+                    } else {
+                        debug!(tick = tick, "Patch rejected - did not reduce pressure");
+                    }
+                }
+
+                (patches_applied, None)
+            };
 
             // Record metrics
             let current_pressure = self.measure_total_pressure(&artifact, &sensor)?;
@@ -305,6 +396,7 @@ impl ExperimentRunner {
                 violations: artifact.total_violations(),
                 llm_calls: if patches_applied > 0 { 1 } else { 0 },
                 duration_ms: tick_start.elapsed().as_millis() as u64,
+                messages_per_tick: messages_this_tick,
             });
 
             // Check if solved
@@ -373,6 +465,36 @@ impl ExperimentRunner {
             self.config.model_chain[current_model_idx.min(self.config.model_chain.len() - 1)].clone()
         };
 
+        // Build conversation stats for Conversation strategy
+        let conversation_stats = if strategy == Strategy::Conversation {
+            let total_ticks = tick_metrics.len();
+            let avg_messages_per_tick = if total_ticks > 0 {
+                total_conversation_messages as f64 / total_ticks as f64
+            } else {
+                0.0
+            };
+            let consensus_rate = if total_ticks > 0 {
+                total_consensus_ticks as f64 / total_ticks as f64
+            } else {
+                0.0
+            };
+            // Average turns to consensus: assume max_turns if no consensus, else average
+            let avg_turns = if total_consensus_ticks > 0 {
+                total_conversation_messages as f64 / total_consensus_ticks as f64 / 3.0 // ~3 messages per turn
+            } else {
+                self.config.conversation_max_turns as f64
+            };
+            Some(ConversationStats {
+                total_messages: total_conversation_messages,
+                avg_messages_per_tick,
+                total_llm_calls: total_conversation_messages, // Each message = 1 LLM call
+                consensus_rate,
+                avg_turns_to_consensus: avg_turns,
+            })
+        } else {
+            None
+        };
+
         Ok(ExperimentResult {
             config: ExperimentConfig {
                 strategy: strategy.name().to_string(),
@@ -397,6 +519,7 @@ impl ExperimentRunner {
             tick_metrics,
             escalation_events,
             final_model,
+            conversation_stats,
         })
     }
 
@@ -514,11 +637,11 @@ impl ExperimentRunner {
 
         // Create concurrent LLM calls
         let num_calls = self.config.max_concurrent_llm.min(empty_positions.len() * 2);
-        let ollama = Arc::new(Ollama::try_new(&self.config.ollama_host)?);
+        let client = Arc::new(VllmClient::new(&self.config.ollama_host));
 
         let futures: Vec<_> = (0..num_calls)
             .map(|i| {
-                let ollama = Arc::clone(&ollama);
+                let client = Arc::clone(&client);
                 let model = current_model.to_string();
                 let examples_text = examples_text.clone();
                 let availability = availability.clone();
@@ -563,15 +686,9 @@ What number goes in position {target_pos}? Return just the number."#,
                         _ => (rng.random_range(0.55..0.85), rng.random_range(0.90..0.98)),
                     };
 
-                    let options = ModelOptions::default()
-                        .temperature(temp)
-                        .top_p(top_p)
-                        .num_predict(4);
-                    let request = GenerationRequest::new(model, prompt).options(options);
-
-                    match ollama.generate(request).await {
-                        Ok(response) => {
-                            let response_text = response.response.trim();
+                    match client.generate(&model, &prompt, temp, top_p, 8).await {
+                        Ok(response_text) => {
+                            let response_text = response_text.trim();
                             // Parse single number
                             let cleaned = response_text.replace([',', '[', ']', '"', '.'], " ");
 
@@ -694,15 +811,10 @@ What number goes in position {target_pos}? Return just the number."#,
 
         debug!(row_idx = row_idx, temp = temp, top_p = top_p, "Calling LLM for patch");
 
-        // Call Ollama with sampled options
-        let ollama = Ollama::try_new(&self.config.ollama_host)?;
-        let options = ModelOptions::default()
-            .temperature(temp)
-            .top_p(top_p)
-            .num_predict(4); // Force single number output
-        let request = GenerationRequest::new(self.config.model.clone(), prompt).options(options);
+        // Call vLLM with sampled options
+        let client = VllmClient::new(&self.config.ollama_host);
 
-        let response = match ollama.generate(request).await {
+        let response = match client.generate(&self.config.model, &prompt, temp, top_p, 8).await {
             Ok(r) => r,
             Err(e) => {
                 warn!(error = %e, "LLM call failed");
@@ -710,7 +822,7 @@ What number goes in position {target_pos}? Return just the number."#,
             }
         };
 
-        let response_text = response.response.trim();
+        let response_text = response.trim();
         debug!(response = %response_text, "LLM response");
 
         // Parse the single number from response
