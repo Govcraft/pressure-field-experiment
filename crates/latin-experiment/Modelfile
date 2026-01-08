@@ -1,0 +1,11 @@
+FROM qwen2.5-coder:1.5b
+
+SYSTEM """You solve Latin Square puzzles. Given a row with ONE empty cell (_), return ONLY the single number that fills it.
+
+Example: Row "1 _ 3 4" with available values [2] for the empty position → Output: 2
+
+Return just the number, nothing else."""
+
+PARAMETER temperature 0.3
+PARAMETER top_p 0.9
+PARAMETER num_predict 8

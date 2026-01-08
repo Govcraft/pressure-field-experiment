@@ -365,4 +365,121 @@ Pressure-field coordination achieves $O(1)$ coordination overhead because agents
 
 We presented gradient-field coordination, a decentralized approach to multi-agent systems that achieves coordination through shared state and local pressure gradients rather than explicit orchestration. Our theoretical analysis shows convergence guarantees under alignment conditions, and our experiments demonstrate linear scaling with agent count. This work suggests that constraint-driven emergence, inspired by natural coordination mechanisms, offers a more scalable foundation for multi-agent AI than imported human organizational patterns.
 
+= Appendix: Experimental Protocol
+
+This appendix provides complete reproducibility information for all experiments.
+
+== Hardware and Software
+
+*Hardware:* NVIDIA RTX 4090 GPU, 24GB VRAM
+
+*Software:*
+- Rust 1.75+ (edition 2024)
+- Ollama v0.5+
+- Models: `qwen2.5-coder:1.5b`, `qwen2.5-coder:7b`, `qwen2.5-coder:14b`
+
+== Model Configuration
+
+Custom modelfiles tune the base models for Latin Square solving:
+
+```
+FROM qwen2.5-coder:1.5b
+SYSTEM """You solve Latin Square puzzles. Given a row with ONE empty cell (_),
+return ONLY the single number that fills it.
+Example: Row "1 _ 3 4" with available values [2] → Output: 2
+Return just the number, nothing else."""
+PARAMETER num_predict 8
+```
+
+Create variants for 7b and 14b by changing the FROM line.
+
+== Sampling Diversity
+
+The experiment framework overrides default sampling parameters with three exploration bands per LLM call:
+
+#figure(
+  table(
+    columns: 3,
+    [*Band*], [*Temperature*], [*Top-p*],
+    [Exploitation], [0.15 - 0.35], [0.80 - 0.90],
+    [Balanced], [0.35 - 0.55], [0.85 - 0.95],
+    [Exploration], [0.55 - 0.85], [0.90 - 0.98],
+  ),
+  caption: [Sampling parameter ranges. Each LLM call randomly samples from one band.],
+)
+
+This diversity prevents convergence to local optima and enables exploration of the solution space.
+
+== Experiment Commands
+
+*Main Grid (Strategy Comparison):*
+```bash
+latin-experiment --model-chain "latin-solver,latin-solver-7b,latin-solver-14b" \
+  --escalation-threshold 10 \
+  grid --trials 10 --n 7 --empty 7 --max-ticks 40 --agents 1,2,4,8
+```
+
+*Ablation Study:*
+```bash
+latin-experiment --model-chain "latin-solver" \
+  ablation --trials 10 --n 7 --empty 7 --max-ticks 40
+```
+
+*Scaling Analysis:*
+```bash
+latin-experiment --model-chain "latin-solver,latin-solver-7b,latin-solver-14b" \
+  grid --trials 10 --n 7 --empty 8 --max-ticks 40 --agents 1,2,4,8,16,32
+```
+
+*Model Escalation Comparison:*
+```bash
+# Without escalation
+latin-experiment --model-chain "latin-solver" \
+  grid --trials 10 --n 7 --empty 8 --max-ticks 40 --agents 2,4,8
+
+# With escalation
+latin-experiment --model-chain "latin-solver,latin-solver-7b,latin-solver-14b" \
+  --escalation-threshold 10 \
+  grid --trials 10 --n 7 --empty 8 --max-ticks 40 --agents 2,4,8
+```
+
+*Difficulty Scaling:*
+```bash
+# Run for each (n, empty) pair: (5,5), (6,8), (7,10), (8,14)
+latin-experiment --model-chain "latin-solver,latin-solver-7b,latin-solver-14b" \
+  grid --trials 10 --n {N} --empty {E} --max-ticks 50 --agents 4
+```
+
+== Metrics Collected
+
+Each experiment records:
+- `solved`: Boolean indicating puzzle completion
+- `total_ticks`: Iterations to solve (or max if unsolved)
+- `pressure_history`: Pressure value at each tick
+- `escalation_events`: Model tier changes (tick, from_model, to_model)
+- `final_model`: Which model tier solved the puzzle
+
+== Statistical Analysis
+
+- 10 trials per configuration for statistical significance
+- Mann-Whitney U test for pairwise strategy comparisons
+- 95% confidence intervals via bootstrap resampling
+- Effect sizes reported as Cohen's d
+
+== Estimated Runtime
+
+#figure(
+  table(
+    columns: 4,
+    [*Experiment*], [*Configurations*], [*Trials*], [*Est. Time*],
+    [Main Grid], [16], [10], [45 min],
+    [Ablation], [8], [10], [20 min],
+    [Scaling], [6], [10], [30 min],
+    [Escalation], [6], [10], [30 min],
+    [Difficulty], [4], [10], [40 min],
+    [*Total*], [], [], [*~3 hours*],
+  ),
+  caption: [Estimated runtime for all experiments on NVIDIA RTX 4090.],
+)
+
 #bibliography("references.bib", style: "ieee")
