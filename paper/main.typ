@@ -339,7 +339,7 @@ We compare four coordination strategies, all using identical LLMs (`Qwen/Qwen2.5
 
 === Implementation
 
-*Hardware*: NVIDIA RTX 4070 Laptop GPU (8GB). *Software*: Rust implementation with vLLM. *Trials*: 10 per configuration. Full protocol in Appendix A.
+*Hardware*: NVIDIA RTX 4070 Laptop GPU (8GB). *Software*: Rust implementation with vLLM. *Trials*: 30 per configuration. Full protocol in Appendix A.
 
 *Model escalation*: Unless otherwise noted, all experiments use adaptive model escalation: when a region remains high-pressure for 10 consecutive ticks, the system escalates from 1.5b to 7b to 14b parameters. Section 5.5 ablates this mechanism.
 
@@ -356,7 +356,7 @@ Pressure-field coordination dramatically outperforms all baselines:
     [Sequential], [0%], [40%], [30%], [10%],
     [Random], [0%], [40%], [20%], [0%],
   ),
-  caption: [Solve rates on $7 times 7$ Latin Squares (10 trials each). Pressure-field achieves 100% at 4 agents; best baseline (hierarchical) reaches only 40--50%.],
+  caption: [Solve rates on $7 times 7$ Latin Squares (30 trials each). Pressure-field achieves 100% at 4 agents; best baseline (hierarchical) reaches only 40--50%.],
 )
 
 The performance gap is substantial: pressure-field with 4 agents achieves 100% solve rate versus 40% for the best baseline (hierarchical). For solved cases, pressure-field also converges faster (16.1 average ticks vs. 32+ for baselines).
@@ -376,7 +376,7 @@ Decay proves essential---without it, solve rate drops to zero:
     [With decay], [100%], [0.0],
     [Without decay ($lambda_f = 0$)], [*0%*], [22.8],
   ),
-  caption: [Decay ablation (2 agents, 10 trials). Without decay, the system stabilizes in high-pressure local minima, unable to escape.],
+  caption: [Decay ablation (2 agents, 30 trials). Without decay, the system stabilizes in high-pressure local minima, unable to escape.],
 )
 
 Without decay, fitness saturates after initial patches. High-fitness regions never re-enter the activation threshold, even with suboptimal solutions. This validates Theorem 2: decay is necessary to cross pressure barriers between basins.
@@ -557,38 +557,38 @@ This diversity prevents convergence to local optima and enables exploration of t
 ```bash
 latin-experiment --model-chain "latin-solver,latin-solver-7b,latin-solver-14b" \
   --escalation-threshold 10 \
-  grid --trials 10 --n 7 --empty 7 --max-ticks 40 --agents 1,2,4,8
+  grid --trials 30 --n 7 --empty 7 --max-ticks 40 --agents 1,2,4,8
 ```
 
 *Ablation Study:*
 ```bash
 latin-experiment --model-chain "latin-solver" \
-  ablation --trials 10 --n 7 --empty 7 --max-ticks 40
+  ablation --trials 30 --n 7 --empty 7 --max-ticks 40
 ```
 
 *Scaling Analysis:*
 ```bash
 latin-experiment --model-chain "latin-solver,latin-solver-7b,latin-solver-14b" \
-  grid --trials 10 --n 7 --empty 8 --max-ticks 40 --agents 1,2,4,8,16,32
+  grid --trials 30 --n 7 --empty 8 --max-ticks 40 --agents 1,2,4,8,16,32
 ```
 
 *Model Escalation Comparison:*
 ```bash
 # Without escalation
 latin-experiment --model-chain "latin-solver" \
-  grid --trials 10 --n 7 --empty 8 --max-ticks 40 --agents 2,4,8
+  grid --trials 30 --n 7 --empty 8 --max-ticks 40 --agents 2,4,8
 
 # With escalation
 latin-experiment --model-chain "latin-solver,latin-solver-7b,latin-solver-14b" \
   --escalation-threshold 10 \
-  grid --trials 10 --n 7 --empty 8 --max-ticks 40 --agents 2,4,8
+  grid --trials 30 --n 7 --empty 8 --max-ticks 40 --agents 2,4,8
 ```
 
 *Difficulty Scaling:*
 ```bash
 # Run for each (n, empty) pair: (5,5), (6,8), (7,10), (8,14)
 latin-experiment --model-chain "latin-solver,latin-solver-7b,latin-solver-14b" \
-  grid --trials 10 --n {N} --empty {E} --max-ticks 50 --agents 4
+  grid --trials 30 --n {N} --empty {E} --max-ticks 50 --agents 4
 ```
 
 == Metrics Collected
@@ -602,7 +602,7 @@ Each experiment records:
 
 == Replication Notes
 
-Each configuration runs 10 independent trials with different random seeds to ensure reliability. Results report mean solve rates and tick counts across trials.
+Each configuration runs 30 independent trials with different random seeds to ensure reliability. Results report mean solve rates and tick counts across trials.
 
 == Estimated Runtime
 
@@ -610,12 +610,12 @@ Each configuration runs 10 independent trials with different random seeds to ens
   table(
     columns: 4,
     [*Experiment*], [*Configurations*], [*Trials*], [*Est. Time*],
-    [Main Grid], [16], [10], [45 min],
-    [Ablation], [8], [10], [20 min],
-    [Scaling], [6], [10], [30 min],
-    [Escalation], [6], [10], [30 min],
-    [Difficulty], [4], [10], [40 min],
-    [*Total*], [], [], [*~3 hours*],
+    [Main Grid], [16], [30], [2.5 hours],
+    [Ablation], [8], [30], [1 hour],
+    [Scaling], [6], [30], [1.5 hours],
+    [Escalation], [6], [30], [1.5 hours],
+    [Difficulty], [4], [30], [2 hours],
+    [*Total*], [], [], [*~8 hours*],
   ),
   caption: [Estimated runtime for all experiments on NVIDIA RTX 4070 Laptop GPU.],
 )
