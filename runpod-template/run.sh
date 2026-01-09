@@ -58,30 +58,36 @@ echo ""
 echo "=== Starting vLLM Servers ==="
 echo "Starting 5 vLLM instances for model escalation chain..."
 
-# Model-to-port mapping:
-# Port 8001: 0.5B, Port 8002: 1.5B, Port 8003: 3B, Port 8004: 7B, Port 8005: 14B
+# Model-to-port mapping with appropriate GPU memory allocation:
+# Port 8001: 0.5B (~1GB, 3%)
+# Port 8002: 1.5B (~3GB, 6%)
+# Port 8003: 3B (~6GB, 10%)
+# Port 8004: 7B (~14GB, 20%)
+# Port 8005: 14B (~28GB, 40%)
+# Total: ~79% of 80GB = ~63GB
 
 start_vllm_server() {
     local model=$1
     local port=$2
+    local mem_util=$3
     local logfile="/workspace/vllm-${port}.log"
 
-    echo "  Starting $model on port $port..."
+    echo "  Starting $model on port $port (${mem_util}% GPU mem)..."
     vllm serve "$MODELS_DIR/$model" \
         --dtype bfloat16 \
-        --gpu-memory-utilization 0.18 \
+        --gpu-memory-utilization "$mem_util" \
         --max-model-len 2048 \
         --port $port \
         > "$logfile" 2>&1 &
     echo $!
 }
 
-# Start all servers (they share GPU memory, ~18% each = 90% total)
-PID_05B=$(start_vllm_server "Qwen2.5-0.5B" 8001)
-PID_15B=$(start_vllm_server "Qwen2.5-1.5B" 8002)
-PID_3B=$(start_vllm_server "Qwen2.5-3B" 8003)
-PID_7B=$(start_vllm_server "Qwen2.5-7B" 8004)
-PID_14B=$(start_vllm_server "Qwen2.5-14B" 8005)
+# Start all servers with size-appropriate memory allocation
+PID_05B=$(start_vllm_server "Qwen2.5-0.5B" 8001 0.03)
+PID_15B=$(start_vllm_server "Qwen2.5-1.5B" 8002 0.06)
+PID_3B=$(start_vllm_server "Qwen2.5-3B" 8003 0.10)
+PID_7B=$(start_vllm_server "Qwen2.5-7B" 8004 0.20)
+PID_14B=$(start_vllm_server "Qwen2.5-14B" 8005 0.40)
 
 echo ""
 echo "vLLM PIDs: 0.5B=$PID_05B, 1.5B=$PID_15B, 3B=$PID_3B, 7B=$PID_7B, 14B=$PID_14B"
