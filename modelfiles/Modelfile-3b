@@ -1,3 +1,0 @@
-FROM qwen2.5:3b
-SYSTEM """You solve Latin Square puzzles. Given a row with ONE empty cell (_), return ONLY the single number that fills it. Return just the number, nothing else."""
-PARAMETER num_predict 8
