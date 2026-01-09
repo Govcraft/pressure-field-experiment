@@ -113,12 +113,16 @@ start_vllm_server() {
     echo "  Tokenizer files:" >> "$logfile"
     ls -la "$MODELS_DIR/$model/"*token* "$MODELS_DIR/$model/"*vocab* 2>/dev/null >> "$logfile" || true
 
+    # Extract HuggingFace-style model name (e.g., "Qwen/Qwen2.5-0.5B" from "Qwen2.5-0.5B")
+    local hf_model_name="Qwen/$model"
+
     vllm serve "$MODELS_DIR/$model" \
         --dtype bfloat16 \
         --gpu-memory-utilization "$mem_util" \
         --max-model-len 2048 \
         --port $port \
         --tokenizer "$MODELS_DIR/$model" \
+        --served-model-name "$hf_model_name" \
         > "$logfile" 2>&1 &
     echo $!
 }

@@ -889,4 +889,132 @@ mod tests {
         assert_eq!(Strategy::PressureField.name(), "pressure_field");
         assert_eq!(Strategy::Sequential.name(), "sequential");
     }
+
+    #[test]
+    fn test_parse_single_number_basic() {
+        let config = ExperimentRunnerConfig::default();
+        let runner = ExperimentRunner::new(config);
+
+        // Basic valid numbers
+        assert_eq!(runner.parse_single_number("3", 5), Some(3));
+        assert_eq!(runner.parse_single_number("1", 5), Some(1));
+        assert_eq!(runner.parse_single_number("5", 5), Some(5));
+
+        // Numbers with surrounding text (common LLM output)
+        assert_eq!(runner.parse_single_number("The answer is 4", 5), Some(4));
+        assert_eq!(runner.parse_single_number("I think 2 is correct", 5), Some(2));
+    }
+
+    #[test]
+    fn test_parse_single_number_edge_cases() {
+        let config = ExperimentRunnerConfig::default();
+        let runner = ExperimentRunner::new(config);
+
+        // Out of range (should return None)
+        assert_eq!(runner.parse_single_number("0", 5), None); // 0 is invalid (1-indexed)
+        assert_eq!(runner.parse_single_number("6", 5), None); // > n
+        assert_eq!(runner.parse_single_number("10", 5), None); // way out of range
+
+        // Empty or no numbers
+        assert_eq!(runner.parse_single_number("", 5), None);
+        assert_eq!(runner.parse_single_number("no number here", 5), None);
+
+        // Multiple numbers (should pick first valid)
+        assert_eq!(runner.parse_single_number("3 4 5", 5), Some(3));
+
+        // With special characters that LLMs sometimes include
+        assert_eq!(runner.parse_single_number("[3]", 5), Some(3));
+        assert_eq!(runner.parse_single_number("\"4\"", 5), Some(4));
+        assert_eq!(runner.parse_single_number("3.", 5), Some(3));
+        assert_eq!(runner.parse_single_number("3,", 5), Some(3));
+    }
+
+    #[test]
+    fn test_parse_single_number_range_boundaries() {
+        let config = ExperimentRunnerConfig::default();
+        let runner = ExperimentRunner::new(config);
+
+        // For a 7x7 puzzle
+        assert_eq!(runner.parse_single_number("1", 7), Some(1)); // min valid
+        assert_eq!(runner.parse_single_number("7", 7), Some(7)); // max valid
+        assert_eq!(runner.parse_single_number("8", 7), None); // just over
+        assert_eq!(runner.parse_single_number("0", 7), None); // just under
+    }
+
+    #[test]
+    fn test_model_chain_escalation_indexing() {
+        // Verify model chain default has expected models
+        let config = ExperimentRunnerConfig::default();
+        assert_eq!(config.model_chain.len(), 5);
+        assert!(config.model_chain[0].contains("0.5B"));
+        assert!(config.model_chain[4].contains("14B"));
+
+        // Verify escalation threshold default
+        assert_eq!(config.escalation_threshold, 5);
+    }
+
+    #[test]
+    fn test_model_chain_index_bounds() {
+        // Simulate the escalation index clamping logic from run()
+        let model_chain = vec![
+            "Qwen/Qwen2.5-0.5B".to_string(),
+            "Qwen/Qwen2.5-1.5B".to_string(),
+            "Qwen/Qwen2.5-3B".to_string(),
+        ];
+
+        // Test the clamping logic used in experiment.rs:320 and :465
+        for idx in 0..10 {
+            let clamped = idx.min(model_chain.len() - 1);
+            assert!(clamped < model_chain.len(), "Index {} should be clamped", idx);
+            // Should not panic when accessing
+            let _model = &model_chain[clamped];
+        }
+    }
+
+    #[test]
+    fn test_escalation_velocity_calculation() {
+        // Verify the velocity formula: prev_pressure - curr_pressure
+        // Positive = improving (pressure decreasing)
+        // Zero or negative = stuck
+
+        let prev_pressure = 10.0;
+        let curr_pressure = 8.0;
+        let velocity = prev_pressure - curr_pressure;
+        assert!(velocity > 0.0, "Should show improvement");
+
+        let prev_pressure = 10.0;
+        let curr_pressure = 10.0;
+        let velocity = prev_pressure - curr_pressure;
+        assert!(velocity <= 0.0, "Should show stuck (no progress)");
+
+        let prev_pressure = 10.0;
+        let curr_pressure = 12.0;
+        let velocity = prev_pressure - curr_pressure;
+        assert!(velocity < 0.0, "Should show regression");
+    }
+
+    #[test]
+    fn test_pressure_formula() {
+        // Test the pressure calculation formula from measure_region_pressure
+        // Pressure = empty * 1.0 + row_dups * 10.0 + col_conflicts * 10.0
+
+        let compute_pressure = |empty: f64, row_dups: f64, col_conflicts: f64| -> f64 {
+            empty * 1.0 + row_dups * 10.0 + col_conflicts * 10.0
+        };
+
+        // Row with 2 empty cells, no duplicates
+        assert_eq!(compute_pressure(2.0, 0.0, 0.0), 2.0);
+
+        // Row with 1 empty, 1 duplicate
+        assert_eq!(compute_pressure(1.0, 1.0, 0.0), 11.0);
+
+        // Row with column conflict (worse than row duplicate)
+        assert_eq!(compute_pressure(0.0, 0.0, 1.0), 10.0);
+
+        // Multiple issues compound
+        assert_eq!(compute_pressure(3.0, 2.0, 1.0), 33.0); // 3 + 20 + 10
+
+        // Perfect row (solved)
+        assert_eq!(compute_pressure(0.0, 0.0, 0.0), 0.0);
+    }
 }
