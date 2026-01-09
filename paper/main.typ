@@ -339,7 +339,7 @@ We compare four coordination strategies, all using identical LLMs (`Qwen/Qwen2.5
 
 === Implementation
 
-*Hardware*: NVIDIA RTX 4070 Laptop GPU (8GB). *Software*: Rust implementation with vLLM. *Trials*: 30 per configuration. Full protocol in Appendix A.
+*Hardware*: NVIDIA A100 80GB GPU. *Software*: Rust implementation with vLLM. *Trials*: 30 per configuration. Full protocol in Appendix A.
 
 *Model escalation*: Unless otherwise noted, all experiments use adaptive model escalation: when a region remains high-pressure for 10 consecutive ticks, the system escalates from 1.5b to 7b to 14b parameters. Section 5.5 ablates this mechanism.
 
@@ -515,7 +515,7 @@ This appendix provides complete reproducibility information for all experiments.
 
 == Hardware and Software
 
-*Hardware:* NVIDIA RTX 4070 Laptop GPU, 8GB VRAM
+*Hardware:* NVIDIA A100 80GB GPU (RunPod cloud)
 
 *Software:*
 - Rust 1.75+ (edition 2024)
@@ -617,7 +617,7 @@ Each configuration runs 30 independent trials with different random seeds to ens
     [Difficulty], [4], [30], [2 hours],
     [*Total*], [], [], [*~8 hours*],
   ),
-  caption: [Estimated runtime for all experiments on NVIDIA RTX 4070 Laptop GPU.],
+  caption: [Estimated runtime for all experiments on NVIDIA A100 80GB GPU.],
 )
 
 #bibliography("references.bib", style: "ieee")
