@@ -18,6 +18,8 @@ ENV OUTPUT_DIR=/workspace/results
 ENV MODELS_DIR=/workspace/models
 ENV TRIALS=30
 ENV PARALLEL=4
+# Set FORCE_REDOWNLOAD=1 to clear and re-download all models
+ENV FORCE_REDOWNLOAD=0
 
 WORKDIR /app
 

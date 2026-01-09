@@ -17,21 +17,41 @@ MODELS_DIR="${MODELS_DIR:-/workspace/models}"
 mkdir -p "$MODELS_DIR" /workspace/results
 
 # Download models if not already present
+# Verifies tokenizer files exist (not just config.json)
 download_model() {
     local model_name=$1
     local model_dir="$MODELS_DIR/$model_name"
 
+    # Check for complete download: config.json AND tokenizer files
+    # Qwen2 models need either tokenizer.json OR (vocab.json + merges.txt)
     if [[ -d "$model_dir" ]] && [[ -f "$model_dir/config.json" ]]; then
-        echo "  $model_name already downloaded"
-        return 0
+        if [[ -f "$model_dir/tokenizer.json" ]] || \
+           ( [[ -f "$model_dir/vocab.json" ]] && [[ -f "$model_dir/merges.txt" ]] ); then
+            echo "  $model_name already downloaded (tokenizer verified)"
+            return 0
+        else
+            echo "  $model_name incomplete (missing tokenizer files), re-downloading..."
+            rm -rf "$model_dir"
+        fi
     fi
 
     echo "  Downloading $model_name..."
     python -c "
 from huggingface_hub import snapshot_download
-snapshot_download('Qwen/$model_name', local_dir='$model_dir')
+snapshot_download(
+    'Qwen/$model_name',
+    local_dir='$model_dir',
+    local_dir_use_symlinks=False  # Ensure actual files, not symlinks
+)
 print('  Done: $model_name')
 "
+
+    # Verify download
+    if [[ ! -f "$model_dir/tokenizer.json" ]] && [[ ! -f "$model_dir/vocab.json" ]]; then
+        echo "ERROR: $model_name download failed - tokenizer files missing!"
+        ls -la "$model_dir/" || true
+        return 1
+    fi
 }
 
 echo ""
@@ -41,14 +61,28 @@ echo "Models directory: $MODELS_DIR"
 # Enable fast downloads
 export HF_HUB_ENABLE_HF_TRANSFER=1
 
-download_model "Qwen2.5-0.5B"
-download_model "Qwen2.5-1.5B"
-download_model "Qwen2.5-3B"
-download_model "Qwen2.5-7B"
-download_model "Qwen2.5-14B"
+# Force re-download if requested (useful for fixing corrupted downloads)
+if [[ "${FORCE_REDOWNLOAD:-}" == "1" ]]; then
+    echo "FORCE_REDOWNLOAD=1 detected, clearing all models..."
+    rm -rf "$MODELS_DIR"/*
+fi
+
+download_model "Qwen2.5-0.5B" || exit 1
+download_model "Qwen2.5-1.5B" || exit 1
+download_model "Qwen2.5-3B" || exit 1
+download_model "Qwen2.5-7B" || exit 1
+download_model "Qwen2.5-14B" || exit 1
 
 echo ""
 echo "All models ready!"
+
+# Diagnostic: List all model directories with tokenizer files
+echo ""
+echo "=== Model Directory Summary ==="
+for model in Qwen2.5-0.5B Qwen2.5-1.5B Qwen2.5-3B Qwen2.5-7B Qwen2.5-14B; do
+    echo "$model:"
+    ls -la "$MODELS_DIR/$model/"*token* "$MODELS_DIR/$model/"*vocab* 2>/dev/null | head -5 || echo "  WARNING: No tokenizer files found!"
+done
 
 # Start vLLM servers for each model in the escalation chain
 # Each model runs on a different port (8001-8005)
@@ -73,11 +107,18 @@ start_vllm_server() {
     local logfile="/workspace/vllm-${port}.log"
 
     echo "  Starting $model on port $port (${mem_util} GPU mem)..."
+    echo "  Model path: $MODELS_DIR/$model"
+
+    # List tokenizer files for debugging
+    echo "  Tokenizer files:" >> "$logfile"
+    ls -la "$MODELS_DIR/$model/"*token* "$MODELS_DIR/$model/"*vocab* 2>/dev/null >> "$logfile" || true
+
     vllm serve "$MODELS_DIR/$model" \
         --dtype bfloat16 \
         --gpu-memory-utilization "$mem_util" \
         --max-model-len 2048 \
         --port $port \
+        --tokenizer "$MODELS_DIR/$model" \
         > "$logfile" 2>&1 &
     echo $!
 }
