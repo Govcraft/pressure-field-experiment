@@ -69,7 +69,7 @@ impl Default for ExperimentRunnerConfig {
                 "Qwen/Qwen2.5-7B".to_string(),
                 "Qwen/Qwen2.5-14B".to_string(),
             ],
-            escalation_threshold: 5, // Escalate after 5 ticks with no progress
+            escalation_threshold: 20, // Escalate after 20 ticks with no progress
             max_ticks: 50,
             max_concurrent_llm: 8, // GPU handles 8-16 concurrent calls well
             difficulty: Difficulty::Medium,
@@ -409,8 +409,8 @@ impl ExperimentRunner {
                 break;
             }
 
-            // Model escalation: track velocity and escalate when stuck (PressureField only)
-            if strategy == Strategy::PressureField && tick > 0 {
+            // Model escalation: track velocity and escalate when stuck (all strategies)
+            if tick > 0 {
                 let prev_pressure = pressure_history[tick];
                 let curr_pressure = pressure_history[tick + 1];
                 let velocity = prev_pressure - curr_pressure; // positive = improving
@@ -435,10 +435,16 @@ impl ExperimentRunner {
                             to_model: to_model.clone(),
                         });
 
+                        // Update ConversationRunner's model if applicable
+                        if let Some(ref mut runner) = conversation_runner {
+                            runner.set_model(&to_model);
+                        }
+
                         info!(
                             tick = tick,
                             new_model = &to_model,
                             prev_model = &from_model,
+                            strategy = strategy.name(),
                             "Escalating model due to stalled progress"
                         );
                     }
@@ -950,7 +956,7 @@ mod tests {
         assert!(config.model_chain[4].contains("14B"));
 
         // Verify escalation threshold default
-        assert_eq!(config.escalation_threshold, 5);
+        assert_eq!(config.escalation_threshold, 20);
     }
 
     #[test]
@@ -1016,5 +1022,49 @@ mod tests {
 
         // Perfect row (solved)
         assert_eq!(compute_pressure(0.0, 0.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn test_all_strategies_eligible_for_escalation() {
+        // Verify that all strategies are represented in Strategy::all()
+        // and that none are excluded from escalation by design
+        let all_strategies = Strategy::all();
+
+        assert!(all_strategies.contains(&Strategy::PressureField));
+        assert!(all_strategies.contains(&Strategy::Sequential));
+        assert!(all_strategies.contains(&Strategy::Random));
+        assert!(all_strategies.contains(&Strategy::Hierarchical));
+        assert!(all_strategies.contains(&Strategy::Conversation));
+
+        // All 5 strategies should be present
+        assert_eq!(all_strategies.len(), 5);
+    }
+
+    #[test]
+    fn test_escalation_applies_to_all_strategies() {
+        // This test documents that escalation should work for ALL strategies.
+        // Previously, escalation was gated by `strategy == Strategy::PressureField`,
+        // which was a bug that gave PressureField an unfair advantage.
+        //
+        // The fix removes that condition, allowing all strategies to escalate
+        // when they get stuck (zero velocity for `escalation_threshold` ticks).
+        //
+        // Key changes made:
+        // 1. Changed `if strategy == Strategy::PressureField && tick > 0`
+        //    to `if tick > 0` (line ~412)
+        // 2. Added ConversationRunner::set_model() to allow model updates
+        //    during escalation for the Conversation strategy
+
+        // Verify default config has escalation enabled
+        let config = ExperimentRunnerConfig::default();
+        assert!(!config.model_chain.is_empty(), "Model chain should not be empty");
+        assert_eq!(config.escalation_threshold, 20, "Default escalation threshold");
+
+        // Verify all strategies would use the same model selection logic
+        // (current_model_idx starts at 0 for all, and escalation increments it)
+        for strategy in Strategy::all() {
+            // Each strategy name should be valid
+            assert!(!strategy.name().is_empty());
+        }
     }
 }

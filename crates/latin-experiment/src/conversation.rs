@@ -245,6 +245,16 @@ impl ConversationRunner {
         })
     }
 
+    /// Update the model used for LLM calls (for model escalation).
+    pub fn set_model(&mut self, model: &str) {
+        self.model = model.to_string();
+    }
+
+    /// Get the current model name.
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
     /// Run a complete conversation for one tick.
     /// Returns (final_patch, conversation_state).
     pub async fn run_tick(

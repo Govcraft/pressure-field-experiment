@@ -23,7 +23,7 @@ PARALLEL="${PARALLEL:-1}"
 # Model chain for escalation (smallest to largest) - HuggingFace format for vLLM
 MODEL_CHAIN="Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B"
 MODEL_SINGLE="Qwen/Qwen2.5-0.5B"
-ESCALATION_THRESHOLD=5
+ESCALATION_THRESHOLD=20
 
 # vLLM server configuration
 VLLM_HOST="${VLLM_HOST:-http://localhost:8000}"
