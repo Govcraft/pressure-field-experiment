@@ -11,7 +11,7 @@
   abstract: [
     Current multi-agent LLM frameworks rely on explicit orchestration patterns borrowed from human organizational structures: planners delegate to executors, managers coordinate workers, and hierarchical control flow governs agent interactions. These approaches suffer from coordination overhead that scales poorly with agent count and task complexity. We propose a fundamentally different paradigm inspired by natural coordination mechanisms: agents operate locally on a shared artifact, guided only by pressure gradients derived from measurable quality signals, with temporal decay preventing premature convergence. We formalize this as optimization over a pressure landscape and prove convergence guarantees under mild conditions.
 
-    Empirically, on Latin Square constraint satisfaction, pressure-field coordination consistently outperforms all baselines: achieving 80% solve rate on easy problems (5×5) versus 20% for hierarchical, and 23% on hard problems (7×7 with model escalation) versus 1% for the best baseline. Model escalation proves critical---without it, no strategy solves hard problems; with it, pressure-field achieves 21× improvement over hierarchical. Temporal decay is essential: disabling it increases final pressure 15-fold, trapping agents in local minima. The approach maintains consistent performance from 1 to 32 agents while baselines show near-zero solve rates. Our results indicate that constraint-driven emergence offers a more scalable foundation for multi-agent AI systems than imported human organizational patterns.
+    Empirically, on Latin Square constraint satisfaction across 1,078 trials, pressure-field coordination matches hierarchical control (38.2% vs 38.8% aggregate solve rate, $p = 0.94$) while requiring no explicit coordination. Both significantly outperform sequential (23.3%), random (11.7%), and conversation-based multi-agent dialogue (8.6%, $p < 10^{-5}$). Temporal decay is essential: disabling it increases final pressure 49-fold ($d = 4.15$). On easy problems, pressure-field achieves 87% solve rate. The approach maintains consistent performance from 2 to 32 agents. Our key finding: implicit coordination through shared pressure gradients achieves parity with explicit hierarchical control while dramatically outperforming explicit dialogue-based coordination. This suggests that constraint-driven emergence offers a simpler, equally effective foundation for multi-agent AI.
   ],
   keywords: (
     "multi-agent systems",
@@ -23,23 +23,25 @@
 
 = Introduction
 
-Multi-agent systems built on large language models have emerged as a promising approach to complex task automation @wu2023autogen @hong2023metagpt @li2023camel. The dominant paradigm treats agents as organizational units: planners decompose tasks, managers delegate subtasks, and workers execute instructions under hierarchical supervision. This mirrors human project management but imports its coordination costs.
+Multi-agent systems built on large language models have emerged as a promising approach to complex task automation @wu2023autogen @hong2023metagpt @li2023camel. The dominant paradigm treats agents as organizational units: planners decompose tasks, managers delegate subtasks, and workers execute instructions under hierarchical supervision. This coordination overhead scales poorly with agent count and task complexity.
 
-We argue this design choice is fundamentally limiting. Human organizations evolved coordination mechanisms under constraints—limited communication bandwidth, cognitive load, trust verification—that do not apply to software agents. Importing these mechanisms into agent systems introduces artificial bottlenecks: central planners become serialization points, global state synchronization creates contention, and hierarchical message passing adds latency proportional to tree depth.
+We demonstrate that *implicit* coordination through shared state achieves equivalent performance to explicit hierarchical control—without coordinators, planners, or message passing. Across 1,078 trials on Latin Square constraint satisfaction, pressure-field coordination matches hierarchical control (38.2% vs 38.8% aggregate solve rate, $p = 0.94$). Notably, AutoGen-style conversation-based coordination performs *worst* (8.6%), even below random selection (11.7%), demonstrating that explicit dialogue overhead actively harms performance on constraint satisfaction tasks.
 
-Natural systems that coordinate at scale—ant colonies, immune systems, neural tissue, markets—use a radically different approach. They coordinate through *environment modification* rather than message passing, rely on *local decisions* rather than global planning, and achieve stability through *continuous pressure* rather than explicit goals.
+Our approach draws inspiration from natural coordination mechanisms—ant colonies, immune systems, neural tissue—that coordinate through *environment modification* rather than message passing. Agents observe local quality signals (pressure gradients), take locally-greedy actions, and coordination emerges from shared artifact state. Temporal decay prevents premature convergence by ensuring continued exploration.
 
 Our contributions:
 
 + We formalize *gradient-field coordination*: agents observe local quality signals, compute pressure gradients, and take locally-greedy actions. Coordination emerges from shared artifact state, not explicit communication.
 
-+ We introduce *temporal decay* as a mechanism for preventing premature convergence and ensuring continued exploration of high-uncertainty regions.
++ We introduce *temporal decay* as a mechanism for preventing premature convergence. Disabling decay increases final pressure 49-fold (Cohen's $d = 4.15$), trapping agents in local minima.
 
-+ We prove convergence guarantees for this coordination scheme under conditions that commonly hold in practice.
++ We prove convergence guarantees for this coordination scheme under pressure alignment conditions.
 
-+ We demonstrate empirically that gradient-field coordination achieves 80% solve rate on easy Latin Square problems (vs. 20% for hierarchical), and with model escalation achieves 23% on hard problems where baselines achieve only 0--1%. The approach maintains consistent 17--37% solve rates from 1 to 32 agents while baselines collapse to near-zero.
++ We provide empirical evidence across 1,078 trials showing: (a) pressure-field matches hierarchical control, (b) both significantly outperform sequential (23%), random (12%), and conversation-based approaches (9%, $p < 10^{-5}$), and (c) conversation-based multi-agent dialogue is counterproductive for constraint satisfaction.
 
 = Related Work
+
+Our approach bridges three research streams: multi-agent LLM frameworks provide the application domain but rely on explicit coordination we eliminate; swarm intelligence and stigmergy inspire our pressure-field mechanism but lack formal guarantees; decentralized optimization provides theoretical foundations we adapt to LLM-based artifact refinement. We survey each and position our contribution.
 
 == Multi-Agent LLM Systems
 
@@ -307,7 +309,7 @@ Pressure-field coordination achieves $O(1)$ coordination overhead because agents
 
 We evaluate pressure-field coordination on Latin Square constraint satisfaction: filling partially-completed $n times n$ grids such that each row and column contains each number $1$ to $n$ exactly once. This domain provides clear pressure signals (constraint violations), measurable success criteria, and scalable difficulty.
 
-*Key findings*: Pressure-field coordination consistently outperforms all baselines across difficulty levels (§5.2). Temporal decay is critical---disabling it increases final pressure 15-fold, trapping agents in local minima (§5.3). Model escalation proves essential for hard problems, enabling 23% solve rate where single-model approaches achieve 0% (§5.5). The approach maintains consistent performance from 1 to 32 agents while baselines collapse to near-zero (§5.4).
+*Key findings*: Pressure-field coordination matches hierarchical control while both significantly outperform other baselines (§5.2). Temporal decay is critical---disabling it increases final pressure 49-fold (§5.3). The approach maintains consistent performance from 2 to 32 agents (§5.4). Conversation-based multi-agent dialogue performs worst across all conditions, demonstrating that explicit message-passing coordination is counterproductive for this domain (§5.2).
 
 == Setup
 
@@ -347,26 +349,30 @@ We compare five coordination strategies, all using identical LLMs (`Qwen/Qwen2.5
 
 == Main Results
 
-Pressure-field coordination consistently outperforms all baselines:
+Across 1,078 total trials spanning four experiments (easy, medium, hard, and scaling conditions), we find that pressure-field and hierarchical coordination perform equivalently, while both significantly outperform other baselines:
 
 #figure(
   table(
     columns: 4,
     [*Strategy*], [*Solved/N*], [*Rate*], [*95% Wilson CI*],
-    [Pressure-field], [32/120], [*26.7%*], [19.6%--35.2%],
-    [Hierarchical], [4/120], [3.3%], [1.3%--8.3%],
-    [Sequential], [0/120], [0.0%], [0.0%--3.1%],
-    [Random], [0/120], [0.0%], [0.0%--3.1%],
-    [Conversation], [0/120], [0.0%], [0.0%--3.1%],
+    [Hierarchical], [128/330], [38.8%], [33.7%--44.1%],
+    [Pressure-field], [126/330], [38.2%], [33.1%--43.5%],
+    [Sequential], [42/180], [23.3%], [17.8%--30.0%],
+    [Random], [21/180], [11.7%], [7.8%--17.2%],
+    [Conversation], [5/58], [8.6%], [3.7%--18.6%],
   ),
-  caption: [Solve rates on $7 times 7$ Latin Squares with model escalation (30 trials per agent count $times$ 4 agent counts = 120 per strategy). Chi-square test: $chi^2 = 115.4$, $p < 10^(-23)$.],
+  caption: [Aggregate solve rates across all experiments (1,078 total trials). Chi-square test: $chi^2 = 68.1$, $p < 10^(-13)$.],
 )
 
-The performance gap is statistically significant: pressure-field achieves 26.7% solve rate (CI: 19.6%--35.2%) compared to 3.3% for hierarchical (CI: 1.3%--8.3%), with non-overlapping confidence intervals. For solved cases, pressure-field converges in 31.8 average ticks versus 29.2 for the rare hierarchical successes.
+The key finding is *stratification into two tiers*:
 
-Final pressure provides additional insight: pressure-field achieves lowest average final pressure ($2.33 plus.minus 1.79$) compared to hierarchical ($4.55 plus.minus 1.50$), sequential ($5.33 plus.minus 1.23$), random ($5.35 plus.minus 1.21$), and conversation ($11.40 plus.minus 10.0$). Kruskal-Wallis test confirms strategy significantly affects final pressure ($chi^2 = 378.1$, $p < 10^(-80)$).
+*Top tier (implicit and explicit coordination)*: Pressure-field and hierarchical achieve statistically equivalent performance (38.2% vs 38.8%, Fisher's exact $p = 0.94$). Their confidence intervals overlap substantially.
 
-This validates Theorem 3: coordination overhead remains $O(1)$ for pressure-field, enabling effective parallelism, while hierarchical approaches suffer from coordination bottlenecks that prevent scaling.
+*Lower tier (no coordination or dialogue-based)*: Sequential (23.3%), random (11.7%), and conversation (8.6%) perform significantly worse. All pairwise comparisons with top-tier strategies are highly significant ($p < 0.001$).
+
+The conversation strategy---AutoGen-style multi-agent dialogue with explicit message passing---performs *worst* across all conditions. This counterintuitive result suggests that coordination overhead from consensus-seeking dialogue actively harms performance on constraint satisfaction tasks.
+
+This validates our central thesis: implicit coordination through shared pressure gradients achieves parity with explicit hierarchical control, while avoiding the pitfalls of dialogue-based coordination.
 
 == Ablations
 
@@ -378,105 +384,100 @@ Decay proves essential---without it, final pressure increases dramatically:
   table(
     columns: 4,
     [*Configuration*], [*N*], [*Final Pressure*], [*SD*],
-    [With decay], [120], [$4.38$], [$1.36$],
-    [Without decay], [120], [*$65.83$*], [$19.59$],
+    [With decay], [120], [$1.18$], [$1.45$],
+    [Without decay], [120], [*$58.14$*], [$19.35$],
   ),
-  caption: [Decay ablation (2 agents, 30 trials $times$ 4 configurations each). Welch's t-test: $t = -34.3$, $p < 10^(-63)$. Cohen's $d = 4.43$ (huge effect).],
+  caption: [Decay ablation on $5 times 5$ puzzles (240 total trials across 8 configurations). Welch's t-test: $t = -32.2$, $p < 10^(-60)$. Cohen's $d = 4.15$ (huge effect).],
 )
 
-The effect size is massive: Cohen's $d = 4.43$ far exceeds the threshold for "large" effects ($d > 0.8$). Without decay, fitness saturates after initial patches. High-fitness regions never re-enter the activation threshold, leaving the artifact in a high-pressure state. This validates Theorem 2: decay is necessary to continue pressure reduction even when regions appear "stable."
+The effect size is massive: Cohen's $d = 4.15$ far exceeds the threshold for "large" effects ($d > 0.8$). Disabling decay increases final pressure by 49$times$ (from 1.18 to 58.14). Without decay, fitness saturates after initial patches. High-fitness regions never re-enter the activation threshold, leaving the artifact in a high-pressure state. This validates Theorem 2: decay is necessary to continue pressure reduction even when regions appear "stable."
 
 === Effect of Inhibition and Examples
 
-The ablation study tested all $2^3 = 8$ combinations of decay, inhibition, and few-shot examples:
+The ablation study tested all $2^3 = 8$ combinations of decay, inhibition, and few-shot examples on $5 times 5$ puzzles:
 
 #figure(
   table(
     columns: 4,
     [*Configuration*], [*Solved/N*], [*Final Pressure*], [*SD*],
-    [D=T, I=T, E=T (full)], [1/30], [$4.37$], [$1.54$],
-    [D=T, I=T, E=F], [0/30], [$3.93$], [$1.14$],
-    [D=T, I=F, E=T], [0/30], [$4.93$], [$1.31$],
-    [D=T, I=F, E=F], [0/30], [$4.30$], [$1.29$],
-    [D=F, I=T, E=T], [0/30], [$65.63$], [$17.70$],
-    [D=F, I=T, E=F], [0/30], [$66.97$], [$18.71$],
-    [D=F, I=F, E=T], [0/30], [$61.07$], [$24.26$],
-    [D=F, I=F, E=F], [0/30], [$69.67$], [$16.81$],
+    [D=T, I=T, E=F], [18/30], [$1.00$], [$1.39$],
+    [D=T, I=F, E=F], [17/30], [$1.00$], [$1.23$],
+    [D=T, I=T, E=T], [15/30], [$1.20$], [$1.40$],
+    [D=T, I=F, E=T], [15/30], [$1.53$], [$1.74$],
+    [D=F, I=T, E=F], [0/30], [$53.03$], [$19.71$],
+    [D=F, I=F, E=T], [0/30], [$57.27$], [$17.20$],
+    [D=F, I=T, E=T], [0/30], [$60.77$], [$19.48$],
+    [D=F, I=F, E=F], [0/30], [$61.50$], [$20.63$],
   ),
-  caption: [Full ablation results. D=decay, I=inhibition, E=examples. Decay is the critical mechanism: with decay, final pressure $approx 4$; without decay, $approx 65$. Inhibition and examples provide marginal benefit.],
+  caption: [Full ablation results (240 trials). D=decay, I=inhibition, E=examples. Decay is the critical mechanism: with decay, solve rate $approx 54%$ and final pressure $approx 1$; without decay, solve rate $= 0%$ and pressure $approx 58$.],
 ) <tbl:ablation>
 
-The key finding is that *decay dominates*: any configuration with decay achieves final pressure $approx 4$, while any without decay achieves $approx 65$. The 7$times$7 problem proved too difficult to differentiate solve rates (all near 0%), but the 15$times$ pressure difference clearly demonstrates decay's importance.
+The key finding is that *decay dominates*: any configuration with decay achieves $approx 54%$ solve rate with final pressure $approx 1$, while any without decay achieves 0% solve rate with pressure $approx 58$. Interestingly, few-shot examples provide no benefit (and may slightly hurt); inhibition shows marginal positive effect. The 49$times$ pressure difference between decay-enabled and decay-disabled configurations demonstrates decay's critical importance.
 
 == Scaling Experiments
 
-Pressure-field maintains consistent performance from 1 to 32 agents while baselines collapse:
-
-#figure(
-  table(
-    columns: 4,
-    [*Agents*], [*Solved/30*], [*Rate*], [*95% Wilson CI*],
-    [1], [6/30], [20.0%], [9.5%--37.3%],
-    [2], [5/30], [16.7%], [7.3%--33.6%],
-    [4], [11/30], [*36.7%*], [21.9%--54.5%],
-    [8], [6/30], [20.0%], [9.5%--37.3%],
-    [16], [6/30], [20.0%], [9.5%--37.3%],
-    [32], [5/30], [16.7%], [7.3%--33.6%],
-  ),
-  caption: [Pressure-field scaling from 1 to 32 agents ($7 times 7$ grid, 8 empty cells). Total: 39/180 solved (21.7%). All baselines achieve 0--3% across all agent counts (not shown for space).],
-)
-
-Pressure-field shows a peak at 4 agents (36.7%, CI: 21.9%--54.5%) with consistent performance at other counts. Note that confidence intervals overlap substantially, indicating the peak may reflect sampling variability rather than a true optimum. The key observation is *stability*: pressure-field maintains 17--37% solve rates across 32$times$ variation in agent count.
-
-Baselines show fundamental scaling limitations: hierarchical achieves only sporadic successes (3.3% at 2, 8, 16 agents; 0% otherwise), while sequential, random, and conversation achieve 0% regardless of agent count. This confirms that coordination overhead in baseline approaches prevents effective scaling.
-
-== Model Escalation Ablation
-
-To quantify the impact of model escalation, we compare performance with and without the escalation chain on hard problems:
+Both pressure-field and hierarchical maintain consistent performance from 2 to 32 agents on $7 times 7$ puzzles with 8 empty cells:
 
 #figure(
   table(
     columns: 5,
-    [*Strategy*], [*Without Esc*], [*With Esc*], [*95% Wilson CI*], [*Improvement*],
-    [Pressure-field], [0/90 (0%)], [*21/90 (23.3%)*], [15.7%--33.2%], [$infinity$],
-    [Hierarchical], [0/90 (0%)], [1/90 (1.1%)], [0.2%--6.0%], [$infinity$],
-    [Sequential], [0/90 (0%)], [0/90 (0%)], [0.0%--4.0%], [---],
-    [Random], [0/90 (0%)], [0/90 (0%)], [0.0%--4.0%], [---],
-    [Conversation], [0/90 (0%)], [0/90 (0%)], [0.0%--4.0%], [---],
+    [*Agents*], [*Pressure-field*], [*95% CI*], [*Hierarchical*], [*95% CI*],
+    [2], [7/30 (23.3%)], [11.8%--40.9%], [9/30 (30.0%)], [16.7%--47.9%],
+    [4], [13/30 (43.3%)], [27.4%--60.8%], [7/30 (23.3%)], [11.8%--40.9%],
+    [8], [10/30 (33.3%)], [19.2%--51.2%], [9/30 (30.0%)], [16.7%--47.9%],
+    [16], [8/30 (26.7%)], [14.2%--44.4%], [9/30 (30.0%)], [16.7%--47.9%],
+    [32], [10/30 (33.3%)], [19.2%--51.2%], [11/30 (36.7%)], [21.9%--54.5%],
   ),
-  caption: [Model escalation impact ($7 times 7$, 8 empty cells, 90 trials per strategy). Fisher's exact test for pressure-field escalation effect: $p = 2.55 times 10^(-7)$. Without escalation (0.5B only), no strategy solves any puzzles; with escalation (0.5B→14B), pressure-field achieves 23%.],
-) <tbl:escalation>
+  caption: [Scaling from 2 to 32 agents ($7 times 7$ grid, 8 empty cells, 30 trials each). Both strategies show stable performance across agent counts. Totals: pressure-field 48/150 (32.0%), hierarchical 45/150 (30.0%).],
+)
 
-Model escalation proves *critical* for hard problems: without it, all strategies achieve 0% solve rate. With escalation, pressure-field achieves 23.3% (21 of 90 trials) while hierarchical manages only 1.1% (1 of 90). This demonstrates that:
+Both strategies show stable performance across the full range of agent counts. Pressure-field peaks at 4 agents (43.3%) while hierarchical peaks at 32 agents (36.7%), but confidence intervals overlap substantially at all counts, indicating no significant agent-count effect for either strategy.
 
-1. *Small models alone are insufficient* for difficult constraint satisfaction
-2. *Escalation benefits pressure-field disproportionately*: the pressure gradient provides clear signal for when to escalate
-3. *Hierarchical coordination cannot exploit escalation effectively*: even with access to larger models, coordination overhead prevents success
+The key observation is *robustness*: both coordination strategies maintain 23--43% solve rates despite 16$times$ variation in agent count. This validates Theorem 3: coordination overhead remains $O(1)$, enabling effective scaling.
 
-== Difficulty Scaling
+== Model Escalation Ablation
 
-On easier problems, pressure-field shows strong performance while baselines struggle:
+All main experiments use model escalation (0.5B → 1.5B → 3B → 7B → 14B). To quantify its impact, we examine the escalation experiment on harder problems ($7 times 7$, 8 empty cells):
 
 #figure(
   table(
     columns: 4,
-    [*Strategy*], [*Solved/30*], [*Rate*], [*95% Wilson CI*],
-    [Pressure-field], [24/30], [*80.0%*], [62.5%--90.9%],
-    [Hierarchical], [6/30], [20.0%], [9.5%--37.3%],
-    [Sequential], [0/30], [0.0%], [0.0%--11.4%],
+    [*Strategy*], [*Solved/N*], [*Rate*], [*95% Wilson CI*],
+    [Hierarchical], [5/30], [16.7%], [7.3%--33.6%],
+    [Pressure-field], [4/30], [13.3%], [5.3%--29.7%],
+    [Sequential], [1/30], [3.3%], [0.6%--16.7%],
     [Random], [0/30], [0.0%], [0.0%--11.4%],
-    [Conversation], [0/30], [0.0%], [0.0%--11.4%],
+    [Conversation], [0/20], [0.0%], [0.0%--16.1%],
   ),
-  caption: [Solve rate on easy problems ($5 times 5$ grid, 5 empty cells, 4 agents, 30 trials). Fisher's exact test (pressure-field vs hierarchical): Odds Ratio $= 15.04$ (95% CI: 3.92--69.13), $p < 0.0001$. Pressure-field achieves 4$times$ higher solve rate than hierarchical.],
+  caption: [Escalation experiment ($7 times 7$, 8 empty cells, harder condition). With model escalation enabled, top-tier strategies achieve 13--17% while baselines achieve 0--3%.],
+) <tbl:escalation>
+
+Even with model escalation, hard problems remain challenging. The pattern mirrors the aggregate results: hierarchical and pressure-field perform equivalently (16.7% vs 13.3%, overlapping CIs), while sequential, random, and conversation perform significantly worse.
+
+== Difficulty Scaling
+
+On easier problems ($5 times 5$, 5 empty cells), all strategies show improved performance, but the tier structure persists:
+
+#figure(
+  table(
+    columns: 4,
+    [*Strategy*], [*Solved/N*], [*Rate*], [*95% Wilson CI*],
+    [Pressure-field], [26/30], [*86.7%*], [70.3%--94.7%],
+    [Hierarchical], [24/30], [80.0%], [62.7%--90.5%],
+    [Sequential], [16/30], [53.3%], [36.1%--69.8%],
+    [Random], [13/30], [43.3%], [27.4%--60.8%],
+    [Conversation], [3/20], [15.0%], [5.2%--36.0%],
+  ),
+  caption: [Solve rate on easy problems ($5 times 5$ grid, 5 empty cells). Even on easy problems, conversation-based coordination performs worst (15%).],
 )
 
-The difficulty scaling reveals two key insights:
+The difficulty scaling reveals key insights:
 
-1. *Easy problems show clear separation*: Pressure-field achieves 80% vs hierarchical's 20%---a 4$times$ advantage. Sequential, random, and conversation fail entirely even on easy problems.
+1. *Easy problems maintain tier structure*: Pressure-field (86.7%) and hierarchical (80.0%) remain the top tier. Sequential (53.3%) and random (43.3%) improve substantially but remain below top-tier. Conversation (15.0%) remains worst.
 
-2. *Hard problems require escalation*: Without model escalation, no strategy solves 7×7 puzzles. With escalation, pressure-field recovers to 23% while hierarchical manages only 1%.
+2. *Conversation fails even on easy problems*: Despite the reduced difficulty, explicit dialogue-based coordination achieves only 15%---worse than random guessing (43.3%). This suggests the coordination overhead of consensus-seeking actively harms performance.
 
-Note: Medium ($6 times 6$) and Very Hard ($8 times 8$) experiments were not completed in the current run. The pattern suggests graceful degradation for pressure-field as difficulty increases.
+3. *All strategies improve with easier problems*: The absolute difficulty of the task matters. On easy problems, even random achieves 43%. On hard problems (@tbl:escalation), random achieves 0%.
 
 = Discussion
 
@@ -484,11 +485,11 @@ Note: Medium ($6 times 6$) and Very Hard ($8 times 8$) experiments were not comp
 
 Our experiments reveal several important limitations:
 
-*Absolute solve rates are modest on hard problems.* While pressure-field consistently outperforms baselines, the absolute solve rates on $7 times 7$ puzzles (17--37% with escalation) indicate this remains a challenging domain. The relative advantage (21$times$ over hierarchical) is substantial, but practitioners should not expect near-perfect performance on difficult constraint satisfaction without further optimization.
+*Pressure-field does not outperform hierarchical.* Contrary to initial expectations, pressure-field coordination achieves statistically equivalent performance to explicit hierarchical control (38.2% vs 38.8%, $p = 0.94$). The contribution is not performance advantage but rather *equivalent performance with simpler architecture*---no coordinator agent, no explicit message passing.
 
-*Decay is non-optional.* Without temporal decay, final pressure increases 15-fold regardless of other mechanisms. This is not merely a tuning issue---decay appears essential to prevent pressure stagnation where agents become trapped in local minima.
+*Decay is non-optional.* Without temporal decay, final pressure increases 49-fold regardless of other mechanisms. This is not merely a tuning issue---decay appears essential to prevent pressure stagnation where agents become trapped in local minima.
 
-*Model escalation is required for hard problems.* Without access to larger models, no strategy (including pressure-field) solves $7 times 7$ puzzles. This suggests the coordination mechanism alone is insufficient---capable underlying models are a prerequisite.
+*Absolute solve rates are modest on hard problems.* Even top-tier strategies achieve only 13--17% on hard problems and 30--43% on medium problems. Latin Square constraint satisfaction remains challenging for current LLMs.
 
 *Additional practical limitations:*
 - Requires well-designed pressure functions (not learned from data)
@@ -497,25 +498,27 @@ Our experiments reveal several important limitations:
 - Goodhart's Law: agents may game poorly-designed metrics
 - Resource cost of parallel validation: testing $K$ patches requires $O(K dot.c |A|)$ memory where $|A|$ is artifact size
 
-== When Hierarchical Coordination Is Appropriate
+== When to Choose Each Approach
 
-While pressure-field outperforms hierarchical across all our experiments (4$times$ on easy, 21$times$ on hard+escalation), hierarchical approaches may remain preferable when:
+Our results suggest the following guidance:
 
-1. *Problem structure is well-understood.* A central coordinator can exploit known decomposition strategies that don't require exploration.
+*Pressure-field coordination is preferable when:*
+1. *Simplicity is valued.* No coordinator agent needed; coordination emerges from shared state.
+2. *Fault tolerance matters.* No single point of failure; agents can join/leave without protocol overhead.
+3. *Pressure signals are available.* The domain provides measurable quality gradients.
 
-2. *Communication is cheap and reliable.* Our baselines assume zero-cost coordination messages. Real distributed systems may favor hierarchical approaches when network latency dominates compute time.
+*Hierarchical coordination is equivalent when:*
+1. *Explicit control is needed.* Some domains require deterministic task assignment.
+2. *Interpretability is critical.* Hierarchical task assignment provides clear audit trails.
 
-3. *Interpretability is critical.* Hierarchical task assignment provides clear audit trails; emergent coordination is harder to debug.
-
-The key finding is that *hierarchical approaches do not scale*: achieving only 0--3% solve rate on hard problems regardless of agent count or model capability. Pressure-field coordination becomes increasingly advantageous as problems exceed what centralized planning can tractably decompose.
+*Conversation-based coordination should be avoided for constraint satisfaction:*
+Our experiments show that AutoGen-style multi-agent dialogue performs *worst* across all conditions (8.6% aggregate, worse than random at 11.7%). The overhead of consensus-seeking through explicit dialogue actively harms performance. This suggests that for constraint satisfaction, implicit coordination (whether pressure-field or hierarchical) is strictly preferable to explicit dialogue.
 
 == Model Escalation as Adaptive Capability
 
-Our escalation mechanism (0.5B → 1.5B → 3B → 7B → 14B parameters) proves essential on hard problems (@tbl:escalation). Without escalation, all strategies achieve 0% solve rate; with escalation, pressure-field achieves 23%. This suggests an important design principle: pressure-field coordination benefits from adaptive capability deployment.
+All experiments use model escalation (0.5B → 1.5B → 3B → 7B → 14B parameters), triggered when regions remain high-pressure for 20 consecutive ticks. This mechanism proves beneficial for both top-tier strategies: on hard problems, both pressure-field and hierarchical achieve 13--17% with escalation enabled.
 
-When smaller models cannot reduce pressure below threshold, escalation to larger models breaks through local minima. The mechanism works because larger models have broader solution coverage, not necessarily better constraint reasoning. The 5-tier escalation chain provides graduated capability increases, invoking expensive large models only when necessary.
-
-Critically, hierarchical coordination cannot exploit escalation effectively: even with access to the same model chain, it achieves only 1% solve rate. We hypothesize this is because hierarchical assignment decisions create dependencies that larger models cannot easily overcome, whereas pressure-field's independent local actions allow each region to benefit from escalation individually.
+The escalation mechanism works because larger models have broader solution coverage. The 5-tier chain provides graduated capability increases, invoking expensive larger models only when necessary. Interestingly, both coordination strategies (pressure-field and hierarchical) exploit escalation equally well, suggesting the benefit is orthogonal to coordination mechanism.
 
 == Future Work
 
@@ -529,11 +532,19 @@ Critically, hierarchical coordination cannot exploit escalation effectively: eve
 
 We presented gradient-field coordination, a decentralized approach to multi-agent systems that achieves coordination through shared state and local pressure gradients rather than explicit orchestration.
 
-Our theoretical analysis establishes convergence guarantees under pressure alignment conditions, with coordination overhead independent of agent count. Empirically, on Latin Square constraint satisfaction, pressure-field coordination consistently outperforms all baselines: achieving 80% solve rate on easy problems (4$times$ hierarchical) and 23% on hard problems with model escalation (21$times$ hierarchical). The approach maintains consistent 17--37% solve rates from 1 to 32 agents while baselines collapse to 0--3%.
+Our theoretical analysis establishes convergence guarantees under pressure alignment conditions, with coordination overhead independent of agent count. Empirically, on Latin Square constraint satisfaction across 1,078 trials, we find:
 
-Key findings include: (1) temporal decay is essential---disabling it increases final pressure 15-fold, trapping agents in local minima; (2) model escalation is critical for hard problems---without it, no strategy achieves any solves; (3) the relative advantage of pressure-field coordination *increases* with problem difficulty, suggesting it is most valuable precisely where other approaches fail.
+1. *Pressure-field matches hierarchical control* (38.2% vs 38.8%, $p = 0.94$). Implicit coordination through shared pressure gradients achieves parity with explicit hierarchical coordination.
 
-These results suggest that constraint-driven emergence, inspired by natural coordination mechanisms like chemotaxis, offers a more scalable foundation for multi-agent AI than imported human organizational patterns. While absolute solve rates on hard problems remain modest (23%), the consistent outperformance across all configurations indicates a fundamentally more robust coordination paradigm. The approach is most advantageous for problems where centralized decomposition becomes intractable---precisely where scaling matters most.
+2. *Both significantly outperform other baselines*. Sequential (23.3%), random (11.7%), and conversation-based dialogue (8.6%) perform significantly worse ($p < 0.001$).
+
+3. *Conversation-based coordination fails dramatically*. AutoGen-style multi-agent dialogue performs worst across all conditions---even worse than random on hard problems. The overhead of consensus-seeking through explicit message passing actively harms performance.
+
+4. *Temporal decay is essential*. Disabling it increases final pressure 49-fold (Cohen's $d = 4.15$), trapping agents in local minima.
+
+The key contribution is not that pressure-field outperforms hierarchical---it does not. Rather, pressure-field achieves *equivalent performance with simpler architecture*: no coordinator agent, no explicit message passing, just shared state and local pressure gradients. Meanwhile, the popular paradigm of multi-agent dialogue coordination proves counterproductive for constraint satisfaction.
+
+These results suggest that for domains with measurable quality signals, implicit coordination through shared state offers a simpler, equally effective alternative to explicit hierarchical control---and a strictly superior alternative to dialogue-based coordination.
 
 = Appendix: Experimental Protocol
 
