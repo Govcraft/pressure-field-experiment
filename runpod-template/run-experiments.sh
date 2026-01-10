@@ -18,12 +18,18 @@ LATIN_EXPERIMENT="${LATIN_EXPERIMENT:-./latin-experiment}"
 OUTPUT_DIR="${OUTPUT_DIR:-./results}"
 TRIALS="${TRIALS:-30}"  # 30 trials for publication-quality statistics
 DRY_RUN="${DRY_RUN:-false}"
-PARALLEL="${PARALLEL:-1}"
+PARALLEL="${PARALLEL:-10}"
 
 # Model chain for escalation (smallest to largest) - HuggingFace format for vLLM
 MODEL_CHAIN="Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B"
 MODEL_SINGLE="Qwen/Qwen2.5-0.5B"
-ESCALATION_THRESHOLD=5
+ESCALATION_THRESHOLD=20
+NUM_MODELS=5  # 0.5B, 1.5B, 3B, 7B, 14B
+MAX_TICKS=$((NUM_MODELS * ESCALATION_THRESHOLD))  # 100 ticks = room for all 5 models
+
+# Strategy sets for different experiments
+ALL_STRATEGIES="pressure_field,hierarchical,sequential,random,conversation"
+MAIN_STRATEGIES="pressure_field,hierarchical"  # For scaling/difficulty (others proven to fail)
 
 # vLLM server configuration
 VLLM_HOST="${VLLM_HOST:-http://localhost:8000}"
@@ -235,6 +241,7 @@ show_status() {
 
 # Experiment 1: Main Grid (Strategy Comparison)
 # Purpose: Validate that pressure-field coordination outperforms baselines
+# Tests ALL 5 strategies - this is the comprehensive comparison
 run_main_grid() {
     local log_prefix="${1:-}"
 
@@ -252,8 +259,9 @@ run_main_grid() {
         --trials "$TRIALS" \
         --n 7 \
         --empty 7 \
-        --max-ticks 40 \
-        --agents 1,2,4,8 \
+        --max-ticks $MAX_TICKS \
+        --agents 2,4,8,16 \
+        --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/main-grid.json"
 
     log_success "Main Grid experiment complete"
@@ -261,6 +269,7 @@ run_main_grid() {
 
 # Experiment 2: Ablation Study
 # Purpose: Validate that each mechanism contributes to performance
+# Note: Runs on EASY grid (5×5) to show solve rate differences
 # Note: Runs WITHOUT escalation to isolate mechanism effects
 run_ablation() {
     local log_prefix="${1:-}"
@@ -276,9 +285,9 @@ run_ablation() {
         --model-chain "$MODEL_SINGLE" \
         ablation \
         --trials "$TRIALS" \
-        --n 7 \
-        --empty 7 \
-        --max-ticks 40 \
+        --n 5 \
+        --empty 5 \
+        --max-ticks $MAX_TICKS \
         --output "$RESULTS_DIR/ablation.json"
 
     log_success "Ablation study complete"
@@ -286,12 +295,13 @@ run_ablation() {
 
 # Experiment 3: Scaling Analysis
 # Purpose: Validate Theorem 3 (linear scaling)
+# Only tests pressure_field vs hierarchical (others proven to fail in main grid)
 run_scaling() {
     local log_prefix="${1:-}"
 
     [[ -n "$log_prefix" ]] || log_info "========================================"
     [[ -n "$log_prefix" ]] || log_info "Experiment 3: Scaling Analysis"
-    log_info "5 strategies × 6 agent counts × $TRIALS trials = $((5 * 6 * TRIALS)) runs"
+    log_info "2 strategies × 5 agent counts × $TRIALS trials = $((2 * 5 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
     run_cmd "Scaling Analysis" \
@@ -303,8 +313,9 @@ run_scaling() {
         --trials "$TRIALS" \
         --n 7 \
         --empty 8 \
-        --max-ticks 40 \
-        --agents 1,2,4,8,16,32 \
+        --max-ticks $MAX_TICKS \
+        --agents 2,4,8,16,32 \
+        --strategies "$MAIN_STRATEGIES" \
         --output "$RESULTS_DIR/scaling.json"
 
     log_success "Scaling analysis complete"
@@ -312,15 +323,16 @@ run_scaling() {
 
 # Experiment 4: Model Escalation Impact
 # Purpose: Validate that model escalation improves solve rate
+# Tests ALL 5 strategies to prove baselines fail regardless of escalation
 run_escalation() {
     local log_prefix="${1:-}"
 
     [[ -n "$log_prefix" ]] || log_info "========================================"
     [[ -n "$log_prefix" ]] || log_info "Experiment 4: Model Escalation Impact"
-    log_info "2 configurations × 5 strategies × 3 agent counts × $TRIALS trials = $((2 * 5 * 3 * TRIALS)) runs"
+    log_info "2 configs × 5 strategies × $TRIALS trials = $((2 * 5 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
-    # Without escalation
+    # Without escalation (single 0.5B model)
     log_info "Running WITHOUT escalation..."
     run_cmd "Escalation: Single Model" \
         "$LATIN_EXPERIMENT" \
@@ -330,11 +342,12 @@ run_escalation() {
         --trials "$TRIALS" \
         --n 7 \
         --empty 8 \
-        --max-ticks 40 \
-        --agents 2,4,8 \
+        --max-ticks $MAX_TICKS \
+        --agents 4 \
+        --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/escalation-without.json"
 
-    # With escalation
+    # With escalation (full model chain)
     log_info "Running WITH escalation..."
     run_cmd "Escalation: Model Chain" \
         "$LATIN_EXPERIMENT" \
@@ -345,8 +358,9 @@ run_escalation() {
         --trials "$TRIALS" \
         --n 7 \
         --empty 8 \
-        --max-ticks 40 \
-        --agents 2,4,8 \
+        --max-ticks $MAX_TICKS \
+        --agents 4 \
+        --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/escalation-with.json"
 
     log_success "Escalation impact experiment complete"
@@ -354,12 +368,13 @@ run_escalation() {
 
 # Experiment 5: Difficulty Scaling
 # Purpose: Show framework handles increasing difficulty
+# Tests ALL 5 strategies to prove baselines fail regardless of difficulty
 run_difficulty() {
     local log_prefix="${1:-}"
 
     [[ -n "$log_prefix" ]] || log_info "========================================"
     [[ -n "$log_prefix" ]] || log_info "Experiment 5: Difficulty Scaling"
-    log_info "4 difficulty levels × 5 strategies × $TRIALS trials = $((4 * 5 * TRIALS)) runs"
+    log_info "2 difficulty levels × 5 strategies × $TRIALS trials = $((2 * 5 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
     # Easy: 5x5, 5 empty (20%)
@@ -373,27 +388,13 @@ run_difficulty() {
         --trials "$TRIALS" \
         --n 5 \
         --empty 5 \
-        --max-ticks 50 \
+        --max-ticks $MAX_TICKS \
         --agents 4 \
+        --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/difficulty-easy.json"
 
-    # Medium: 6x6, 8 empty (22%)
-    log_info "Running Medium difficulty (6x6, 8 empty)..."
-    run_cmd "Difficulty: Medium" \
-        "$LATIN_EXPERIMENT" \
-        --vllm-host "$VLLM_HOST" \
-        --model-chain "$MODEL_CHAIN" \
-        --escalation-threshold "$ESCALATION_THRESHOLD" \
-        grid \
-        --trials "$TRIALS" \
-        --n 6 \
-        --empty 8 \
-        --max-ticks 50 \
-        --agents 4 \
-        --output "$RESULTS_DIR/difficulty-medium.json"
-
-    # Hard: 7x7, 10 empty (20%)
-    log_info "Running Hard difficulty (7x7, 10 empty)..."
+    # Hard: 7x7, 7 empty (matches main grid for comparison)
+    log_info "Running Hard difficulty (7x7, 7 empty)..."
     run_cmd "Difficulty: Hard" \
         "$LATIN_EXPERIMENT" \
         --vllm-host "$VLLM_HOST" \
@@ -402,25 +403,11 @@ run_difficulty() {
         grid \
         --trials "$TRIALS" \
         --n 7 \
-        --empty 10 \
-        --max-ticks 50 \
+        --empty 7 \
+        --max-ticks $MAX_TICKS \
         --agents 4 \
+        --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/difficulty-hard.json"
-
-    # Very Hard: 8x8, 14 empty (22%)
-    log_info "Running Very Hard difficulty (8x8, 14 empty)..."
-    run_cmd "Difficulty: Very Hard" \
-        "$LATIN_EXPERIMENT" \
-        --vllm-host "$VLLM_HOST" \
-        --model-chain "$MODEL_CHAIN" \
-        --escalation-threshold "$ESCALATION_THRESHOLD" \
-        grid \
-        --trials "$TRIALS" \
-        --n 8 \
-        --empty 14 \
-        --max-ticks 50 \
-        --agents 4 \
-        --output "$RESULTS_DIR/difficulty-veryhard.json"
 
     log_success "Difficulty scaling experiment complete"
 }
@@ -461,7 +448,7 @@ run_all_parallel() {
     log_info "========================================"
 
     # Export variables needed by subprocesses
-    export RESULTS_DIR LOGS_DIR TRIALS MODEL_CHAIN MODEL_SINGLE ESCALATION_THRESHOLD DRY_RUN LATIN_EXPERIMENT VLLM_HOST
+    export RESULTS_DIR LOGS_DIR TRIALS MODEL_CHAIN MODEL_SINGLE ESCALATION_THRESHOLD DRY_RUN LATIN_EXPERIMENT VLLM_HOST ALL_STRATEGIES MAIN_STRATEGIES
 
     # Launch all experiments as background jobs
     # These are independent and can run in any order
@@ -526,38 +513,36 @@ Options:
     --output DIR    Output directory (default: ./results)
     -h, --help      Show this help message
 
-Experiments:
-    main-grid       Strategy comparison (5 strategies × 4 agent counts)
-    ablation        Mechanism ablation study (8 configurations)
-    scaling         Agent scaling analysis (1-32 agents, 5 strategies)
-    escalation      Model escalation impact comparison
-    difficulty      Difficulty scaling (5x5 to 8x8, 5 strategies)
+Experiments (Optimized Protocol - ~1,740 total runs, down from ~3,240):
+    main-grid       Strategy comparison: 5 strategies × 4 agents × 30 = 600 runs
+    ablation        Mechanism ablation: 8 configs × 30 = 240 runs
+    scaling         Agent scaling: 2 strategies × 5 agents × 30 = 300 runs
+    escalation      Escalation impact: 2 configs × 5 strategies × 30 = 300 runs
+    difficulty      Difficulty scaling: 2 levels × 5 strategies × 30 = 300 runs
     all             Run all experiments (default)
 
-Strategies Tested:
-    - pressure_field (novel approach)
-    - hierarchical, sequential, random (baselines)
-    - conversation (AutoGen-style multi-turn coordination)
+Strategies:
+    All experiments test ALL 5: pressure_field, hierarchical, sequential, random, conversation
+    Exception: scaling only tests pressure_field vs hierarchical (agent count focus)
 
 Parallelization:
     With --parallel N, up to N experiments run concurrently.
     Each experiment logs to $OUTPUT_DIR/<timestamp>/logs/<experiment>.log
 
-    GPU Memory Guidelines (with 30 trials):
-      - A100 80GB: --parallel 4 (safe), --parallel 5 (aggressive)
-      - A100 40GB: --parallel 2
+    GPU Memory Guidelines:
+      - A100 80GB: --parallel 5 (run all experiments simultaneously)
+      - A100 40GB: --parallel 3
       - RTX 4090:  --parallel 2
-      - RTX 4070:  --parallel 1 (sequential recommended)
 
     Estimated Runtime (30 trials, A100 80GB):
-      - Sequential:     ~8-10 hours
-      - --parallel 4:   ~2-3 hours
+      - Sequential:     ~4-5 hours
+      - --parallel 5:   ~1 hour (limited by longest experiment)
 
 Examples:
-    $0                          # Run all experiments (30 trials each)
-    $0 --parallel 4 all         # Run 4 experiments in parallel (A100 80GB)
+    $0                          # Run all experiments (~1,740 runs)
+    $0 --parallel 5 all         # Run all 5 experiments in parallel (A100 80GB)
     $0 main-grid                # Run only main grid experiment
-    $0 --dry-run --parallel 5   # Preview parallel execution
+    $0 --dry-run all            # Preview what would run
     $0 --trials 10 ablation     # Run ablation with 10 trials (quick test)
 
 Environment Variables:

@@ -183,7 +183,7 @@ export VLLM_HOST=http://localhost:8001  # Start with smallest model
 export LATIN_EXPERIMENT=/app/latin-experiment
 export OUTPUT_DIR=/workspace/results
 export TRIALS=${TRIALS:-30}
-export PARALLEL=${PARALLEL:-4}
+export PARALLEL=${PARALLEL:-10}
 
 echo "Configuration:"
 echo "  TRIALS=$TRIALS"

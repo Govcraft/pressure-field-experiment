@@ -17,7 +17,7 @@ ENV LATIN_EXPERIMENT=/app/latin-experiment
 ENV OUTPUT_DIR=/workspace/results
 ENV MODELS_DIR=/workspace/models
 ENV TRIALS=30
-ENV PARALLEL=4
+ENV PARALLEL=10
 # Set FORCE_REDOWNLOAD=1 to clear and re-download all models
 ENV FORCE_REDOWNLOAD=0
 

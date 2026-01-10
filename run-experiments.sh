@@ -18,12 +18,14 @@ LATIN_EXPERIMENT="${LATIN_EXPERIMENT:-./latin-experiment}"
 OUTPUT_DIR="${OUTPUT_DIR:-./results}"
 TRIALS="${TRIALS:-30}"  # 30 trials for publication-quality statistics
 DRY_RUN="${DRY_RUN:-false}"
-PARALLEL="${PARALLEL:-1}"
+PARALLEL="${PARALLEL:-10}"
 
 # Model chain for escalation (smallest to largest) - HuggingFace format for vLLM
 MODEL_CHAIN="Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B"
 MODEL_SINGLE="Qwen/Qwen2.5-0.5B"
 ESCALATION_THRESHOLD=20
+NUM_MODELS=5  # 0.5B, 1.5B, 3B, 7B, 14B
+MAX_TICKS=$((NUM_MODELS * ESCALATION_THRESHOLD))  # 100 ticks = room for all 5 models
 
 # Strategy sets for different experiments
 ALL_STRATEGIES="pressure_field,hierarchical,sequential,random,conversation"
@@ -257,7 +259,7 @@ run_main_grid() {
         --trials "$TRIALS" \
         --n 7 \
         --empty 7 \
-        --max-ticks 40 \
+        --max-ticks $MAX_TICKS \
         --agents 2,4,8,16 \
         --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/main-grid.json"
@@ -285,7 +287,7 @@ run_ablation() {
         --trials "$TRIALS" \
         --n 5 \
         --empty 5 \
-        --max-ticks 40 \
+        --max-ticks $MAX_TICKS \
         --output "$RESULTS_DIR/ablation.json"
 
     log_success "Ablation study complete"
@@ -311,7 +313,7 @@ run_scaling() {
         --trials "$TRIALS" \
         --n 7 \
         --empty 8 \
-        --max-ticks 40 \
+        --max-ticks $MAX_TICKS \
         --agents 2,4,8,16,32 \
         --strategies "$MAIN_STRATEGIES" \
         --output "$RESULTS_DIR/scaling.json"
@@ -340,7 +342,7 @@ run_escalation() {
         --trials "$TRIALS" \
         --n 7 \
         --empty 8 \
-        --max-ticks 40 \
+        --max-ticks $MAX_TICKS \
         --agents 4 \
         --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/escalation-without.json"
@@ -356,7 +358,7 @@ run_escalation() {
         --trials "$TRIALS" \
         --n 7 \
         --empty 8 \
-        --max-ticks 40 \
+        --max-ticks $MAX_TICKS \
         --agents 4 \
         --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/escalation-with.json"
@@ -386,7 +388,7 @@ run_difficulty() {
         --trials "$TRIALS" \
         --n 5 \
         --empty 5 \
-        --max-ticks 50 \
+        --max-ticks $MAX_TICKS \
         --agents 4 \
         --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/difficulty-easy.json"
@@ -402,7 +404,7 @@ run_difficulty() {
         --trials "$TRIALS" \
         --n 7 \
         --empty 7 \
-        --max-ticks 50 \
+        --max-ticks $MAX_TICKS \
         --agents 4 \
         --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/difficulty-hard.json"

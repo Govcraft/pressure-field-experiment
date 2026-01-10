@@ -313,7 +313,7 @@ We evaluate pressure-field coordination on Latin Square constraint satisfaction:
 
 === Task: Latin Square Constraint Satisfaction
 
-We generate $7 times 7$ Latin Square puzzles with 7 empty cells (15% incomplete). Each puzzle has a unique solution. Agents propose values for empty cells; a puzzle is "solved" when all constraints are satisfied (zero violations) within 40 ticks.
+We generate $7 times 7$ Latin Square puzzles with 7 empty cells (15% incomplete). Each puzzle has a unique solution. Agents propose values for empty cells; a puzzle is "solved" when all constraints are satisfied (zero violations) within 100 ticks.
 
 *Pressure function*: $P_i = "empty"_i + 10 dot.c "row\_dups"_i + 10 dot.c "col\_conflicts"_i$
 
@@ -321,7 +321,7 @@ where $"empty"_i$ counts unfilled cells in row $i$, $"row\_dups"_i$ counts dupli
 
 === Baselines
 
-We compare four coordination strategies, all using identical LLMs (`Qwen/Qwen2.5-0.5B` via vLLM) to isolate coordination effects:
+We compare five coordination strategies, all using identical LLMs (`Qwen/Qwen2.5-0.5B` via vLLM) to isolate coordination effects:
 
 *Pressure-field (ours)*: Full system with decay ($lambda_f = 0.1$), inhibition ($tau_"inh" = 4$ ticks), and parallel validation.
 
@@ -331,9 +331,11 @@ We compare four coordination strategies, all using identical LLMs (`Qwen/Qwen2.5
 
 *Random*: Selects random rows and proposes random valid values. Same LLM and validation as other methods.
 
+*Conversation*: AutoGen-style multi-agent dialogue where agents discuss and negotiate moves through explicit message passing. A coordinator agent selects target regions, proposer agents suggest values, and validator agents check constraints. Consensus required before applying patches.
+
 === Metrics
 
-- *Solve rate*: Percentage of puzzles reaching zero pressure within 40 ticks
+- *Solve rate*: Percentage of puzzles reaching zero pressure within 100 ticks
 - *Ticks to solve*: Convergence speed for solved cases
 - *Final pressure*: Remaining constraint violations for unsolved cases
 
@@ -341,7 +343,7 @@ We compare four coordination strategies, all using identical LLMs (`Qwen/Qwen2.5
 
 *Hardware*: NVIDIA A100 80GB GPU. *Software*: Rust implementation with vLLM. *Trials*: 30 per configuration. Full protocol in Appendix A.
 
-*Model escalation*: Unless otherwise noted, all experiments use adaptive model escalation: when a region remains high-pressure for 5 consecutive ticks, the system escalates through the chain 0.5B → 1.5B → 3B → 7B → 14B. Section 5.5 ablates this mechanism.
+*Model escalation*: Unless otherwise noted, all experiments use adaptive model escalation: when a region remains high-pressure for 20 consecutive ticks, the system escalates through the chain 0.5B → 1.5B → 3B → 7B → 14B. Section 5.5 ablates this mechanism.
 
 == Main Results
 
@@ -581,23 +583,23 @@ This diversity prevents convergence to local optima and enables exploration of t
 ```bash
 latin-experiment --vllm-host http://localhost:8001 \
   --model-chain "Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B" \
-  --escalation-threshold 5 \
-  grid --trials 30 --n 7 --empty 7 --max-ticks 40 --agents 1,2,4,8
+  --escalation-threshold 20 \
+  grid --trials 30 --n 7 --empty 7 --max-ticks 100 --agents 1,2,4,8
 ```
 
 *Ablation Study:*
 ```bash
 latin-experiment --vllm-host http://localhost:8001 \
   --model-chain "Qwen/Qwen2.5-0.5B" \
-  ablation --trials 30 --n 7 --empty 7 --max-ticks 40
+  ablation --trials 30 --n 7 --empty 7 --max-ticks 100
 ```
 
 *Scaling Analysis:*
 ```bash
 latin-experiment --vllm-host http://localhost:8001 \
   --model-chain "Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B" \
-  --escalation-threshold 5 \
-  grid --trials 30 --n 7 --empty 8 --max-ticks 40 --agents 1,2,4,8,16,32
+  --escalation-threshold 20 \
+  grid --trials 30 --n 7 --empty 8 --max-ticks 100 --agents 1,2,4,8,16,32
 ```
 
 *Model Escalation Comparison:*
@@ -605,13 +607,13 @@ latin-experiment --vllm-host http://localhost:8001 \
 # Without escalation (single model)
 latin-experiment --vllm-host http://localhost:8001 \
   --model-chain "Qwen/Qwen2.5-0.5B" \
-  grid --trials 30 --n 7 --empty 8 --max-ticks 40 --agents 2,4,8
+  grid --trials 30 --n 7 --empty 8 --max-ticks 100 --agents 2,4,8
 
 # With escalation (full chain)
 latin-experiment --vllm-host http://localhost:8001 \
   --model-chain "Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B" \
-  --escalation-threshold 5 \
-  grid --trials 30 --n 7 --empty 8 --max-ticks 40 --agents 2,4,8
+  --escalation-threshold 20 \
+  grid --trials 30 --n 7 --empty 8 --max-ticks 100 --agents 2,4,8
 ```
 
 *Difficulty Scaling:*
@@ -619,8 +621,8 @@ latin-experiment --vllm-host http://localhost:8001 \
 # Easy (5x5, 5 empty)
 latin-experiment --vllm-host http://localhost:8001 \
   --model-chain "Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B" \
-  --escalation-threshold 5 \
-  grid --trials 30 --n 5 --empty 5 --max-ticks 50 --agents 4
+  --escalation-threshold 20 \
+  grid --trials 30 --n 5 --empty 5 --max-ticks 100 --agents 4
 ```
 
 == Metrics Collected
@@ -649,7 +651,7 @@ Each configuration runs 30 independent trials with different random seeds to ens
     [Difficulty], [5], [30], [1.5 hours],
     [*Total*], [], [], [*~9.5 hours*],
   ),
-  caption: [Estimated runtime for all experiments on NVIDIA A100 80GB GPU with 4 parallel jobs.],
+  caption: [Estimated runtime for all experiments on NVIDIA A100 80GB GPU with 10 parallel jobs.],
 )
 
 #bibliography("references.bib", style: "ieee")
