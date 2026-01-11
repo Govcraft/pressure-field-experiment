@@ -1,7 +1,7 @@
 #import "template.typ": *
 
 #show: neurips.with(
-  title: [Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay],
+  title: [Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay#footnote[Code available at #link("https://github.com/Govcraft/latin-experiment")]],
   authors: (
     (
       name: "Roland R. Rodriguez, Jr.",
