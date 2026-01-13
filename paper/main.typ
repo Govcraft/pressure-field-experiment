@@ -140,7 +140,7 @@ $ f_i^(t+1) = f_i^t dot.c e^(-lambda_f) , quad gamma_i^(t+1) = gamma_i^t dot.c e
 
 where $lambda_f, lambda_gamma > 0$ are decay rates. Decay ensures that stability requires continuous reinforcement.
 
-*Phase 2: Action.* For each region $i$ where pressure exceeds activation threshold ($P_i > tau_"act"$) and the region is not inhibited, an *actor* $a: cal(C) times cal(H) times RR^d -> cal(C)$ proposes a content transformation. The actor observes only local state $(c_i, h_i, sigma(c_i))$.
+*Phase 2: Action.* For each region $i$ where pressure exceeds activation threshold ($P_i > tau_"act"$) and the region is not inhibited, *each actor* $a_k: cal(C) times cal(H) times RR^d -> cal(C)$ proposes a content transformation in parallel. Each actor observes only local state $(c_i, h_i, sigma(c_i))$---actors do not communicate or coordinate their proposals.
 
 *Phase 2b: Parallel Validation.* When multiple patches are proposed, each is validated on an independent *fork* of the artifact. Forks are created by cloning artifact state; validation (e.g., compilation, test execution) proceeds in parallel across forks. This addresses a fundamental resource constraint: a single artifact cannot be used to test multiple patches simultaneously without cloning.
 
