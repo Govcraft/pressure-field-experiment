@@ -15,6 +15,12 @@ use crate::region::{Patch, RegionId, RegionState, RegionView};
 #[derive(Debug, Clone)]
 pub struct SensorReady;
 
+/// Notification that a patch actor is ready - broadcast on start.
+///
+/// The coordinator gets the actor's ERN from the message envelope.
+#[derive(Debug, Clone)]
+pub struct PatchActorReady;
+
 /// Request to measure signals for a region - broadcast to SensorActors.
 #[derive(Debug, Clone)]
 pub struct MeasureRegion {
@@ -89,16 +95,6 @@ pub struct TickComplete {
 #[derive(Debug, Clone)]
 pub struct RegisterTickDriver {
     /// The tick driver's actor handle
-    pub handle: acton_reactive::prelude::ActorHandle,
-}
-
-/// Register a patch actor handle after coordinator spawn.
-///
-/// This allows for late registration of actors that couldn't be spawned
-/// before the coordinator (chicken-and-egg problem with actor handles).
-#[derive(Debug, Clone)]
-pub struct RegisterPatchActor {
-    /// The actor handle to register
     pub handle: acton_reactive::prelude::ActorHandle,
 }
 

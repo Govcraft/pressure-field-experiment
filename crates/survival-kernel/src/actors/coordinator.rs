@@ -23,10 +23,10 @@ use crate::artifact::Artifact;
 use crate::config::KernelConfig;
 use crate::kernel::TickResult;
 use crate::messages::{
-    ApplyDecay, MeasureRegion, MeasurementResult, PatchProposal, PressureResponse,
-    ProposeForRegion, QueryPressure, RegionApplyPatch, RegionPatchResult, RegisterPatchActor,
-    RegisterRegionActors, RegisterTickDriver, SaveArtifact, SensorReady, SetOutputDir, Tick,
-    TickComplete, ValidatePatch, ValidatePatchResponse,
+    ApplyDecay, MeasureRegion, MeasurementResult, PatchActorReady, PatchProposal, PressureResponse,
+    ProposeForRegion, QueryPressure, RegionApplyPatch, RegionPatchResult, RegisterRegionActors,
+    RegisterTickDriver, SaveArtifact, SensorReady, SetOutputDir, Tick, TickComplete, ValidatePatch,
+    ValidatePatchResponse,
 };
 use crate::pressure::PressureVector;
 use crate::region::{Patch, RegionId, RegionView};
@@ -164,10 +164,8 @@ pub struct KernelCoordinatorState {
     region_actors: DashMap<RegionId, ActorHandle>,
     /// Registered sensor IDs (sensors self-register via SensorReady broadcast)
     registered_sensors: HashSet<String>,
-    /// Handles to patch actors
-    patch_actor_handles: Vec<ActorHandle>,
-    /// Number of registered actors (for calculating expected responses)
-    actor_count: usize,
+    /// Registered patch actor IDs (patch actors self-register via PatchActorReady broadcast)
+    registered_patch_actors: HashSet<String>,
     /// Pending measurement requests by correlation ID
     pending_measurements: DashMap<String, PendingMeasurements>,
     /// Pending pressure queries by correlation ID
@@ -197,8 +195,7 @@ impl Default for KernelCoordinatorState {
             artifact: None,
             region_actors: DashMap::new(),
             registered_sensors: HashSet::new(),
-            patch_actor_handles: Vec::new(),
-            actor_count: 0,
+            registered_patch_actors: HashSet::new(),
             pending_measurements: DashMap::new(),
             pending_pressure_queries: DashMap::new(),
             pending_proposals: DashMap::new(),
@@ -247,8 +244,7 @@ impl Clone for KernelCoordinatorState {
             region_actors,
             tick_driver: self.tick_driver.clone(),
             registered_sensors: self.registered_sensors.clone(),
-            patch_actor_handles: self.patch_actor_handles.clone(),
-            actor_count: self.actor_count,
+            registered_patch_actors: self.registered_patch_actors.clone(),
             pending_measurements,
             pending_pressure_queries,
             pending_proposals,
@@ -269,7 +265,7 @@ impl std::fmt::Debug for KernelCoordinatorState {
             .field("region_actors", &self.region_actors.len())
             .field("artifact", &self.artifact.is_some())
             .field("registered_sensors", &self.registered_sensors.len())
-            .field("patch_actor_handles", &self.patch_actor_handles.len())
+            .field("registered_patch_actors", &self.registered_patch_actors.len())
             .field("pending_measurements", &self.pending_measurements.len())
             .field(
                 "pending_pressure_queries",
@@ -292,36 +288,25 @@ impl std::fmt::Debug for KernelCoordinatorState {
 /// 5. On PatchProposal: send RegionApplyPatch to target RegionActors
 /// 6. On RegionPatchResult: update artifact, send TickComplete
 ///
-/// Sensors register themselves by broadcasting `SensorReady` on start.
-/// The coordinator subscribes to this message to track sensor count.
+/// Sensors and patch actors register themselves by broadcasting `SensorReady`
+/// and `PatchActorReady` on start. The coordinator subscribes to these messages.
 pub struct KernelCoordinator {
     /// Kernel configuration
     pub config: KernelConfig,
     /// The artifact being coordinated
     pub artifact: Box<dyn Artifact>,
-    /// Pre-spawned patch actor handles
-    pub patch_actor_handles: Vec<ActorHandle>,
 }
 
 impl KernelCoordinator {
     /// Create a new KernelCoordinator.
     pub fn new(config: KernelConfig, artifact: Box<dyn Artifact>) -> Self {
-        Self {
-            config,
-            artifact,
-            patch_actor_handles: Vec::new(),
-        }
-    }
-
-    /// Register a pre-spawned patch actor handle.
-    pub fn add_patch_actor_handle(&mut self, handle: ActorHandle) {
-        self.patch_actor_handles.push(handle);
+        Self { config, artifact }
     }
 
     /// Spawn this coordinator.
     ///
-    /// Sensors should be spawned separately using `SensorActor::spawn()`.
-    /// They will self-register via `SensorReady` broadcast.
+    /// Sensors and patch actors should be spawned separately.
+    /// They will self-register via broker broadcasts.
     pub async fn spawn(self, runtime: &mut ActorRuntime) -> ActorHandle {
         let mut actor =
             runtime.new_actor_with_name::<KernelCoordinatorState>("KernelCoordinator".to_string());
@@ -329,48 +314,22 @@ impl KernelCoordinator {
         // Set initial state
         actor.model.config = Some(self.config.clone());
         actor.model.artifact = Some(self.artifact);
-        actor.model.actor_count = self.patch_actor_handles.len();
 
-        // Subscribe to sensor broadcasts BEFORE starting
+        // Subscribe to actor registration broadcasts BEFORE starting
         actor.handle().subscribe::<SensorReady>().await;
         actor.handle().subscribe::<MeasurementResult>().await;
+        actor.handle().subscribe::<PatchActorReady>().await;
+        actor.handle().subscribe::<PatchProposal>().await;
 
         // Configure handlers before starting
         configure_handlers(&mut actor);
 
-        let coordinator_handle = actor.start().await;
-
-        // Patch actor handles are already spawned - use them directly
-        let patch_handles = self.patch_actor_handles;
-
-        // Send patch handles to coordinator via message
-        coordinator_handle
-            .send(RegisterActors { patch_handles })
-            .await;
-
-        coordinator_handle
+        actor.start().await
     }
-}
-
-/// Internal message to register patch actor handles after spawn.
-#[derive(Debug, Clone)]
-struct RegisterActors {
-    patch_handles: Vec<ActorHandle>,
 }
 
 /// Configure all message handlers for the coordinator.
 fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
-    // Handle actor registration (internal, during spawn)
-    actor.mutate_on::<RegisterActors>(|actor, context| {
-        let msg = context.message();
-        actor.model.patch_actor_handles = msg.patch_handles.clone();
-        trace!(
-            actors = actor.model.patch_actor_handles.len(),
-            "Registered patch actor handles"
-        );
-        Reply::ready()
-    });
-
     // Handle sensor self-registration via broker
     actor.mutate_on::<SensorReady>(|actor, context| {
         let reply_address = context.origin_envelope().reply_to();
@@ -388,6 +347,23 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         Reply::ready()
     });
 
+    // Handle patch actor self-registration via broker
+    actor.mutate_on::<PatchActorReady>(|actor, context| {
+        let reply_address = context.origin_envelope().reply_to();
+        let sender_ern = reply_address.name();
+
+        actor
+            .model
+            .registered_patch_actors
+            .insert(sender_ern.to_string());
+        debug!(
+            patch_actor_ern = %sender_ern,
+            total_patch_actors = actor.model.registered_patch_actors.len(),
+            "Patch actor registered"
+        );
+        Reply::ready()
+    });
+
     // Handle RegionActor registration
     actor.mutate_on::<RegisterRegionActors>(|actor, context| {
         let msg = context.message();
@@ -398,18 +374,6 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         trace!(
             regions = actor.model.region_actors.len(),
             "Registered region actors"
-        );
-        Reply::ready()
-    });
-
-    // Handle late patch actor registration (public, after spawn)
-    actor.mutate_on::<RegisterPatchActor>(|actor, context| {
-        let handle = context.message().handle.clone();
-        actor.model.patch_actor_handles.push(handle);
-        actor.model.actor_count += 1;
-        debug!(
-            total_actors = actor.model.actor_count,
-            "Registered patch actor"
         );
         Reply::ready()
     });
@@ -685,7 +649,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         // Generate correlation ID for proposal phase
         let proposal_correlation_id = "propose".create_type_id::<V7>().to_string();
 
-        let actor_count = actor.model.actor_count;
+        let actor_count = actor.model.registered_patch_actors.len();
         let expected_count = actor_count * high_pressure_regions.len();
 
         // Track pending proposals
@@ -718,9 +682,10 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             })
             .collect();
 
-        let patch_handles = actor.model.patch_actor_handles.clone();
+        // Get broker for broadcasting
+        let broker = actor.broker().clone();
 
-        // Broadcast ProposeForRegion to all patch actors
+        // Broadcast ProposeForRegion to all patch actors via broker
         Reply::pending(async move {
             for (rid, view, signals, pressures, state) in proposal_data {
                 let msg = ProposeForRegion {
@@ -732,9 +697,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                     state,
                 };
 
-                for handle in &patch_handles {
-                    handle.send(msg.clone()).await;
-                }
+                broker.broadcast(msg).await;
             }
         })
     });

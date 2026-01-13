@@ -12,7 +12,7 @@ use rand::Rng;
 use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, info, warn};
 
-use survival_kernel::messages::{PatchProposal, ProposeForRegion};
+use survival_kernel::messages::{PatchActorReady, PatchProposal, ProposeForRegion};
 use survival_kernel::region::{Patch, PatchOp};
 
 use crate::example_bank::ExampleBank;
@@ -123,8 +123,6 @@ impl Default for LlmActorConfig {
 pub struct LlmActorState {
     /// Actor name
     pub name: String,
-    /// Coordinator handle for sending proposals
-    pub coordinator: Option<ActorHandle>,
     /// LLM configuration
     pub config: Option<LlmActorConfig>,
     /// Semaphore for rate limiting concurrent LLM requests
@@ -137,18 +135,20 @@ impl std::fmt::Debug for LlmActorState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LlmActorState")
             .field("name", &self.name)
-            .field("has_coordinator", &self.coordinator.is_some())
             .field("has_example_bank", &self.example_bank.is_some())
             .finish()
     }
 }
 
 /// LLM actor for proposing Latin Square improvements.
+///
+/// Uses the broker pub/sub pattern:
+/// - Subscribes to `ProposeForRegion` broadcasts
+/// - Broadcasts `PatchActorReady` on start for coordinator tracking
+/// - Broadcasts `PatchProposal` responses
 pub struct LlmActor {
     /// Actor name
     pub name: String,
-    /// Coordinator handle
-    pub coordinator: ActorHandle,
     /// Configuration
     pub config: LlmActorConfig,
     /// Semaphore for rate limiting (shared across all actors)
@@ -161,14 +161,12 @@ impl LlmActor {
     /// Create a new LLM actor.
     pub fn new(
         name: impl Into<String>,
-        coordinator: ActorHandle,
         config: LlmActorConfig,
         semaphore: Arc<Semaphore>,
         example_bank: Arc<RwLock<ExampleBank>>,
     ) -> Self {
         Self {
             name: name.into(),
-            coordinator,
             config,
             semaphore,
             example_bank,
@@ -176,14 +174,29 @@ impl LlmActor {
     }
 
     /// Spawn the actor in the runtime.
+    ///
+    /// The actor will:
+    /// 1. Subscribe to `ProposeForRegion` broadcasts
+    /// 2. Broadcast `PatchActorReady` on start
+    /// 3. Handle proposals and broadcast results
     pub async fn spawn(self, runtime: &mut ActorRuntime) -> ActorHandle {
         let mut actor = runtime.new_actor_with_name::<LlmActorState>(self.name.clone());
 
         actor.model.name = self.name;
-        actor.model.coordinator = Some(self.coordinator);
         actor.model.config = Some(self.config);
         actor.model.semaphore = Some(self.semaphore);
         actor.model.example_bank = Some(self.example_bank);
+
+        // Subscribe to ProposeForRegion broadcasts BEFORE starting
+        actor.handle().subscribe::<ProposeForRegion>().await;
+
+        // Broadcast PatchActorReady on start so coordinator knows about us
+        actor.after_start(|actor| {
+            let broker = actor.broker().clone();
+            Reply::pending(async move {
+                broker.broadcast(PatchActorReady).await;
+            })
+        });
 
         configure_llm_actor(&mut actor);
 
@@ -194,16 +207,11 @@ impl LlmActor {
 fn configure_llm_actor(actor: &mut ManagedActor<Idle, LlmActorState>) {
     actor.act_on::<ProposeForRegion>(|actor, context| {
         let msg = context.message().clone();
-        let coordinator = actor.model.coordinator.clone();
+        let broker = actor.broker().clone();
         let name = actor.model.name.clone();
         let config = actor.model.config.clone();
         let semaphore = actor.model.semaphore.clone();
         let example_bank = actor.model.example_bank.clone();
-
-        let Some(coordinator) = coordinator else {
-            warn!("ProposeForRegion: no coordinator");
-            return Reply::ready();
-        };
 
         let Some(config) = config else {
             warn!("ProposeForRegion: no config");
@@ -253,7 +261,8 @@ fn configure_llm_actor(actor: &mut ManagedActor<Idle, LlmActorState>) {
                 patches,
             };
 
-            coordinator.send(proposal).await;
+            // Broadcast result (coordinator subscribes to PatchProposal)
+            broker.broadcast(proposal).await;
         })
     });
 }

@@ -11,16 +11,15 @@
 //! // Create runtime and spawn actors
 //! let mut runtime = ActonApp::launch_async().await;
 //!
-//! // Spawn your patch actor (e.g., LlmActor) first
-//! let llm_actor = LlmActor::new(config, coordinator_handle);
-//! let llm_handle = llm_actor.spawn(&mut runtime).await;
-//!
-//! // Build kernel with pre-spawned actor handles
+//! // Build kernel - sensors self-register via broker
 //! let kernel = AsyncKernelBuilder::new(config, artifact)
 //!     .add_sensor(Box::new(MySensor))
-//!     .add_patch_actor_handle(llm_handle)
 //!     .spawn(&mut runtime)
 //!     .await;
+//!
+//! // Spawn patch actors separately - they self-register via PatchActorReady
+//! let llm_actor = LlmActor::new(config);
+//! llm_actor.spawn(&mut runtime).await;
 //!
 //! // Send Tick messages to drive the kernel
 //! kernel.send(Tick { now_ms: 0 }).await;
@@ -71,7 +70,9 @@ pub fn half_life_decay(value: &mut f64, dt_ms: u64, half_life_ms: u64) {
 /// - Post-patch validation to ensure pressure reduction (δ_min > 0)
 /// - Local state ownership (stigmergy model from paper)
 ///
-/// Sensors are spawned separately and self-register via broker broadcast.
+/// Uses the broker pub/sub pattern for actor registration:
+/// - Sensors self-register via `SensorReady` broadcast
+/// - Patch actors self-register via `PatchActorReady` broadcast
 pub struct AsyncKernelBuilder {
     coordinator: KernelCoordinator,
     /// Sensors to spawn (they self-register via SensorReady broadcast)
@@ -104,16 +105,6 @@ impl AsyncKernelBuilder {
             self.validation_sensor = Some(sensor_arc.clone());
         }
         self.sensors.push(sensor_arc);
-        self
-    }
-
-    /// Register a pre-spawned patch actor handle.
-    ///
-    /// The actor must handle `ProposeForRegion` messages and send `PatchProposal`
-    /// responses back to the coordinator (the coordinator handle will be available
-    /// after spawn).
-    pub fn add_patch_actor_handle(mut self, handle: ActorHandle) -> Self {
-        self.coordinator.add_patch_actor_handle(handle);
         self
     }
 

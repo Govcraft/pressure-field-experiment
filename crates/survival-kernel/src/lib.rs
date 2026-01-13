@@ -42,10 +42,10 @@ pub use artifact::Artifact;
 pub use config::{KernelConfig, PressureAxisConfig};
 pub use kernel::{half_life_decay, AsyncKernelBuilder, TickResult};
 pub use messages::{
-    ApplyDecay, MeasureRegion, MeasurementResult, PatchProposal, PressureResponse,
+    ApplyDecay, MeasureRegion, MeasurementResult, PatchActorReady, PatchProposal, PressureResponse,
     ProposeForRegion, QueryPressure, RefreshContent, RegionApplyPatch, RegionPatchResult,
-    RegisterPatchActor, RegisterRegionActors, RegisterTickDriver, SaveArtifact, SetOutputDir,
-    Tick, TickComplete, ValidatePatch, ValidatePatchResponse,
+    RegisterRegionActors, RegisterTickDriver, SaveArtifact, SensorReady, SetOutputDir, Tick,
+    TickComplete, ValidatePatch, ValidatePatchResponse,
 };
 pub use pressure::{measure_pressure_inline, Pressure, PressureVector, Sensor, Signals};
 pub use region::{Patch, PatchOp, RegionId, RegionState, RegionView};
