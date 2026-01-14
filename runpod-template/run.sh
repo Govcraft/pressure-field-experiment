@@ -98,19 +98,18 @@ echo ""
 echo "=== Starting vLLM Servers ==="
 echo "Starting 3 vLLM instances for model escalation chain (3B, 7B, 14B)..."
 
-# Model-to-port mapping with GPU memory allocation:
-# Port 8003: 3B (16%)
-# Port 8004: 7B (26%)
-# Port 8005: 14B (48%)
-# Total: 90% of 80GB
+# Model-to-GPU and port mapping:
+# GPU 0: 3B (port 8003, 25%) + 7B (port 8004, 45%) = 70%
+# GPU 1: 14B (port 8005, 85%) - dedicated GPU for largest model
 
 start_vllm_server() {
     local model=$1
     local port=$2
     local mem_util=$3
+    local gpu=$4
     local logfile="/workspace/vllm-${port}.log"
 
-    echo "  Starting $model on port $port (${mem_util} GPU mem)..."
+    echo "  Starting $model on port $port (GPU $gpu, ${mem_util} mem)..."
     echo "  Model path: $MODELS_DIR/$model"
 
     # List tokenizer files for debugging
@@ -120,7 +119,7 @@ start_vllm_server() {
     # Extract HuggingFace-style model name (e.g., "Qwen/Qwen2.5-0.5B" from "Qwen2.5-0.5B")
     local hf_model_name="Qwen/$model"
 
-    vllm serve "$MODELS_DIR/$model" \
+    CUDA_VISIBLE_DEVICES=$gpu vllm serve "$MODELS_DIR/$model" \
         --dtype bfloat16 \
         --gpu-memory-utilization "$mem_util" \
         --max-model-len 2048 \
@@ -154,14 +153,15 @@ wait_for_server() {
 echo ""
 echo "Starting vLLM servers sequentially (to avoid init conflicts)..."
 
-# Start 3B, 7B, 14B models (skip 0.5B, 1.5B for efficiency)
-start_vllm_server "Qwen2.5-3B" 8003 0.16
+# GPU 0: 3B and 7B (smaller models share one GPU)
+start_vllm_server "Qwen2.5-3B" 8003 0.25 0
 wait_for_server 8003 "Qwen2.5-3B" 120 || exit 1
 
-start_vllm_server "Qwen2.5-7B" 8004 0.26
+start_vllm_server "Qwen2.5-7B" 8004 0.45 0
 wait_for_server 8004 "Qwen2.5-7B" 300 || exit 1
 
-start_vllm_server "Qwen2.5-14B" 8005 0.48
+# GPU 1: 14B (largest model gets dedicated GPU)
+start_vllm_server "Qwen2.5-14B" 8005 0.85 1
 wait_for_server 8005 "Qwen2.5-14B" 600 || exit 1
 
 echo ""
