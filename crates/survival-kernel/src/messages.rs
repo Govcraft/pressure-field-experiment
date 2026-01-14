@@ -8,18 +8,33 @@ use std::collections::HashMap;
 use crate::pressure::{PressureVector, Signals};
 use crate::region::{Patch, RegionId, RegionState, RegionView};
 
+/// Broadcast by coordinator after it starts to signal that patch actors
+/// can now register themselves.
+///
+/// This solves the race condition where patch actors might broadcast
+/// PatchActorReady before the coordinator exists.
+#[derive(Debug, Clone)]
+pub struct CoordinatorReady;
+
 /// Notification that a sensor is ready - broadcast by SensorActors on start.
 ///
-/// The coordinator gets the sensor's ERN from the message envelope.
-/// No fields needed - the actor name contains the sensor identity.
+/// Includes the sender's ERN since broker broadcasts don't preserve
+/// sender identity in the envelope.
 #[derive(Debug, Clone)]
-pub struct SensorReady;
+pub struct SensorReady {
+    /// The sensor actor's ERN
+    pub sensor_ern: String,
+}
 
 /// Notification that a patch actor is ready - broadcast on start.
 ///
-/// The coordinator gets the actor's ERN from the message envelope.
+/// Includes the sender's ERN since broker broadcasts don't preserve
+/// sender identity in the envelope.
 #[derive(Debug, Clone)]
-pub struct PatchActorReady;
+pub struct PatchActorReady {
+    /// The patch actor's ERN
+    pub actor_ern: String,
+}
 
 /// Request to measure signals for a region - broadcast to SensorActors.
 #[derive(Debug, Clone)]
@@ -86,20 +101,40 @@ pub struct Tick {
     pub now_ms: u64,
 }
 
-/// Tick completion notification - sent to registered tick driver.
+/// Tick completion notification - broadcast after each tick.
 #[derive(Debug, Clone)]
 pub struct TickComplete {
     /// Result of the tick
     pub result: crate::kernel::TickResult,
+    /// Whether the artifact is now complete (from Artifact::is_complete())
+    pub is_complete: bool,
 }
 
-/// Register the tick driver handle with the coordinator.
+/// Reason why the kernel stopped ticking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StopReason {
+    /// Artifact::is_complete() returned true
+    Complete,
+    /// Reached stable_threshold consecutive ticks with no patches
+    Converged {
+        /// Number of consecutive stable ticks
+        stable_ticks: usize,
+    },
+    /// Reached max_ticks limit
+    MaxTicks,
+}
+
+/// Notification that the kernel has finished all ticks.
 ///
-/// The coordinator will send TickComplete messages to this handle.
+/// Broadcast when the tick loop terminates for any reason.
 #[derive(Debug, Clone)]
-pub struct RegisterTickDriver {
-    /// The tick driver's actor handle
-    pub handle: acton_reactive::prelude::ActorHandle,
+pub struct KernelComplete {
+    /// Why the kernel stopped
+    pub reason: StopReason,
+    /// Total ticks executed
+    pub ticks_executed: usize,
+    /// Final total pressure
+    pub final_pressure: f64,
 }
 
 /// Wait until expected number of patch actors have registered.
@@ -116,6 +151,23 @@ pub struct WaitForPatchActors {
 #[derive(Debug, Clone)]
 pub struct PatchActorsReady {
     /// Actual number of registered patch actors
+    pub registered_count: usize,
+}
+
+/// Wait until expected number of sensors have registered.
+///
+/// Sent to coordinator, blocks until all sensors are ready.
+/// This ensures no ticks start before measurements can be taken.
+#[derive(Debug, Clone)]
+pub struct WaitForSensors {
+    /// Number of sensors expected to register
+    pub expected_count: usize,
+}
+
+/// Response confirming sensors are ready.
+#[derive(Debug, Clone)]
+pub struct SensorsReady {
+    /// Actual number of registered sensors
     pub registered_count: usize,
 }
 

@@ -23,10 +23,11 @@ use crate::artifact::Artifact;
 use crate::config::KernelConfig;
 use crate::kernel::TickResult;
 use crate::messages::{
-    ApplyDecay, MeasureRegion, MeasurementResult, PatchActorReady, PatchActorsReady, PatchProposal,
-    PressureResponse, ProposeForRegion, QueryPressure, RegionApplyPatch, RegionPatchResult,
-    RegisterRegionActors, RegisterTickDriver, SaveArtifact, SensorReady, SetOutputDir, Tick,
-    TickComplete, ValidatePatch, ValidatePatchResponse, WaitForPatchActors,
+    ApplyDecay, CoordinatorReady, MeasureRegion, MeasurementResult, PatchActorReady,
+    PatchActorsReady, PatchProposal, PressureResponse, ProposeForRegion, QueryPressure,
+    RegionApplyPatch, RegionPatchResult, RegisterRegionActors, SaveArtifact, SensorReady,
+    SensorsReady, SetOutputDir, Tick, TickComplete, ValidatePatch, ValidatePatchResponse,
+    WaitForPatchActors, WaitForSensors,
 };
 use crate::pressure::PressureVector;
 use crate::region::{Patch, RegionId, RegionView};
@@ -178,8 +179,6 @@ pub struct KernelCoordinatorState {
     pending_proposals: DashMap<String, PendingProposals>,
     /// Pending patch applications by correlation ID
     pending_patches: DashMap<String, PendingPatches>,
-    /// Handle to tick driver for sending TickComplete
-    tick_driver: Option<ActorHandle>,
     /// Consecutive ticks with no patches (for stability)
     stable_ticks: usize,
     /// Current tick number
@@ -192,6 +191,8 @@ pub struct KernelCoordinatorState {
     velocity_history: Vec<f64>,
     /// Pending waits for patch actors: (expected_count, reply_sender)
     pending_actor_waits: Vec<(usize, tokio::sync::oneshot::Sender<usize>)>,
+    /// Pending waits for sensors: (expected_count, reply_sender)
+    pending_sensor_waits: Vec<(usize, tokio::sync::oneshot::Sender<usize>)>,
 }
 
 impl Default for KernelCoordinatorState {
@@ -206,13 +207,13 @@ impl Default for KernelCoordinatorState {
             pending_pressure_queries: DashMap::new(),
             pending_proposals: DashMap::new(),
             pending_patches: DashMap::new(),
-            tick_driver: None,
             stable_ticks: 0,
             current_tick: 0,
             output_dir: None,
             pressure_history: Vec::new(),
             velocity_history: Vec::new(),
             pending_actor_waits: Vec::new(),
+            pending_sensor_waits: Vec::new(),
         }
     }
 }
@@ -249,7 +250,6 @@ impl Clone for KernelCoordinatorState {
             config: self.config.clone(),
             artifact: None, // Can't clone trait object
             region_actors,
-            tick_driver: self.tick_driver.clone(),
             registered_sensors: self.registered_sensors.clone(),
             registered_patch_actors: self.registered_patch_actors.clone(),
             pending_measurements,
@@ -262,6 +262,7 @@ impl Clone for KernelCoordinatorState {
             pressure_history: self.pressure_history.clone(),
             velocity_history: self.velocity_history.clone(),
             pending_actor_waits: Vec::new(), // Can't clone oneshot::Sender
+            pending_sensor_waits: Vec::new(), // Can't clone oneshot::Sender
         }
     }
 }
@@ -333,6 +334,14 @@ impl KernelCoordinator {
         // Configure handlers before starting
         configure_handlers(&mut actor);
 
+        // Broadcast CoordinatorReady after start so patch actors know they can register
+        actor.after_start(|actor| {
+            let broker = actor.broker().clone();
+            Reply::pending(async move {
+                broker.broadcast(CoordinatorReady).await;
+            })
+        });
+
         actor.start().await
     }
 }
@@ -341,30 +350,53 @@ impl KernelCoordinator {
 fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
     // Handle sensor self-registration via broker
     actor.mutate_on::<SensorReady>(|actor, context| {
-        let reply_address = context.origin_envelope().reply_to();
-        let sender_ern = reply_address.name();
+        // Get ERN from message payload (broker broadcasts don't preserve sender in envelope)
+        let sender_ern = &context.message().sensor_ern;
 
         actor
             .model
             .registered_sensors
-            .insert(sender_ern.to_string());
+            .insert(sender_ern.clone());
+
+        let current_count = actor.model.registered_sensors.len();
         debug!(
             sensor_ern = %sender_ern,
-            total_sensors = actor.model.registered_sensors.len(),
+            total_sensors = current_count,
             "Sensor registered"
         );
+
+        // Check if any pending waits are satisfied
+        let satisfied_indices: Vec<usize> = actor
+            .model
+            .pending_sensor_waits
+            .iter()
+            .enumerate()
+            .filter(|(_, (expected, _))| current_count >= *expected)
+            .map(|(i, _)| i)
+            .collect();
+
+        // Satisfy pending waits in reverse order to maintain indices
+        for i in satisfied_indices.into_iter().rev() {
+            let (_, sender) = actor.model.pending_sensor_waits.remove(i);
+            let _ = sender.send(current_count);
+            debug!(
+                registered = current_count,
+                "Satisfied pending sensor wait"
+            );
+        }
+
         Reply::ready()
     });
 
     // Handle patch actor self-registration via broker
     actor.mutate_on::<PatchActorReady>(|actor, context| {
-        let reply_address = context.origin_envelope().reply_to();
-        let sender_ern = reply_address.name();
+        // Get ERN from message payload (broker broadcasts don't preserve sender in envelope)
+        let sender_ern = &context.message().actor_ern;
 
         actor
             .model
             .registered_patch_actors
-            .insert(sender_ern.to_string());
+            .insert(sender_ern.clone());
 
         let current_count = actor.model.registered_patch_actors.len();
         debug!(
@@ -410,14 +442,6 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         Reply::ready()
     });
 
-    // Handle tick driver registration
-    actor.mutate_on::<RegisterTickDriver>(|actor, context| {
-        let handle = context.message().handle.clone();
-        actor.model.tick_driver = Some(handle);
-        debug!("Registered tick driver");
-        Reply::ready()
-    });
-
     // Handle wait for patch actors registration
     actor.mutate_on::<WaitForPatchActors>(|actor, context| {
         let expected_count = context.message().expected_count;
@@ -449,6 +473,42 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 // Wait for the oneshot to be triggered when enough actors register
                 if let Ok(registered_count) = rx.await {
                     broker.broadcast(PatchActorsReady { registered_count }).await;
+                }
+            })
+        }
+    });
+
+    // Handle wait for sensors registration
+    actor.mutate_on::<WaitForSensors>(|actor, context| {
+        let expected_count = context.message().expected_count;
+        let current_count = actor.model.registered_sensors.len();
+
+        if current_count >= expected_count {
+            // Already have enough sensors, reply immediately
+            debug!(
+                expected = expected_count,
+                registered = current_count,
+                "Sensors already ready"
+            );
+            let broker = actor.broker().clone();
+            Reply::pending(async move {
+                broker.broadcast(SensorsReady { registered_count: current_count }).await;
+            })
+        } else {
+            // Need to wait for more sensors to register
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            actor.model.pending_sensor_waits.push((expected_count, tx));
+            debug!(
+                expected = expected_count,
+                registered = current_count,
+                "Waiting for sensors to register"
+            );
+
+            let broker = actor.broker().clone();
+            Reply::pending(async move {
+                // Wait for the oneshot to be triggered when enough sensors register
+                if let Ok(registered_count) = rx.await {
+                    broker.broadcast(SensorsReady { registered_count }).await;
                 }
             })
         }
@@ -682,6 +742,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 acceleration,
                 prompt_tokens: 0,
                 completion_tokens: 0,
+                is_complete: false,
             };
 
             actor.model.stable_ticks += 1;
@@ -695,12 +756,16 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 "Tick complete - stable (no high-pressure regions)"
             );
 
-            if let Some(tick_driver) = actor.model.tick_driver.clone() {
-                return Reply::pending(async move {
-                    tick_driver.send(TickComplete { result }).await;
-                });
-            }
-            return Reply::ready();
+            // Broadcast TickComplete for TickActor to receive
+            let broker = actor.broker().clone();
+            return Reply::pending(async move {
+                broker
+                    .broadcast(TickComplete {
+                        result,
+                        is_complete: false, // No patches means not complete yet
+                    })
+                    .await;
+            });
         }
 
         // Generate correlation ID for proposal phase
@@ -852,6 +917,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 acceleration,
                 prompt_tokens,
                 completion_tokens,
+                is_complete: false,
             };
 
             actor.model.stable_ticks += 1;
@@ -867,12 +933,16 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 "Tick complete - stable (no patches proposed)"
             );
 
-            if let Some(tick_driver) = actor.model.tick_driver.clone() {
-                return Reply::pending(async move {
-                    tick_driver.send(TickComplete { result }).await;
-                });
-            }
-            return Reply::ready();
+            // Broadcast TickComplete for TickActor to receive
+            let broker = actor.broker().clone();
+            return Reply::pending(async move {
+                broker
+                    .broadcast(TickComplete {
+                        result,
+                        is_complete: false, // No patches means not complete yet
+                    })
+                    .await;
+            });
         }
 
         // Generate correlation ID for patch application
@@ -961,12 +1031,15 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 expected_delta: HashMap::new(),
             };
 
-            if let Err(e) = artifact.apply_patch(patch) {
+            if let Err(e) = artifact.apply_patch(patch.clone()) {
                 warn!(
                     region = %result.region_id,
                     error = %e,
                     "Failed to apply validated patch to artifact"
                 );
+            } else {
+                // Notify artifact of successful patch (for learning callbacks)
+                artifact.on_patch_applied(&patch);
             }
         }
 
@@ -1021,6 +1094,14 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         actor.model.pressure_history.push(new_pressure);
         actor.model.velocity_history.push(velocity);
 
+        // Check if artifact is complete
+        let artifact_complete = actor
+            .model
+            .artifact
+            .as_ref()
+            .map(|a| a.is_complete())
+            .unwrap_or(false);
+
         let tick_result = TickResult {
             applied: applied.clone(),
             evaluated: pending.evaluated_count,
@@ -1030,6 +1111,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             acceleration,
             prompt_tokens: pending.prompt_tokens,
             completion_tokens: pending.completion_tokens,
+            is_complete: artifact_complete,
         };
 
         info!(
@@ -1046,20 +1128,20 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             delta = format!("-{:.2}", total_delta),
             prompt_tokens = pending.prompt_tokens,
             completion_tokens = pending.completion_tokens,
+            is_complete = artifact_complete,
             "Tick complete"
         );
 
-        if let Some(tick_driver) = actor.model.tick_driver.clone() {
-            return Reply::pending(async move {
-                tick_driver
-                    .send(TickComplete {
-                        result: tick_result,
-                    })
-                    .await;
-            });
-        }
-
-        Reply::ready()
+        // Broadcast TickComplete for external tick loop to receive
+        let broker = actor.broker().clone();
+        Reply::pending(async move {
+            broker
+                .broadcast(TickComplete {
+                    result: tick_result,
+                    is_complete: artifact_complete,
+                })
+                .await;
+        })
     });
 
     // Handle SaveArtifact - write the current artifact state to a file

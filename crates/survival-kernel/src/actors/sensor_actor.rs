@@ -65,12 +65,13 @@ impl SensorActor {
         actor.handle().subscribe::<MeasureRegion>().await;
 
         // Broadcast SensorReady on start so coordinator knows about us
-        // The coordinator gets our identity from the message envelope
+        // Include our ERN since broker broadcasts don't preserve sender identity
         actor.after_start(|actor| {
             let broker = actor.broker().clone();
+            let sensor_ern = actor.handle().name().to_string();
 
             Reply::pending(async move {
-                broker.broadcast(SensorReady).await;
+                broker.broadcast(SensorReady { sensor_ern }).await;
             })
         });
 

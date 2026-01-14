@@ -36,4 +36,22 @@ pub trait Artifact: Send + Sync {
     fn source(&self) -> Option<String> {
         None
     }
+
+    /// Optional: callback invoked after a patch is successfully applied.
+    ///
+    /// Use this for domain-specific learning, such as adding successful
+    /// patches to an example bank for few-shot prompting (pheromone deposit).
+    ///
+    /// Default implementation does nothing.
+    fn on_patch_applied(&mut self, _patch: &Patch) {}
+
+    /// Optional: check if the artifact has reached a complete/solved state.
+    ///
+    /// The kernel will stop ticking when this returns true. This allows
+    /// domain-specific completion checks (e.g., puzzle solved, all tests pass).
+    ///
+    /// Default implementation returns false (rely on pressure convergence).
+    fn is_complete(&self) -> bool {
+        false
+    }
 }

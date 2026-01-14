@@ -12,7 +12,7 @@ use rand::Rng;
 use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, info, warn};
 
-use survival_kernel::messages::{PatchActorReady, PatchProposal, ProposeForRegion};
+use survival_kernel::messages::{CoordinatorReady, PatchActorReady, PatchProposal, ProposeForRegion};
 use survival_kernel::region::{Patch, PatchOp};
 
 use crate::example_bank::ExampleBank;
@@ -190,11 +190,16 @@ impl LlmActor {
         // Subscribe to ProposeForRegion broadcasts BEFORE starting
         actor.handle().subscribe::<ProposeForRegion>().await;
 
-        // Broadcast PatchActorReady on start so coordinator knows about us
-        actor.after_start(|actor| {
+        // Subscribe to CoordinatorReady - we'll respond with PatchActorReady
+        // This ensures the coordinator exists before we try to register
+        actor.handle().subscribe::<CoordinatorReady>().await;
+
+        // Handle CoordinatorReady by broadcasting PatchActorReady
+        actor.act_on::<CoordinatorReady>(|actor, _context| {
             let broker = actor.broker().clone();
+            let actor_ern = actor.handle().name().to_string();
             Reply::pending(async move {
-                broker.broadcast(PatchActorReady).await;
+                broker.broadcast(PatchActorReady { actor_ern }).await;
             })
         });
 

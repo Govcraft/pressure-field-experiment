@@ -107,8 +107,15 @@ impl VllmClient {
     /// # Arguments
     /// * `base_url` - The base URL of the vLLM server (e.g., "http://localhost:8000")
     pub fn new(base_url: &str) -> Self {
+        // Use short timeouts to fail fast if server is unavailable
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
         Self {
-            client: reqwest::Client::new(),
+            client,
             base_url: base_url.trim_end_matches('/').to_string(),
         }
     }

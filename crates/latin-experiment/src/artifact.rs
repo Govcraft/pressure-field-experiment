@@ -11,6 +11,8 @@ use survival_kernel::artifact::Artifact;
 use survival_kernel::region::{Patch, PatchOp, RegionId, RegionView};
 use uuid::Uuid;
 
+use crate::sensors::SharedGrid;
+
 /// Namespace UUID for generating deterministic region IDs.
 const REGION_NAMESPACE: Uuid = Uuid::from_bytes([
     0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc9,
@@ -34,6 +36,8 @@ pub struct LatinSquareArtifact {
     region_order: Vec<RegionId>,
     /// Puzzle identifier for deterministic region IDs
     puzzle_id: String,
+    /// Optional shared grid for sensor synchronization (updated on patch)
+    shared_grid: Option<SharedGrid>,
 }
 
 impl LatinSquareArtifact {
@@ -80,7 +84,17 @@ impl LatinSquareArtifact {
             region_map,
             region_order,
             puzzle_id,
+            shared_grid: None,
         })
+    }
+
+    /// Configure a shared grid for sensor synchronization.
+    ///
+    /// When set, the shared grid is automatically updated whenever
+    /// a patch is applied, keeping sensors in sync with the artifact state.
+    pub fn with_shared_grid(mut self, grid: SharedGrid) -> Self {
+        self.shared_grid = Some(grid);
+        self
     }
 
     /// Get the grid size.
@@ -313,6 +327,14 @@ impl Artifact for LatinSquareArtifact {
                 }
 
                 self.grid[row_idx] = new_row;
+
+                // Sync shared grid for sensors
+                if let Some(ref shared) = self.shared_grid
+                    && let Ok(mut locked) = shared.write()
+                {
+                    locked.clear();
+                    locked.extend(self.grid.iter().cloned());
+                }
             }
             PatchOp::Delete => {
                 bail!("Cannot delete a row in a Latin Square");
@@ -331,6 +353,15 @@ impl Artifact for LatinSquareArtifact {
             lines.push(Self::format_row(row));
         }
         Some(lines.join("\n"))
+    }
+
+    fn is_complete(&self) -> bool {
+        self.is_solved()
+    }
+
+    fn on_patch_applied(&mut self, _patch: &Patch) {
+        // Learning callback - could be used for example bank/pheromone deposits
+        // Currently a no-op; the experiment can handle this externally if needed
     }
 }
 

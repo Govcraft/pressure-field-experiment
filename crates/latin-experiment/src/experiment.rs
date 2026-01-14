@@ -15,19 +15,18 @@ use chrono::Utc;
 use futures::future::join_all;
 use rand::Rng;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use acton_reactive::prelude::*;
 use survival_kernel::artifact::Artifact;
 use survival_kernel::config::{
     ActivationConfig, DecayConfig, KernelConfig, PressureAxisConfig, SelectionConfig,
 };
-use survival_kernel::messages::{RegisterTickDriver, Tick, WaitForPatchActors};
-use survival_kernel::region::PatchOp;
-use survival_kernel::AsyncKernelBuilder;
+use survival_kernel::{AsyncKernelBuilder, StopReason};
+
+use crate::sensors::update_shared_grid;
 
 use crate::llm_actor::{LlmActor, LlmActorConfig, SamplingBand, SamplingConfig};
-use crate::tick_driver::{StartupWaiter, TickDriverActor};
 
 use crate::artifact::LatinSquareArtifact;
 use crate::conversation::ConversationRunner;
@@ -37,8 +36,16 @@ use crate::results::{
     ConversationStats, EscalationEvent, ExperimentConfig, ExperimentResult, PatchRejection,
     TickMetrics,
 };
-use crate::sensors::{update_shared_grid, LatinSquareSensor, SharedGrid};
+use crate::sensors::{LatinSquareSensor, SharedGrid};
 use crate::vllm_client::VllmClient;
+
+/// Context for a single experiment run.
+#[derive(Debug, Clone)]
+struct RunContext {
+    trial: usize,
+    seed: Option<u64>,
+    started_at: chrono::DateTime<Utc>,
+}
 
 /// Configuration for the experiment runner.
 #[derive(Debug, Clone)]
@@ -193,18 +200,13 @@ impl ExperimentRunner {
 
         // For PressureField strategy, use the kernel-based coordination
         if strategy == Strategy::PressureField {
+            let ctx = RunContext {
+                trial,
+                seed,
+                started_at,
+            };
             return self
-                .run_pressure_field_with_kernel(
-                    artifact,
-                    shared_grid,
-                    example_bank,
-                    sensor,
-                    agent_count,
-                    trial,
-                    seed,
-                    started_at,
-                    start_time,
-                )
+                .run_pressure_field_with_kernel(artifact, example_bank, sensor, agent_count, ctx)
                 .await;
         }
 
@@ -823,165 +825,21 @@ What number goes in position {target_pos}? Return just the number."#,
         Ok(results.into_iter().flatten().collect())
     }
 
-    /// Generate a patch using the LLM (single call, kept for compatibility).
-    #[allow(dead_code)]
-    async fn generate_llm_patch(
-        &self,
-        artifact: &LatinSquareArtifact,
-        region_id: uuid::Uuid,
-        examples: &[Example],
-    ) -> Result<Option<String>> {
-        let n = artifact.size();
-        let row_idx = artifact.row_index(region_id).unwrap_or(0);
-        let availability = artifact.column_availability(row_idx);
-
-        let view = artifact.read_region(region_id)?;
-
-        // Format examples for few-shot learning
-        let examples_text = if examples.is_empty() {
-            String::new()
-        } else {
-            let formatted: Vec<String> = examples.iter().map(|e| e.format_for_prompt()).collect();
-            format!(
-                "\nEXAMPLES OF SUCCESSFUL FIXES:\n{}\n",
-                formatted.join("\n")
-            )
-        };
-
-        // Parse current row to identify empty positions
-        let cells: Vec<&str> = view.content.split_whitespace().collect();
-        let empty_positions: Vec<usize> = cells
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| **c == "_")
-            .map(|(i, _)| i)
-            .collect();
-
-        // Pick a random empty position to fill (if multiple)
-        if empty_positions.is_empty() {
-            return Ok(None);
-        }
-        let mut rng = rand::rng();
-        let target_pos = if empty_positions.len() == 1 {
-            empty_positions[0]
-        } else {
-            use rand::seq::IndexedRandom;
-            *empty_positions.choose(&mut rng).unwrap()
-        };
-
-        // Get available values for this specific column
-        let available_for_target = availability
-            .get(&target_pos)
-            .map(|v| {
-                v.iter()
-                    .map(|n| n.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            })
-            .unwrap_or_else(|| "?".to_string());
-
-        let prompt = format!(
-            r#"Row: {content}
-Empty position: {target_pos}
-Available values for position {target_pos}: [{available}]
-{examples_text}
-What number goes in position {target_pos}? Return just the number."#,
-            content = view.content,
-            target_pos = target_pos,
-            available = available_for_target,
-            examples_text = examples_text,
-        );
-
-        // Sample temperature and top_p for exploration diversity
-        // Three bands: exploitation (low temp), balanced, exploration (high temp)
-        let mut rng = rand::rng();
-        let band: u8 = rng.random_range(0..3);
-        let (temp, top_p) = match band {
-            0 => {
-                // Exploitation: low temperature, more deterministic
-                (rng.random_range(0.15..0.35), rng.random_range(0.80..0.90))
-            }
-            1 => {
-                // Balanced: medium temperature
-                (rng.random_range(0.35..0.55), rng.random_range(0.85..0.95))
-            }
-            _ => {
-                // Exploration: high temperature, more creative
-                (rng.random_range(0.55..0.85), rng.random_range(0.90..0.98))
-            }
-        };
-
-        debug!(row_idx = row_idx, temp = temp, top_p = top_p, "Calling LLM for patch");
-
-        // Call vLLM with sampled options
-        let client = VllmClient::new(&self.config.vllm_host);
-
-        let response = match client.generate(&self.config.model, &prompt, temp, top_p, 8).await {
-            Ok(r) => r,
-            Err(e) => {
-                warn!(error = %e, "LLM call failed");
-                return Ok(None);
-            }
-        };
-
-        let response_text = response.trim();
-        debug!(response = %response_text, "LLM response");
-
-        // Parse the single number from response
-        let fill_value = self.parse_single_number(response_text, n);
-
-        match fill_value {
-            Some(value) => {
-                // Construct new row by replacing the empty cell at target_pos
-                let mut new_cells: Vec<String> = cells.iter().map(|s| s.to_string()).collect();
-                new_cells[target_pos] = value.to_string();
-                let new_content = new_cells.join(" ");
-                if new_content != view.content {
-                    Ok(Some(new_content))
-                } else {
-                    Ok(None)
-                }
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Parse a single number from the LLM response.
-    fn parse_single_number(&self, response: &str, n: usize) -> Option<u8> {
-        // Extract first valid number from response
-        let cleaned = response.replace([',', '[', ']', '"', '.'], " ");
-
-        for word in cleaned.split_whitespace() {
-            if let Ok(num) = word.parse::<u8>()
-                && num >= 1
-                && num <= n as u8
-            {
-                return Some(num);
-            }
-        }
-
-        None
-    }
-
     /// Run PressureField strategy using the kernel's actor-based coordination.
     ///
     /// This method uses the survival-kernel's actor system for coordination:
     /// - KernelCoordinator orchestrates tick phases
     /// - LlmActors propose patches via broker pub/sub
     /// - RegionActors validate and apply patches
-    /// - TickDriverActor forwards results to the experiment harness
-    #[allow(clippy::too_many_lines)]
+    /// - Internal TickActor drives the tick loop
+    /// - kernel.run() returns comprehensive results
     async fn run_pressure_field_with_kernel(
         &self,
         artifact: LatinSquareArtifact,
-        shared_grid: SharedGrid,
         example_bank: Arc<RwLock<ExampleBank>>,
         sensor: LatinSquareSensor,
         agent_count: usize,
-        trial: usize,
-        seed: Option<u64>,
-        started_at: chrono::DateTime<Utc>,
-        start_time: Instant,
+        ctx: RunContext,
     ) -> Result<ExperimentResult> {
         let n = artifact.size();
         let initial_empty = artifact.empty_count();
@@ -992,19 +850,10 @@ What number goes in position {target_pos}? Return just the number."#,
         // Create acton runtime
         let mut runtime = ActonApp::launch_async().await;
 
-        // Build and spawn the kernel coordinator with artifact and sensor
-        let coordinator_handle = AsyncKernelBuilder::new(
-            kernel_config,
-            Box::new(artifact.clone()),
-        )
-        .add_sensor(Box::new(sensor.clone()))
-        .spawn(&mut runtime)
-        .await;
-
         // Create semaphore for rate limiting LLM requests
         let semaphore = Arc::new(tokio::sync::Semaphore::new(self.config.max_concurrent_llm));
 
-        // Spawn LLM actors - they self-register via PatchActorReady broadcast
+        // Spawn LLM actors first - they self-register via PatchActorReady broadcast
         // Distribute actors across sampling bands for diversity
         for i in 0..agent_count {
             let band = match i % 3 {
@@ -1037,242 +886,65 @@ What number goes in position {target_pos}? Return just the number."#,
             llm_actor.spawn(&mut runtime).await;
         }
 
-        // Create tick driver to receive TickComplete messages
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-        let tick_driver = TickDriverActor::new(tx);
-        let tick_driver_handle = tick_driver.spawn(&mut runtime).await;
-
-        // Register tick driver with coordinator
-        coordinator_handle
-            .send(RegisterTickDriver {
-                handle: tick_driver_handle,
-            })
+        // Build kernel and run to completion
+        // The kernel handles:
+        // - Spawning coordinator, sensors, region actors, tick actor
+        // - Waiting for patch actors to register
+        // - Running the tick loop internally
+        // - Collecting all metrics via internal observers
+        let kernel_result = AsyncKernelBuilder::new(kernel_config, Box::new(artifact.clone()))
+            .add_sensor(Box::new(sensor))
+            .run(&mut runtime, agent_count)
             .await;
-
-        // Wait for all patch actors to register before starting ticks
-        // This prevents the race condition where ticks start before actors are ready
-        let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
-        let startup_waiter = StartupWaiter::new(startup_tx);
-        startup_waiter.spawn(&mut runtime).await;
-
-        // Tell coordinator how many actors we expect and wait for confirmation
-        coordinator_handle
-            .send(WaitForPatchActors {
-                expected_count: agent_count,
-            })
-            .await;
-
-        // Wait for PatchActorsReady (with timeout for safety)
-        match tokio::time::timeout(
-            tokio::time::Duration::from_secs(5),
-            startup_rx,
-        )
-        .await
-        {
-            Ok(Ok(registered)) => {
-                tracing::debug!(
-                    expected = agent_count,
-                    registered = registered,
-                    "All patch actors registered"
-                );
-            }
-            Ok(Err(_)) => {
-                tracing::warn!("Startup waiter channel closed unexpectedly");
-            }
-            Err(_) => {
-                tracing::warn!(
-                    expected = agent_count,
-                    "Timeout waiting for patch actors to register, proceeding anyway"
-                );
-            }
-        }
-
-        // Tracking
-        let mut pressure_history = Vec::new();
-        let mut patches_per_tick = Vec::new();
-        let mut empty_cells_history = Vec::new();
-        let mut tick_metrics = Vec::new();
-        let mut total_prompt_tokens: u32 = 0;
-        let mut total_completion_tokens: u32 = 0;
-        let total_patch_rejections: HashMap<PatchRejection, usize> = HashMap::new();
-
-        // Model escalation state
-        let mut current_model_idx: usize = 0;
-        let mut zero_velocity_ticks: usize = 0;
-        let mut escalation_events: Vec<EscalationEvent> = Vec::new();
-
-        // Track artifact state locally (kernel owns the canonical artifact)
-        let mut local_artifact = artifact.clone();
-
-        // Initial measurement
-        let initial_pressure = self.measure_total_pressure(&local_artifact, &sensor)?;
-        pressure_history.push(initial_pressure);
-        empty_cells_history.push(local_artifact.empty_count());
-
-        // Run tick loop
-        for tick in 0..self.config.max_ticks {
-            let tick_start = Instant::now();
-
-            // Apply decay to example bank
-            if self.config.decay_enabled {
-                let bank = example_bank.read().await;
-                bank.apply_decay();
-            }
-
-            // Send Tick to coordinator
-            coordinator_handle
-                .send(Tick {
-                    now_ms: tick as u64 * 100,
-                })
-                .await;
-
-            // Wait for TickComplete
-            let tick_result = match tokio::time::timeout(
-                tokio::time::Duration::from_secs(30),
-                rx.recv(),
-            )
-            .await
-            {
-                Ok(Some(result)) => result,
-                Ok(None) => {
-                    warn!(tick = tick, "TickDriver channel closed");
-                    break;
-                }
-                Err(_) => {
-                    warn!(tick = tick, "Tick timed out after 30s");
-                    break;
-                }
-            };
-
-            // Update local artifact state from applied patches
-            for patch in &tick_result.applied {
-                if let PatchOp::Replace(new_content) = &patch.op {
-                    // Apply patch to local artifact
-                    let local_patch = survival_kernel::region::Patch {
-                        region: patch.region,
-                        op: PatchOp::Replace(new_content.clone()),
-                        rationale: patch.rationale.clone(),
-                        expected_delta: patch.expected_delta.clone(),
-                    };
-                    if local_artifact.apply_patch(local_patch).is_ok() {
-                        // Update shared grid for sensor column detection
-                        update_shared_grid(&shared_grid, local_artifact.grid())?;
-
-                        // Add successful patch to example bank
-                        if self.config.examples_enabled {
-                            // Get the old content from region view
-                            if let Ok(view) = local_artifact.read_region(patch.region) {
-                                let bank = example_bank.read().await;
-                                // Estimate pressure improvement (patch was validated by kernel)
-                                bank.add_example(
-                                    view.content.clone(), // This is now the new content
-                                    new_content.clone(),
-                                    1.0, // Estimated before pressure
-                                    0.0, // Estimated after pressure (improved)
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Aggregate token counts
-            total_prompt_tokens += tick_result.prompt_tokens;
-            total_completion_tokens += tick_result.completion_tokens;
-
-            // Record metrics
-            let current_pressure = tick_result.total_pressure;
-            pressure_history.push(current_pressure);
-            patches_per_tick.push(tick_result.applied.len());
-            empty_cells_history.push(local_artifact.empty_count());
-
-            let current_model = if self.config.model_chain.is_empty() {
-                self.config.model.clone()
-            } else {
-                self.config.model_chain[current_model_idx.min(self.config.model_chain.len() - 1)]
-                    .clone()
-            };
-
-            tick_metrics.push(TickMetrics {
-                tick,
-                pressure_before: pressure_history[tick],
-                pressure_after: current_pressure,
-                patches_proposed: tick_result.evaluated,
-                patches_applied: tick_result.applied.len(),
-                empty_cells: local_artifact.empty_count(),
-                violations: local_artifact.total_violations(),
-                llm_calls: agent_count, // All actors were queried
-                duration_ms: tick_start.elapsed().as_millis() as u64,
-                model_used: current_model.clone(),
-                prompt_tokens: tick_result.prompt_tokens,
-                completion_tokens: tick_result.completion_tokens,
-                patch_rejections: HashMap::new(),
-                messages_per_tick: None,
-            });
-
-            // Check if solved
-            if local_artifact.is_solved() {
-                info!(
-                    tick = tick,
-                    duration_ms = start_time.elapsed().as_millis(),
-                    "Puzzle solved!"
-                );
-                break;
-            }
-
-            // Model escalation: track velocity and escalate when stuck
-            let velocity = tick_result.velocity;
-            if velocity >= 0.0 {
-                // No improvement (velocity is pressure change, negative = improvement)
-                zero_velocity_ticks += 1;
-
-                if zero_velocity_ticks >= self.config.escalation_threshold
-                    && current_model_idx < self.config.model_chain.len() - 1
-                {
-                    let from_model = self.config.model_chain[current_model_idx].clone();
-                    current_model_idx += 1;
-                    let to_model = self.config.model_chain[current_model_idx].clone();
-                    zero_velocity_ticks = 0;
-
-                    escalation_events.push(EscalationEvent {
-                        tick,
-                        from_model: from_model.clone(),
-                        to_model: to_model.clone(),
-                    });
-
-                    info!(
-                        tick = tick,
-                        new_model = &to_model,
-                        prev_model = &from_model,
-                        "Escalating model due to stalled progress"
-                    );
-
-                    // Note: LlmActors would need to be notified of model change
-                    // This requires a new message type - for now, we continue with original model
-                }
-            } else {
-                zero_velocity_ticks = 0;
-            }
-        }
 
         // Shutdown runtime
         let _ = runtime.shutdown_all().await;
 
         let ended_at = Utc::now();
-        let solved = local_artifact.is_solved();
-        let final_pressure = self.measure_total_pressure(&local_artifact, &sensor)?;
+        let solved = matches!(kernel_result.stop_reason, StopReason::Complete);
 
+        // Get example bank stats
         let example_bank_stats = {
             let bank = example_bank.read().await;
             Some(bank.stats())
         };
 
-        let final_model = if self.config.model_chain.is_empty() {
-            self.config.model.clone()
-        } else {
-            self.config.model_chain[current_model_idx.min(self.config.model_chain.len() - 1)]
-                .clone()
-        };
+        // Build tick metrics from kernel results
+        let tick_metrics: Vec<TickMetrics> = kernel_result
+            .tick_results
+            .iter()
+            .enumerate()
+            .map(|(tick, result)| {
+                let pressure_before = if tick > 0 {
+                    kernel_result.pressure_history.get(tick - 1).copied().unwrap_or(0.0)
+                } else {
+                    kernel_result.pressure_history.first().copied().unwrap_or(0.0)
+                };
+
+                TickMetrics {
+                    tick,
+                    pressure_before,
+                    pressure_after: result.total_pressure,
+                    patches_proposed: result.evaluated,
+                    patches_applied: result.applied.len(),
+                    empty_cells: 0, // Not tracked per-tick in kernel
+                    violations: 0,  // Not tracked per-tick in kernel
+                    llm_calls: agent_count,
+                    duration_ms: 0, // Not tracked per-tick in kernel
+                    model_used: self.config.model.clone(),
+                    prompt_tokens: result.prompt_tokens,
+                    completion_tokens: result.completion_tokens,
+                    patch_rejections: HashMap::new(),
+                    messages_per_tick: None,
+                }
+            })
+            .collect();
+
+        let patches_per_tick: Vec<usize> = kernel_result
+            .tick_results
+            .iter()
+            .map(|r| r.applied.len())
+            .collect();
 
         Ok(ExperimentResult {
             config: ExperimentConfig {
@@ -1283,24 +955,24 @@ What number goes in position {target_pos}? Return just the number."#,
                 decay_enabled: self.config.decay_enabled,
                 inhibition_enabled: self.config.inhibition_enabled,
                 examples_enabled: self.config.examples_enabled,
-                trial,
-                seed,
+                trial: ctx.trial,
+                seed: ctx.seed,
             },
-            started_at,
+            started_at: ctx.started_at,
             ended_at,
-            total_ticks: tick_metrics.len(),
+            total_ticks: kernel_result.ticks_executed,
             solved,
-            final_pressure,
-            pressure_history,
+            final_pressure: kernel_result.final_pressure,
+            pressure_history: kernel_result.pressure_history,
             patches_per_tick,
-            empty_cells_history,
+            empty_cells_history: Vec::new(), // Not tracked per-tick in kernel
             example_bank_stats,
             tick_metrics,
-            escalation_events,
-            final_model,
-            total_prompt_tokens,
-            total_completion_tokens,
-            total_patch_rejections,
+            escalation_events: Vec::new(), // Model escalation not implemented in kernel yet
+            final_model: self.config.model.clone(),
+            total_prompt_tokens: kernel_result.prompt_tokens,
+            total_completion_tokens: kernel_result.completion_tokens,
+            total_patch_rejections: HashMap::new(),
             conversation_stats: None,
         })
     }
@@ -1373,6 +1045,8 @@ What number goes in position {target_pos}? Return just the number."#,
 
         KernelConfig {
             tick_interval_ms,
+            max_ticks: self.config.max_ticks,
+            stable_threshold: 3, // Stop after 3 stable ticks
             pressure_axes,
             decay,
             activation,
@@ -1385,7 +1059,10 @@ What number goes in position {target_pos}? Return just the number."#,
 mod tests {
     use super::*;
 
+    /// Integration test that requires a running vLLM server on localhost:8000.
+    /// Run manually with: cargo nextest run test_experiment_runner_basic --ignored
     #[tokio::test]
+    #[ignore = "requires external vLLM server on localhost:8000"]
     async fn test_experiment_runner_basic() {
         let config = ExperimentRunnerConfig {
             difficulty: Difficulty::Easy,
@@ -1407,57 +1084,6 @@ mod tests {
     fn test_strategy_names() {
         assert_eq!(Strategy::PressureField.name(), "pressure_field");
         assert_eq!(Strategy::Sequential.name(), "sequential");
-    }
-
-    #[test]
-    fn test_parse_single_number_basic() {
-        let config = ExperimentRunnerConfig::default();
-        let runner = ExperimentRunner::new(config);
-
-        // Basic valid numbers
-        assert_eq!(runner.parse_single_number("3", 5), Some(3));
-        assert_eq!(runner.parse_single_number("1", 5), Some(1));
-        assert_eq!(runner.parse_single_number("5", 5), Some(5));
-
-        // Numbers with surrounding text (common LLM output)
-        assert_eq!(runner.parse_single_number("The answer is 4", 5), Some(4));
-        assert_eq!(runner.parse_single_number("I think 2 is correct", 5), Some(2));
-    }
-
-    #[test]
-    fn test_parse_single_number_edge_cases() {
-        let config = ExperimentRunnerConfig::default();
-        let runner = ExperimentRunner::new(config);
-
-        // Out of range (should return None)
-        assert_eq!(runner.parse_single_number("0", 5), None); // 0 is invalid (1-indexed)
-        assert_eq!(runner.parse_single_number("6", 5), None); // > n
-        assert_eq!(runner.parse_single_number("10", 5), None); // way out of range
-
-        // Empty or no numbers
-        assert_eq!(runner.parse_single_number("", 5), None);
-        assert_eq!(runner.parse_single_number("no number here", 5), None);
-
-        // Multiple numbers (should pick first valid)
-        assert_eq!(runner.parse_single_number("3 4 5", 5), Some(3));
-
-        // With special characters that LLMs sometimes include
-        assert_eq!(runner.parse_single_number("[3]", 5), Some(3));
-        assert_eq!(runner.parse_single_number("\"4\"", 5), Some(4));
-        assert_eq!(runner.parse_single_number("3.", 5), Some(3));
-        assert_eq!(runner.parse_single_number("3,", 5), Some(3));
-    }
-
-    #[test]
-    fn test_parse_single_number_range_boundaries() {
-        let config = ExperimentRunnerConfig::default();
-        let runner = ExperimentRunner::new(config);
-
-        // For a 7x7 puzzle
-        assert_eq!(runner.parse_single_number("1", 7), Some(1)); // min valid
-        assert_eq!(runner.parse_single_number("7", 7), Some(7)); // max valid
-        assert_eq!(runner.parse_single_number("8", 7), None); // just over
-        assert_eq!(runner.parse_single_number("0", 7), None); // just under
     }
 
     #[test]

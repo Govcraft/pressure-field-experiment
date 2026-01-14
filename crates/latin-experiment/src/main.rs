@@ -275,7 +275,7 @@ async fn main() -> Result<()> {
                 let model_short = tm
                     .model_used
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap_or(&tm.model_used)
                     .replace("Qwen2.5-", "");
                 println!(

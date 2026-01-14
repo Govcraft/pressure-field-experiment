@@ -1,7 +1,7 @@
-//! Latin Square Experiment: A simpler domain for validating pressure-field coordination.
+//! Latin Square Experiment: A simple domain for validating pressure-field coordination.
 //!
 //! This crate implements a Latin Square completion experiment that:
-//! - Uses pure Rust validation (no subprocess spawning)
+//! - Uses pure Rust validation (no subprocess spawning or forking)
 //! - Demonstrates emergent coordination through column constraints
 //! - Implements swarm intelligence via few-shot accumulation (pheromone-like)
 
@@ -13,5 +13,4 @@ pub mod generator;
 pub mod llm_actor;
 pub mod results;
 pub mod sensors;
-pub mod tick_driver;
 pub mod vllm_client;

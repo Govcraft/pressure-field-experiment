@@ -365,7 +365,7 @@ where $"empty"_i$ counts unfilled cells in row $i$, $"row\_dups"_i$ counts dupli
 
 We compare five coordination strategies, all using identical LLMs (`Qwen/Qwen2.5-0.5B` via vLLM) to isolate coordination effects:
 
-*Pressure-field (ours)*: Full system with decay ($lambda_f = 0.1$), inhibition ($tau_"inh" = 4$ ticks), and parallel validation.
+*Pressure-field (ours)*: Full system with decay ($lambda_f = 0.1$), inhibition ($tau_"inh" = 4$ ticks), greedy region selection (highest-pressure region per tick), and parallel validation. This instantiates the general framework with $tau_"act" = 0$, meaning all regions are eligible, but only the maximum-pressure region receives proposals each tick.
 
 *Sequential*: Single agent iterates through rows in fixed order, proposing one value per tick. No parallelism or pressure guidance.
 
@@ -377,7 +377,7 @@ We compare five coordination strategies, all using identical LLMs (`Qwen/Qwen2.5
 
 === Metrics
 
-- *Solve rate*: Percentage of puzzles reaching zero pressure within 100 ticks
+- *Solve rate*: Percentage of puzzles reaching zero pressure (no constraint violations) within 100 ticks. Zero pressure implies $P_i(s) < tau_"act"$ for any $tau_"act" > 0$, satisfying the theoretical stability condition.
 - *Ticks to solve*: Convergence speed for solved cases
 - *Final pressure*: Remaining constraint violations for unsolved cases
 
@@ -430,7 +430,7 @@ Decay proves essential---without it, final pressure increases dramatically:
   caption: [Decay ablation on $5 times 5$ puzzles (240 total trials across 8 configurations). Welch's t-test: $t = -32.2$, $p < 10^(-60)$. Cohen's $d = 4.15$ (huge effect).],
 )
 
-The effect size is massive: Cohen's $d = 4.15$ far exceeds the threshold for "large" effects ($d > 0.8$). Disabling decay increases final pressure by 49$times$ (from 1.18 to 58.14). Without decay, fitness saturates after initial patches. High-fitness regions never re-enter the activation threshold, leaving the artifact in a high-pressure state. This validates Theorem 2: decay is necessary to continue pressure reduction even when regions appear "stable."
+The effect size is massive: Cohen's $d = 4.15$ far exceeds the threshold for "large" effects ($d > 0.8$). Disabling decay increases final pressure by 49$times$ (from 1.18 to 58.14). Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear "stable" even when they still contain constraint violations. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This validates Theorem 2: decay is necessary to continue pressure reduction even when regions appear stable.
 
 === Effect of Inhibition and Examples
 

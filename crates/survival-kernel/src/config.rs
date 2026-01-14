@@ -9,8 +9,16 @@ use std::collections::HashMap;
 /// Loaded from TOML/JSON at runtime.
 #[derive(Debug, Clone, Deserialize)]
 pub struct KernelConfig {
-    /// Tick interval in milliseconds (for decay calculations)
+    /// Tick interval in milliseconds (for decay calculations and internal tick rate)
     pub tick_interval_ms: u64,
+
+    /// Maximum ticks before stopping (0 = unlimited)
+    #[serde(default)]
+    pub max_ticks: usize,
+
+    /// Consecutive stable ticks (no patches) required for convergence (0 = disable)
+    #[serde(default)]
+    pub stable_threshold: usize,
 
     /// Pressure axis definitions
     pub pressure_axes: Vec<PressureAxisConfig>,
@@ -78,6 +86,8 @@ impl Default for KernelConfig {
     fn default() -> Self {
         Self {
             tick_interval_ms: 250,
+            max_ticks: 0,         // unlimited
+            stable_threshold: 3,  // stop after 3 ticks with no patches
             pressure_axes: Vec::new(),
             decay: DecayConfig {
                 fitness_half_life_ms: 600_000,    // 10 minutes

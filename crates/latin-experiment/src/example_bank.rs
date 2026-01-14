@@ -122,6 +122,7 @@ impl Default for ExampleBankConfig {
 /// The example bank: a pheromone-based few-shot learning system.
 ///
 /// Thread-safe via RwLock for concurrent access during experiments.
+#[derive(Debug)]
 pub struct ExampleBank {
     /// Configuration
     config: ExampleBankConfig,
