@@ -75,7 +75,7 @@ Pressure-field coordination satisfies De Wolf and Holvoet's @dewolf2005engineeri
 
 No external controller exists---agents observe and act autonomously based on local pressure signals. Coordination emerges from local decisions: agents reduce regional pressure through greedy actions, and global coordination arises from shared artifact state. Temporal decay provides dynamic adaptation---fitness erodes continuously, preventing premature convergence and enabling continued refinement.
 
-The theoretical contribution formalizes this intuition through potential game theory. Theorem 1 establishes convergence guarantees for aligned pressure systems; Theorem 2 shows decay enables escape from suboptimal basins. This bridges descriptive design patterns and prescriptive theoretical frameworks.
+The theoretical contribution formalizes this intuition through potential game theory. Theorem 1 establishes convergence guarantees for aligned pressure systems; the Basin Separation result (Theorem 3) explains why decay is necessary to escape suboptimal basins. This bridges descriptive design patterns and prescriptive theoretical frameworks.
 
 === Foundation Model Enablement
 
@@ -195,7 +195,7 @@ More generally, alignment holds when cross-region interactions are bounded:
   That is, modifying region $i$ changes other regions' pressures by at most $epsilon$.
 ]
 
-Under $epsilon$-bounded coupling with $n$ regions, if a local action reduces $P_i$ by $delta > n epsilon$, then global pressure decreases by at least $delta - n epsilon > 0$.
+Under $epsilon$-bounded coupling with $n$ regions, if a local action reduces $P_i$ by $delta > (n-1) epsilon$, then global pressure decreases by at least $delta - (n-1) epsilon > 0$.
 
 == Connection to Potential Games
 
@@ -207,6 +207,8 @@ The aligned pressure system forms a *potential game* where:
 In potential games, any sequence of improving moves converges to a Nash equilibrium. In our setting, Nash equilibria correspond to stable basins: states where no local action can reduce pressure below the activation threshold.
 
 This connection provides our convergence guarantee without requiring explicit coordination.
+
+Note that this convergence result assumes finite action spaces. In practice, patches are drawn from a finite set of LLM-generated proposals per region, satisfying this requirement. For infinite content spaces, convergence to approximate equilibria can be established under Lipschitz continuity conditions on pressure functions.
 
 == The Coordination Algorithm
 
@@ -269,12 +271,12 @@ We establish three main results: (1) convergence to stable basins under alignmen
 == Convergence Under Alignment
 
 #theorem(name: "Convergence")[
-  Let the pressure system be aligned with $epsilon$-bounded coupling. Let $delta_"min" > 0$ be the minimum pressure reduction from any applied patch, and assume $delta_"min" > n epsilon$ where $n$ is the number of regions. Then from any initial state $s_0$ with pressure $P_0 = P(s_0)$, the system reaches a stable basin within:
-  $ T <= P_0 / (delta_"min" - n epsilon) $
-  ticks, provided decay rates satisfy $lambda_f, lambda_gamma < delta_"min" "/" tau_"inh"$.
+  Let the pressure system be aligned with $epsilon$-bounded coupling. Let $delta_"min" > 0$ be the minimum *local* pressure reduction $P_i(s) - P_i(s')$ from any applied patch, and assume $delta_"min" > (n-1) epsilon$ where $n$ is the number of regions. Then from any initial state $s_0$ with pressure $P_0 = P(s_0)$, the system reaches a stable basin within:
+  $ T <= P_0 / (delta_"min" - (n-1) epsilon) $
+  ticks, provided the fitness boost $Delta_f$ from successful patches exceeds decay during inhibition: $Delta_f > 1 - e^(-lambda_f dot.c tau_"inh")$.
 ]
 
-*Proof sketch.* Under alignment with $epsilon$-bounded coupling, each applied patch reduces global pressure by at least $delta_"min" - n epsilon > 0$. Since $P(s) >= 0$ and decreases by a fixed minimum per tick (when patches are applied), the system must reach a state where no region exceeds $tau_"act"$ within the stated bound. The decay constraint ensures that stability is maintained once reached: fitness reinforcement from the final patches persists longer than the decay erodes it. $square$
+*Proof sketch.* Under alignment with $epsilon$-bounded coupling, each applied patch reduces global pressure by at least $delta_"min" - (n-1) epsilon > 0$. Since $P(s) >= 0$ and decreases by a fixed minimum per tick (when patches are applied), the system must reach a state where no region exceeds $tau_"act"$ within the stated bound. The decay constraint ensures that stability is maintained once reached: fitness reinforcement from the final patches persists longer than the decay erodes it. $square$
 
 The bound is loose but establishes the key property: convergence time scales with initial pressure, not with state space size or number of possible actions.
 
@@ -315,11 +317,11 @@ The key observation: adding agents increases throughput (more patches proposed p
 
 #theorem(name: "Parallel Convergence")[
   Under the same alignment conditions as Theorem 1, with $K$ patches validated in parallel per tick where patches affect disjoint regions, the system reaches a stable basin within:
-  $ T <= P_0 / (K dot.c (delta_"min" - n epsilon)) $
+  $ T <= P_0 / (K dot.c (delta_"min" - (n-1) epsilon)) $
   This improves convergence time by factor $K$ while maintaining guarantees.
 ]
 
-*Proof sketch.* When $K$ non-conflicting patches are applied per tick, each reduces global pressure by at least $delta_"min" - n epsilon$. The combined reduction is $K dot.c (delta_"min" - n epsilon)$ per tick. The bound follows directly. Note that if patches conflict (target the same region), only one is selected per region, and effective speedup is reduced. $square$
+*Proof sketch.* When $K$ non-conflicting patches are applied per tick, each reduces global pressure by at least $delta_"min" - (n-1) epsilon$. The combined reduction is $K dot.c (delta_"min" - (n-1) epsilon)$ per tick. The bound follows directly. Note that if patches conflict (target the same region), only one is selected per region, and effective speedup is reduced. $square$
 
 == Comparison to Alternatives
 
