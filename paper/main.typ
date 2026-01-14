@@ -432,7 +432,7 @@ Decay proves essential---without it, final pressure increases dramatically:
   caption: [Decay ablation on $5 times 5$ puzzles (240 total trials across 8 configurations). Welch's t-test: $t = -32.2$, $p < 10^(-60)$. Cohen's $d = 4.15$ (huge effect).],
 )
 
-The effect size is massive: Cohen's $d = 4.15$ far exceeds the threshold for "large" effects ($d > 0.8$). Disabling decay increases final pressure by 49$times$ (from 1.18 to 58.14). Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear "stable" even when they still contain constraint violations. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This validates Theorem 2: decay is necessary to continue pressure reduction even when regions appear stable.
+The effect size is massive: Cohen's $d = 4.15$ far exceeds the threshold for "large" effects ($d > 0.8$). Disabling decay increases final pressure by 49$times$ (from 1.18 to 58.14). Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear "stable" even when they still contain constraint violations. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This validates the Basin Separation result (Theorem 3): decay is necessary to escape suboptimal basins and continue pressure reduction even when regions appear stable.
 
 === Effect of Inhibition and Examples
 
