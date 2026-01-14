@@ -27,7 +27,7 @@ use survival_kernel::region::PatchOp;
 use survival_kernel::AsyncKernelBuilder;
 
 use crate::llm_actor::{LlmActor, LlmActorConfig, SamplingBand, SamplingConfig};
-use crate::tick_driver::{StartupWaiter, TickDriverActor};
+use crate::tick_driver::TickDriverActor;
 
 use crate::artifact::LatinSquareArtifact;
 use crate::conversation::ConversationRunner;
@@ -1049,43 +1049,21 @@ What number goes in position {target_pos}? Return just the number."#,
             })
             .await;
 
-        // Wait for all patch actors to register before starting ticks
-        // This prevents the race condition where ticks start before actors are ready
-        let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
-        let startup_waiter = StartupWaiter::new(startup_tx);
-        startup_waiter.spawn(&mut runtime).await;
+        // Wait for patch actors to register before starting ticks.
+        // The actors broadcast PatchActorReady in their after_start callbacks,
+        // which run asynchronously after spawn() returns. Give sufficient time
+        // for all actors to register with the coordinator.
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-        // Tell coordinator how many actors we expect and wait for confirmation
+        // Send WaitForPatchActors to ensure coordinator has expected count
         coordinator_handle
             .send(WaitForPatchActors {
                 expected_count: agent_count,
             })
             .await;
 
-        // Wait for PatchActorsReady (with timeout for safety)
-        match tokio::time::timeout(
-            tokio::time::Duration::from_secs(5),
-            startup_rx,
-        )
-        .await
-        {
-            Ok(Ok(registered)) => {
-                tracing::debug!(
-                    expected = agent_count,
-                    registered = registered,
-                    "All patch actors registered"
-                );
-            }
-            Ok(Err(_)) => {
-                tracing::warn!("Startup waiter channel closed unexpectedly");
-            }
-            Err(_) => {
-                tracing::warn!(
-                    expected = agent_count,
-                    "Timeout waiting for patch actors to register, proceeding anyway"
-                );
-            }
-        }
+        // Additional yield to let coordinator process the message
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         // Tracking
         let mut pressure_history = Vec::new();
