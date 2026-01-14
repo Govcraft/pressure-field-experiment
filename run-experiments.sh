@@ -20,9 +20,23 @@ TRIALS="${TRIALS:-30}"  # 30 trials for publication-quality statistics
 DRY_RUN="${DRY_RUN:-false}"
 PARALLEL="${PARALLEL:-10}"
 
-# Model chain for escalation (smallest to largest) - HuggingFace format for vLLM
-MODEL_CHAIN="Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B"
-MODEL_SINGLE="Qwen/Qwen2.5-0.5B"
+# Model chains for escalation - load balanced across vLLM servers
+# Chain A: 3B → 7B → 14B (ports 8003 → 8004 → 8005) - for main-grid, escalation
+MODEL_CHAIN_A="Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B"
+VLLM_HOST_A="http://localhost:8003"
+VLLM_HOSTS_A="http://localhost:8003,http://localhost:8004,http://localhost:8005"
+
+# Chain B: 7B → 14B (ports 8004 → 8005) - for scaling, difficulty
+MODEL_CHAIN_B="Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B"
+VLLM_HOST_B="http://localhost:8004"
+VLLM_HOSTS_B="http://localhost:8004,http://localhost:8005"
+
+# Single model for ablation (no escalation) - uses 14B to avoid contention
+MODEL_SINGLE="Qwen/Qwen2.5-14B"
+VLLM_HOST_SINGLE="http://localhost:8005"
+
+# Default chain (used if not overridden)
+MODEL_CHAIN="$MODEL_CHAIN_A"
 ESCALATION_THRESHOLD=10
 NUM_MODELS=3  # 3B, 7B, 14B (skip 0.5B, 1.5B for efficiency)
 MAX_TICKS=$((NUM_MODELS * ESCALATION_THRESHOLD))  # 30 ticks = room for all 3 models
@@ -250,11 +264,12 @@ run_main_grid() {
     log_info "5 strategies × 4 agent counts × $TRIALS trials = $((5 * 4 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
+    # Uses Chain A: 3B → 7B → 14B (ports 8003-8005)
     run_cmd "Main Grid Experiment" \
         "$LATIN_EXPERIMENT" \
-        --vllm-host "$VLLM_HOST" \
-        --vllm-hosts "${VLLM_HOSTS:-}" \
-        --model-chain "$MODEL_CHAIN" \
+        --vllm-host "$VLLM_HOST_A" \
+        --vllm-hosts "$VLLM_HOSTS_A" \
+        --model-chain "$MODEL_CHAIN_A" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
         --trials "$TRIALS" \
@@ -280,10 +295,10 @@ run_ablation() {
     log_info "8 configurations × $TRIALS trials = $((8 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
+    # Uses single 14B model (port 8005) - no escalation, avoids contention
     run_cmd "Ablation Study" \
         "$LATIN_EXPERIMENT" \
-        --vllm-host "$VLLM_HOST" \
-        --vllm-hosts "${VLLM_HOSTS:-}" \
+        --vllm-host "$VLLM_HOST_SINGLE" \
         --model-chain "$MODEL_SINGLE" \
         ablation \
         --trials "$TRIALS" \
@@ -306,11 +321,12 @@ run_scaling() {
     log_info "2 strategies × 5 agent counts × $TRIALS trials = $((2 * 5 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
+    # Uses Chain B: 7B → 14B (ports 8004-8005) - load balanced with main-grid
     run_cmd "Scaling Analysis" \
         "$LATIN_EXPERIMENT" \
-        --vllm-host "$VLLM_HOST" \
-        --vllm-hosts "${VLLM_HOSTS:-}" \
-        --model-chain "$MODEL_CHAIN" \
+        --vllm-host "$VLLM_HOST_B" \
+        --vllm-hosts "$VLLM_HOSTS_B" \
+        --model-chain "$MODEL_CHAIN_B" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
         --trials "$TRIALS" \
@@ -335,13 +351,12 @@ run_escalation() {
     log_info "2 configs × 5 strategies × $TRIALS trials = $((2 * 5 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
-    # Without escalation (single 0.5B model)
-    log_info "Running WITHOUT escalation..."
+    # Without escalation - uses single 3B model (port 8003)
+    log_info "Running WITHOUT escalation (3B only)..."
     run_cmd "Escalation: Single Model" \
         "$LATIN_EXPERIMENT" \
-        --vllm-host "$VLLM_HOST" \
-        --vllm-hosts "${VLLM_HOSTS:-}" \
-        --model-chain "$MODEL_SINGLE" \
+        --vllm-host "$VLLM_HOST_A" \
+        --model-chain "Qwen/Qwen2.5-3B" \
         grid \
         --trials "$TRIALS" \
         --n 7 \
@@ -351,13 +366,13 @@ run_escalation() {
         --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/escalation-without.json"
 
-    # With escalation (full model chain)
-    log_info "Running WITH escalation..."
+    # With escalation - uses Chain A: 3B → 7B → 14B (ports 8003-8005)
+    log_info "Running WITH escalation (3B → 7B → 14B)..."
     run_cmd "Escalation: Model Chain" \
         "$LATIN_EXPERIMENT" \
-        --vllm-host "$VLLM_HOST" \
-        --vllm-hosts "${VLLM_HOSTS:-}" \
-        --model-chain "$MODEL_CHAIN" \
+        --vllm-host "$VLLM_HOST_A" \
+        --vllm-hosts "$VLLM_HOSTS_A" \
+        --model-chain "$MODEL_CHAIN_A" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
         --trials "$TRIALS" \
@@ -382,13 +397,13 @@ run_difficulty() {
     log_info "2 difficulty levels × 5 strategies × $TRIALS trials = $((2 * 5 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
-    # Easy: 5x5, 5 empty (20%)
+    # Easy: 5x5, 5 empty (20%) - uses Chain B: 7B → 14B (ports 8004-8005)
     log_info "Running Easy difficulty (5x5, 5 empty)..."
     run_cmd "Difficulty: Easy" \
         "$LATIN_EXPERIMENT" \
-        --vllm-host "$VLLM_HOST" \
-        --vllm-hosts "${VLLM_HOSTS:-}" \
-        --model-chain "$MODEL_CHAIN" \
+        --vllm-host "$VLLM_HOST_B" \
+        --vllm-hosts "$VLLM_HOSTS_B" \
+        --model-chain "$MODEL_CHAIN_B" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
         --trials "$TRIALS" \
@@ -399,13 +414,13 @@ run_difficulty() {
         --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/difficulty-easy.json"
 
-    # Hard: 7x7, 7 empty (matches main grid for comparison)
+    # Hard: 7x7, 7 empty - uses Chain B: 7B → 14B (ports 8004-8005)
     log_info "Running Hard difficulty (7x7, 7 empty)..."
     run_cmd "Difficulty: Hard" \
         "$LATIN_EXPERIMENT" \
-        --vllm-host "$VLLM_HOST" \
-        --vllm-hosts "${VLLM_HOSTS:-}" \
-        --model-chain "$MODEL_CHAIN" \
+        --vllm-host "$VLLM_HOST_B" \
+        --vllm-hosts "$VLLM_HOSTS_B" \
+        --model-chain "$MODEL_CHAIN_B" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
         --trials "$TRIALS" \
@@ -455,7 +470,7 @@ run_all_parallel() {
     log_info "========================================"
 
     # Export variables needed by subprocesses
-    export RESULTS_DIR LOGS_DIR TRIALS MODEL_CHAIN MODEL_SINGLE ESCALATION_THRESHOLD DRY_RUN LATIN_EXPERIMENT VLLM_HOST VLLM_HOSTS ALL_STRATEGIES MAIN_STRATEGIES
+    export RESULTS_DIR LOGS_DIR TRIALS MODEL_CHAIN MODEL_SINGLE ESCALATION_THRESHOLD DRY_RUN LATIN_EXPERIMENT VLLM_HOST VLLM_HOSTS ALL_STRATEGIES MAIN_STRATEGIES MODEL_CHAIN_A MODEL_CHAIN_B VLLM_HOST_A VLLM_HOST_B VLLM_HOSTS_A VLLM_HOSTS_B VLLM_HOST_SINGLE
 
     # Launch all experiments as background jobs
     # These are independent and can run in any order
