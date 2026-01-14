@@ -253,6 +253,7 @@ run_main_grid() {
     run_cmd "Main Grid Experiment" \
         "$LATIN_EXPERIMENT" \
         --vllm-host "$VLLM_HOST" \
+        --vllm-hosts "${VLLM_HOSTS:-}" \
         --model-chain "$MODEL_CHAIN" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
@@ -282,6 +283,7 @@ run_ablation() {
     run_cmd "Ablation Study" \
         "$LATIN_EXPERIMENT" \
         --vllm-host "$VLLM_HOST" \
+        --vllm-hosts "${VLLM_HOSTS:-}" \
         --model-chain "$MODEL_SINGLE" \
         ablation \
         --trials "$TRIALS" \
@@ -307,6 +309,7 @@ run_scaling() {
     run_cmd "Scaling Analysis" \
         "$LATIN_EXPERIMENT" \
         --vllm-host "$VLLM_HOST" \
+        --vllm-hosts "${VLLM_HOSTS:-}" \
         --model-chain "$MODEL_CHAIN" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
@@ -337,6 +340,7 @@ run_escalation() {
     run_cmd "Escalation: Single Model" \
         "$LATIN_EXPERIMENT" \
         --vllm-host "$VLLM_HOST" \
+        --vllm-hosts "${VLLM_HOSTS:-}" \
         --model-chain "$MODEL_SINGLE" \
         grid \
         --trials "$TRIALS" \
@@ -352,6 +356,7 @@ run_escalation() {
     run_cmd "Escalation: Model Chain" \
         "$LATIN_EXPERIMENT" \
         --vllm-host "$VLLM_HOST" \
+        --vllm-hosts "${VLLM_HOSTS:-}" \
         --model-chain "$MODEL_CHAIN" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
@@ -382,6 +387,7 @@ run_difficulty() {
     run_cmd "Difficulty: Easy" \
         "$LATIN_EXPERIMENT" \
         --vllm-host "$VLLM_HOST" \
+        --vllm-hosts "${VLLM_HOSTS:-}" \
         --model-chain "$MODEL_CHAIN" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
@@ -398,6 +404,7 @@ run_difficulty() {
     run_cmd "Difficulty: Hard" \
         "$LATIN_EXPERIMENT" \
         --vllm-host "$VLLM_HOST" \
+        --vllm-hosts "${VLLM_HOSTS:-}" \
         --model-chain "$MODEL_CHAIN" \
         --escalation-threshold "$ESCALATION_THRESHOLD" \
         grid \
@@ -448,7 +455,7 @@ run_all_parallel() {
     log_info "========================================"
 
     # Export variables needed by subprocesses
-    export RESULTS_DIR LOGS_DIR TRIALS MODEL_CHAIN MODEL_SINGLE ESCALATION_THRESHOLD DRY_RUN LATIN_EXPERIMENT VLLM_HOST ALL_STRATEGIES MAIN_STRATEGIES
+    export RESULTS_DIR LOGS_DIR TRIALS MODEL_CHAIN MODEL_SINGLE ESCALATION_THRESHOLD DRY_RUN LATIN_EXPERIMENT VLLM_HOST VLLM_HOSTS ALL_STRATEGIES MAIN_STRATEGIES
 
     # Launch all experiments as background jobs
     # These are independent and can run in any order
