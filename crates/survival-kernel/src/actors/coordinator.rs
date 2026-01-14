@@ -23,10 +23,10 @@ use crate::artifact::Artifact;
 use crate::config::KernelConfig;
 use crate::kernel::TickResult;
 use crate::messages::{
-    ApplyDecay, MeasureRegion, MeasurementResult, PatchActorReady, PatchProposal, PressureResponse,
-    ProposeForRegion, QueryPressure, RegionApplyPatch, RegionPatchResult, RegisterRegionActors,
-    RegisterTickDriver, SaveArtifact, SensorReady, SetOutputDir, Tick, TickComplete, ValidatePatch,
-    ValidatePatchResponse,
+    ApplyDecay, MeasureRegion, MeasurementResult, PatchActorReady, PatchActorsReady, PatchProposal,
+    PressureResponse, ProposeForRegion, QueryPressure, RegionApplyPatch, RegionPatchResult,
+    RegisterRegionActors, RegisterTickDriver, SaveArtifact, SensorReady, SetOutputDir, Tick,
+    TickComplete, ValidatePatch, ValidatePatchResponse, WaitForPatchActors,
 };
 use crate::pressure::PressureVector;
 use crate::region::{Patch, RegionId, RegionView};
@@ -190,6 +190,8 @@ pub struct KernelCoordinatorState {
     pressure_history: Vec<f64>,
     /// History of velocity values for acceleration calculation
     velocity_history: Vec<f64>,
+    /// Pending waits for patch actors: (expected_count, reply_sender)
+    pending_actor_waits: Vec<(usize, tokio::sync::oneshot::Sender<usize>)>,
 }
 
 impl Default for KernelCoordinatorState {
@@ -210,6 +212,7 @@ impl Default for KernelCoordinatorState {
             output_dir: None,
             pressure_history: Vec::new(),
             velocity_history: Vec::new(),
+            pending_actor_waits: Vec::new(),
         }
     }
 }
@@ -258,6 +261,7 @@ impl Clone for KernelCoordinatorState {
             output_dir: self.output_dir.clone(),
             pressure_history: self.pressure_history.clone(),
             velocity_history: self.velocity_history.clone(),
+            pending_actor_waits: Vec::new(), // Can't clone oneshot::Sender
         }
     }
 }
@@ -361,11 +365,34 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .model
             .registered_patch_actors
             .insert(sender_ern.to_string());
+
+        let current_count = actor.model.registered_patch_actors.len();
         debug!(
             patch_actor_ern = %sender_ern,
-            total_patch_actors = actor.model.registered_patch_actors.len(),
+            total_patch_actors = current_count,
             "Patch actor registered"
         );
+
+        // Check if any pending waits are satisfied
+        let satisfied_indices: Vec<usize> = actor
+            .model
+            .pending_actor_waits
+            .iter()
+            .enumerate()
+            .filter(|(_, (expected, _))| current_count >= *expected)
+            .map(|(i, _)| i)
+            .collect();
+
+        // Satisfy pending waits in reverse order to maintain indices
+        for i in satisfied_indices.into_iter().rev() {
+            let (_, sender) = actor.model.pending_actor_waits.remove(i);
+            let _ = sender.send(current_count);
+            debug!(
+                registered = current_count,
+                "Satisfied pending patch actor wait"
+            );
+        }
+
         Reply::ready()
     });
 
@@ -389,6 +416,42 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         actor.model.tick_driver = Some(handle);
         debug!("Registered tick driver");
         Reply::ready()
+    });
+
+    // Handle wait for patch actors registration
+    actor.mutate_on::<WaitForPatchActors>(|actor, context| {
+        let expected_count = context.message().expected_count;
+        let current_count = actor.model.registered_patch_actors.len();
+
+        if current_count >= expected_count {
+            // Already have enough actors, reply immediately
+            debug!(
+                expected = expected_count,
+                registered = current_count,
+                "Patch actors already ready"
+            );
+            let broker = actor.broker().clone();
+            Reply::pending(async move {
+                broker.broadcast(PatchActorsReady { registered_count: current_count }).await;
+            })
+        } else {
+            // Need to wait for more actors to register
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            actor.model.pending_actor_waits.push((expected_count, tx));
+            debug!(
+                expected = expected_count,
+                registered = current_count,
+                "Waiting for patch actors to register"
+            );
+
+            let broker = actor.broker().clone();
+            Reply::pending(async move {
+                // Wait for the oneshot to be triggered when enough actors register
+                if let Ok(registered_count) = rx.await {
+                    broker.broadcast(PatchActorsReady { registered_count }).await;
+                }
+            })
+        }
     });
 
     // Handle Tick - start decay and measurement phase

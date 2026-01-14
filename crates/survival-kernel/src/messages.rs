@@ -102,6 +102,23 @@ pub struct RegisterTickDriver {
     pub handle: acton_reactive::prelude::ActorHandle,
 }
 
+/// Wait until expected number of patch actors have registered.
+///
+/// Sent to coordinator, blocks until all actors are ready.
+/// This ensures no ticks start before all actors can receive proposals.
+#[derive(Debug, Clone)]
+pub struct WaitForPatchActors {
+    /// Number of patch actors expected to register
+    pub expected_count: usize,
+}
+
+/// Response confirming patch actors are ready.
+#[derive(Debug, Clone)]
+pub struct PatchActorsReady {
+    /// Actual number of registered patch actors
+    pub registered_count: usize,
+}
+
 // ============================================================================
 // RegionActor Messages
 // ============================================================================
