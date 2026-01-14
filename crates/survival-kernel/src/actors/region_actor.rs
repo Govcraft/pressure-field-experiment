@@ -122,6 +122,10 @@ impl RegionActor {
     }
 
     /// Spawn this region actor in the given runtime.
+    ///
+    /// The actor will:
+    /// 1. Subscribe to `ApplyDecay` and `QueryPressure` broadcasts
+    /// 2. Handle messages and broadcast `PressureResponse` results
     pub async fn spawn(self, runtime: &mut ActorRuntime, now_ms: u64) -> ActorHandle {
         let region_id = self.region_id;
         let region_id_short = format!("{:.8}", region_id);
@@ -139,6 +143,10 @@ impl RegionActor {
         actor.model.sensor = Some(self.sensor);
         actor.model.pressure_axes = self.pressure_axes;
         actor.model.signals = HashMap::new();
+
+        // Subscribe to broadcast messages BEFORE starting
+        actor.handle().subscribe::<ApplyDecay>().await;
+        actor.handle().subscribe::<QueryPressure>().await;
 
         // Configure handlers
         configure_region_actor(&mut actor);
@@ -211,21 +219,16 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
         Reply::ready()
     });
 
-    // Handle QueryPressure - respond with current state
+    // Handle QueryPressure - respond with current state via broker broadcast
     actor.act_on::<QueryPressure>(|actor, context| {
         let msg = context.message().clone();
-        let coordinator = actor.model.coordinator.clone();
+        let broker = actor.broker().clone();
         let region_id = actor.model.region_id;
         let kind = actor.model.kind.clone();
         let content = actor.model.content.clone();
         let metadata = actor.model.metadata.clone();
         let state = actor.model.state.clone();
         let signals = actor.model.signals.clone();
-
-        let Some(coordinator) = coordinator else {
-            warn!(region_id = %region_id, "QueryPressure: coordinator not set");
-            return Reply::ready();
-        };
 
         // Calculate total pressure
         let total_pressure: f64 = state.pressure_ema.values().sum();
@@ -246,8 +249,9 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
             signals,
         };
 
+        // Broadcast response (coordinator subscribes to PressureResponse)
         Reply::pending(async move {
-            coordinator.send(response).await;
+            broker.broadcast(response).await;
         })
     });
 

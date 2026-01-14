@@ -315,11 +315,12 @@ impl KernelCoordinator {
         actor.model.config = Some(self.config.clone());
         actor.model.artifact = Some(self.artifact);
 
-        // Subscribe to actor registration broadcasts BEFORE starting
+        // Subscribe to actor registration and response broadcasts BEFORE starting
         actor.handle().subscribe::<SensorReady>().await;
         actor.handle().subscribe::<MeasurementResult>().await;
         actor.handle().subscribe::<PatchActorReady>().await;
         actor.handle().subscribe::<PatchProposal>().await;
+        actor.handle().subscribe::<PressureResponse>().await;
 
         // Configure handlers before starting
         configure_handlers(&mut actor);
@@ -417,13 +418,6 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             confidence_half_life_ms: config.decay.confidence_half_life_ms,
         };
 
-        let region_actor_handles: Vec<_> = actor
-            .model
-            .region_actors
-            .iter()
-            .map(|e| e.value().clone())
-            .collect();
-
         // Generate correlation ID for measurement phase
         let correlation_id = "tick".create_type_id::<V7>().to_string();
 
@@ -454,12 +448,11 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         // Get broker for broadcasting
         let broker = actor.broker().clone();
 
-        // Broadcast decay and measurements
+        // Broadcast decay and measurements via broker
         Reply::pending(async move {
-            // Broadcast decay to all region actors
-            for handle in &region_actor_handles {
-                handle.send(decay_msg.clone()).await;
-            }
+            // Broadcast decay to all region actors via broker
+            // RegionActors subscribe to ApplyDecay
+            broker.broadcast(decay_msg).await;
 
             // Broadcast MeasureRegion to all sensors via broker
             // Sensors subscribe to MeasureRegion and respond with MeasurementResult
@@ -523,27 +516,22 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
 
         // Start pressure query phase
         let query_correlation_id = "query".create_type_id::<V7>().to_string();
-        let region_actor_handles: Vec<_> = actor
-            .model
-            .region_actors
-            .iter()
-            .map(|e| e.value().clone())
-            .collect();
-        let expected_count = region_actor_handles.len();
+        let expected_count = actor.model.region_actors.len();
 
         actor.model.pending_pressure_queries.insert(
             query_correlation_id.clone(),
             PendingPressureQueries::new(expected_count, now_ms),
         );
 
+        // Broadcast QueryPressure to all region actors via broker
+        let broker = actor.broker().clone();
+
         Reply::pending(async move {
-            for handle in region_actor_handles {
-                let msg = QueryPressure {
-                    correlation_id: query_correlation_id.clone(),
-                    now_ms,
-                };
-                handle.send(msg).await;
-            }
+            let msg = QueryPressure {
+                correlation_id: query_correlation_id,
+                now_ms,
+            };
+            broker.broadcast(msg).await;
         })
     });
 
