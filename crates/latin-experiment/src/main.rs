@@ -32,9 +32,14 @@ fn timestamped_path(path: &Path) -> PathBuf {
 #[command(version)]
 #[command(about = "Latin Square coordination experiments")]
 struct Cli {
-    /// vLLM host URL
+    /// vLLM host URL (used when vllm-hosts not specified)
     #[arg(long = "vllm-host", env = "VLLM_HOST", default_value = "http://localhost:8000")]
     vllm_host: String,
+
+    /// vLLM hosts for model escalation (comma-separated, one per model in chain)
+    /// Example: http://localhost:8001,http://localhost:8002,http://localhost:8003
+    #[arg(long = "vllm-hosts", env = "VLLM_HOSTS", value_delimiter = ',')]
+    vllm_hosts: Option<Vec<String>>,
 
     /// Model name (base model, first in escalation chain)
     #[arg(long, default_value = "Qwen/Qwen2.5-0.5B")]
@@ -191,6 +196,7 @@ async fn main() -> Result<()> {
 
             let config = ExperimentRunnerConfig {
                 vllm_host: cli.vllm_host,
+                vllm_hosts: cli.vllm_hosts.unwrap_or_default(),
                 model: cli.model,
                 model_chain: cli.model_chain,
                 escalation_threshold: cli.escalation_threshold,
@@ -319,6 +325,7 @@ async fn main() -> Result<()> {
                     for trial in 0..trials {
                         let config = ExperimentRunnerConfig {
                             vllm_host: cli.vllm_host.clone(),
+                            vllm_hosts: cli.vllm_hosts.clone().unwrap_or_default(),
                             model: cli.model.clone(),
                             model_chain: cli.model_chain.clone(),
                             escalation_threshold: cli.escalation_threshold,
@@ -395,6 +402,7 @@ async fn main() -> Result<()> {
                 for trial in 0..trials {
                     let config = ExperimentRunnerConfig {
                         vllm_host: cli.vllm_host.clone(),
+                        vllm_hosts: cli.vllm_hosts.clone().unwrap_or_default(),
                         model: cli.model.clone(),
                         model_chain: cli.model_chain.clone(),
                         escalation_threshold: cli.escalation_threshold,

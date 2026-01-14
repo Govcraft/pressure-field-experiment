@@ -250,6 +250,11 @@ impl ConversationRunner {
         self.model = model.to_string();
     }
 
+    /// Update the vLLM host (for model escalation with multi-host setup).
+    pub fn set_host(&mut self, vllm_host: &str) {
+        self.client = VllmClient::new(vllm_host);
+    }
+
     /// Get the current model name.
     pub fn model(&self) -> &str {
         &self.model

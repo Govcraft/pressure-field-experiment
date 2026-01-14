@@ -50,8 +50,11 @@ struct RunContext {
 /// Configuration for the experiment runner.
 #[derive(Debug, Clone)]
 pub struct ExperimentRunnerConfig {
-    /// vLLM host URL
+    /// vLLM host URL (fallback when vllm_hosts is empty)
     pub vllm_host: String,
+    /// vLLM hosts for model escalation (one per model in chain)
+    /// If empty, uses vllm_host for all models
+    pub vllm_hosts: Vec<String>,
     /// Model name (base model)
     pub model: String,
     /// Model escalation chain (e.g., ["qwen2.5:1.5b", "qwen2.5:7b", "qwen2.5:14b"])
@@ -81,6 +84,7 @@ impl Default for ExperimentRunnerConfig {
     fn default() -> Self {
         Self {
             vllm_host: "http://localhost:8000".to_string(),
+            vllm_hosts: Vec::new(), // Empty = use vllm_host for all models
             model: "Qwen/Qwen2.5-0.5B".to_string(),
             model_chain: vec![
                 "Qwen/Qwen2.5-0.5B".to_string(),
@@ -98,6 +102,23 @@ impl Default for ExperimentRunnerConfig {
             examples_enabled: true,
             example_bank_config: ExampleBankConfig::default(),
             conversation_max_turns: 5, // For Conversation strategy
+        }
+    }
+}
+
+impl ExperimentRunnerConfig {
+    /// Get the vLLM host for a given model index in the escalation chain.
+    ///
+    /// If `vllm_hosts` is configured (non-empty), returns the host at the given index.
+    /// Otherwise, falls back to the single `vllm_host` for all models.
+    pub fn get_vllm_host(&self, model_idx: usize) -> &str {
+        if self.vllm_hosts.is_empty() {
+            // Fallback: use single host for all models
+            &self.vllm_host
+        } else {
+            // Use the host corresponding to this model index, clamped to bounds
+            let idx = model_idx.min(self.vllm_hosts.len() - 1);
+            &self.vllm_hosts[idx]
         }
     }
 }
@@ -242,8 +263,9 @@ impl ExperimentRunner {
             } else {
                 self.config.model_chain[0].clone()
             };
+            let vllm_host = self.config.get_vllm_host(0);
             conversation_runner = Some(ConversationRunner::new(
-                &self.config.vllm_host,
+                vllm_host,
                 &model,
                 self.config.conversation_max_turns,
             )?);
@@ -382,7 +404,7 @@ impl ExperimentRunner {
 
                 // Generate multiple patches concurrently using LLM
                 let patch_results = self
-                    .generate_concurrent_patches(&artifact, region_id, &examples, &current_model)
+                    .generate_concurrent_patches(&artifact, region_id, &examples, &current_model, current_model_idx)
                     .await?;
 
                 // Tick-level tracking
@@ -523,9 +545,10 @@ impl ExperimentRunner {
                             to_model: to_model.clone(),
                         });
 
-                        // Update ConversationRunner's model if applicable
+                        // Update ConversationRunner's model and host if applicable
                         if let Some(ref mut runner) = conversation_runner {
                             runner.set_model(&to_model);
+                            runner.set_host(self.config.get_vllm_host(current_model_idx));
                         }
 
                         info!(
@@ -704,6 +727,7 @@ impl ExperimentRunner {
         region_id: uuid::Uuid,
         examples: &[Example],
         current_model: &str,
+        model_idx: usize,
     ) -> Result<Vec<(String, u32, u32)>> {
         let n = artifact.size();
         let row_idx = artifact.row_index(region_id).unwrap_or(0);
@@ -736,7 +760,8 @@ impl ExperimentRunner {
 
         // Create concurrent LLM calls
         let num_calls = self.config.max_concurrent_llm.min(empty_positions.len() * 2);
-        let client = Arc::new(VllmClient::new(&self.config.vllm_host));
+        let vllm_host = self.config.get_vllm_host(model_idx);
+        let client = Arc::new(VllmClient::new(vllm_host));
 
         let futures: Vec<_> = (0..num_calls)
             .map(|i| {
