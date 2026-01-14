@@ -21,11 +21,11 @@ DRY_RUN="${DRY_RUN:-false}"
 PARALLEL="${PARALLEL:-10}"
 
 # Model chain for escalation (smallest to largest) - HuggingFace format for vLLM
-MODEL_CHAIN="Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B"
+MODEL_CHAIN="Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B"
 MODEL_SINGLE="Qwen/Qwen2.5-0.5B"
-ESCALATION_THRESHOLD=20
-NUM_MODELS=5  # 0.5B, 1.5B, 3B, 7B, 14B
-MAX_TICKS=$((NUM_MODELS * ESCALATION_THRESHOLD))  # 100 ticks = room for all 5 models
+ESCALATION_THRESHOLD=10
+NUM_MODELS=3  # 3B, 7B, 14B (skip 0.5B, 1.5B for efficiency)
+MAX_TICKS=$((NUM_MODELS * ESCALATION_THRESHOLD))  # 30 ticks = room for all 3 models
 
 # Strategy sets for different experiments
 ALL_STRATEGIES="pressure_field,hierarchical,sequential,random,conversation"

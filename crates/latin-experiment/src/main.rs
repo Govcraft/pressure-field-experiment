@@ -35,7 +35,7 @@ fn timestamped_path(path: &Path) -> PathBuf {
 #[command(about = "Latin Square coordination experiments")]
 struct Cli {
     /// vLLM host URL (used when vllm-hosts not specified)
-    #[arg(long = "vllm-host", env = "VLLM_HOST", default_value = "http://localhost:8000")]
+    #[arg(long = "vllm-host", env = "VLLM_HOST", default_value = "http://localhost:8003")]
     vllm_host: String,
 
     /// vLLM hosts for model escalation (comma-separated, one per model in chain)
@@ -44,16 +44,16 @@ struct Cli {
     vllm_hosts: Option<Vec<String>>,
 
     /// Model name (base model, first in escalation chain)
-    #[arg(long, default_value = "Qwen/Qwen2.5-0.5B")]
+    #[arg(long, default_value = "Qwen/Qwen2.5-3B")]
     model: String,
 
     /// Model escalation chain (comma-separated, smallest to largest)
     /// When stuck at local minimum, escalates to larger models
-    #[arg(long, default_value = "Qwen/Qwen2.5-0.5B,Qwen/Qwen2.5-1.5B,Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B", value_delimiter = ',')]
+    #[arg(long, default_value = "Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B", value_delimiter = ',')]
     model_chain: Vec<String>,
 
     /// Ticks with zero progress before escalating to larger model
-    #[arg(long, default_value = "20")]
+    #[arg(long, default_value = "10")]
     escalation_threshold: usize,
 
     /// Enable verbose logging

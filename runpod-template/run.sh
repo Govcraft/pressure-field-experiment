@@ -188,9 +188,9 @@ echo "Time: $(date)"
 cd /app
 
 # vLLM hosts for model escalation chain (one per model, in order)
-# 0.5B -> 1.5B -> 3B -> 7B -> 14B
-export VLLM_HOST=http://localhost:8001  # Fallback to smallest model
-export VLLM_HOSTS="http://localhost:8001,http://localhost:8002,http://localhost:8003,http://localhost:8004,http://localhost:8005"
+# 3B -> 7B -> 14B (skip 0.5B, 1.5B for efficiency)
+export VLLM_HOST=http://localhost:8003  # Start with 3B model
+export VLLM_HOSTS="http://localhost:8003,http://localhost:8004,http://localhost:8005"
 
 export LATIN_EXPERIMENT=/app/latin-experiment
 export OUTPUT_DIR=/workspace/results
