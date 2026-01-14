@@ -171,6 +171,8 @@ pub struct KernelCoordinatorState {
     registered_sensors: HashSet<String>,
     /// Registered patch actor IDs (patch actors self-register via PatchActorReady broadcast)
     registered_patch_actors: HashSet<String>,
+    /// Patch actor handles for round-robin dispatch (ordered for deterministic assignment)
+    patch_actor_handles: Vec<ActorHandle>,
     /// Pending measurement requests by correlation ID
     pending_measurements: DashMap<String, PendingMeasurements>,
     /// Pending pressure queries by correlation ID
@@ -203,6 +205,7 @@ impl Default for KernelCoordinatorState {
             region_actors: DashMap::new(),
             registered_sensors: HashSet::new(),
             registered_patch_actors: HashSet::new(),
+            patch_actor_handles: Vec::new(),
             pending_measurements: DashMap::new(),
             pending_pressure_queries: DashMap::new(),
             pending_proposals: DashMap::new(),
@@ -252,6 +255,7 @@ impl Clone for KernelCoordinatorState {
             region_actors,
             registered_sensors: self.registered_sensors.clone(),
             registered_patch_actors: self.registered_patch_actors.clone(),
+            patch_actor_handles: self.patch_actor_handles.clone(),
             pending_measurements,
             pending_pressure_queries,
             pending_proposals,
@@ -390,13 +394,14 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
 
     // Handle patch actor self-registration via broker
     actor.mutate_on::<PatchActorReady>(|actor, context| {
-        // Get ERN from message payload (broker broadcasts don't preserve sender in envelope)
-        let sender_ern = &context.message().actor_ern;
+        let msg = context.message();
+        let sender_ern = &msg.actor_ern;
 
-        actor
-            .model
-            .registered_patch_actors
-            .insert(sender_ern.clone());
+        // Only add if not already registered (dedup via HashSet)
+        if actor.model.registered_patch_actors.insert(sender_ern.clone()) {
+            // Store handle for round-robin dispatch
+            actor.model.patch_actor_handles.push(msg.handle.clone());
+        }
 
         let current_count = actor.model.registered_patch_actors.len();
         debug!(
@@ -771,8 +776,9 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         // Generate correlation ID for proposal phase
         let proposal_correlation_id = "propose".create_type_id::<V7>().to_string();
 
-        let actor_count = actor.model.registered_patch_actors.len();
-        let expected_count = actor_count * high_pressure_regions.len();
+        // With round-robin dispatch, each region gets exactly one proposal
+        // sent to one agent, so we expect one response per region
+        let expected_count = high_pressure_regions.len();
 
         // Track pending proposals
         actor.model.pending_proposals.insert(
@@ -788,9 +794,8 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         trace!(
             correlation_id = %proposal_correlation_id,
             regions = high_pressure_regions.len(),
-            actors = actor_count,
-            expected = expected_count,
-            "Starting proposal phase"
+            expected_proposals = expected_count,
+            "Starting proposal phase (round-robin)"
         );
 
         // Collect proposal data including signals from pressure response
@@ -804,12 +809,24 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             })
             .collect();
 
-        // Get broker for broadcasting
-        let broker = actor.broker().clone();
+        // Get patch actor handles for round-robin dispatch
+        let handles = actor.model.patch_actor_handles.clone();
+        let handle_count = handles.len();
 
-        // Broadcast ProposeForRegion to all patch actors via broker
+        if handle_count == 0 {
+            warn!("No patch actors registered, skipping proposal phase");
+            return Reply::ready();
+        }
+
+        // Round-robin dispatch: each region goes to exactly one agent
         Reply::pending(async move {
-            for (rid, view, signals, pressures, state) in proposal_data {
+            for (i, (rid, view, signals, pressures, state)) in
+                proposal_data.into_iter().enumerate()
+            {
+                // Deterministic assignment: region i goes to agent i % handle_count
+                let agent_idx = i % handle_count;
+                let handle = &handles[agent_idx];
+
                 let msg = ProposeForRegion {
                     correlation_id: proposal_correlation_id.clone(),
                     region_id: rid,
@@ -819,7 +836,8 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                     state,
                 };
 
-                broker.broadcast(msg).await;
+                // Direct send instead of broadcast
+                handle.send(msg).await;
             }
         })
     });

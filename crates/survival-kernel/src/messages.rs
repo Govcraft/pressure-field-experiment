@@ -28,12 +28,14 @@ pub struct SensorReady {
 
 /// Notification that a patch actor is ready - broadcast on start.
 ///
-/// Includes the sender's ERN since broker broadcasts don't preserve
-/// sender identity in the envelope.
+/// Includes the sender's ERN and handle for direct message dispatch.
+/// The coordinator stores handles for round-robin work distribution.
 #[derive(Debug, Clone)]
 pub struct PatchActorReady {
     /// The patch actor's ERN
     pub actor_ern: String,
+    /// The actor's handle for direct message sending
+    pub handle: acton_reactive::prelude::ActorHandle,
 }
 
 /// Request to measure signals for a region - broadcast to SensorActors.
