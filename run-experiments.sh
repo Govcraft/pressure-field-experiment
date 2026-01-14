@@ -261,7 +261,7 @@ run_main_grid() {
 
     [[ -n "$log_prefix" ]] || log_info "========================================"
     [[ -n "$log_prefix" ]] || log_info "Experiment 1: Main Grid (Strategy Comparison)"
-    log_info "5 strategies × 4 agent counts × $TRIALS trials = $((5 * 4 * TRIALS)) runs"
+    log_info "5 strategies × 3 agent counts × $TRIALS trials = $((5 * 3 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
     # Uses Chain A: 3B → 7B → 14B (ports 8003-8005)
@@ -276,7 +276,7 @@ run_main_grid() {
         --n 7 \
         --empty 7 \
         --max-ticks $MAX_TICKS \
-        --agents 2,4,8,16 \
+        --agents 2,4,8 \
         --strategies "$ALL_STRATEGIES" \
         --output "$RESULTS_DIR/main-grid.json"
 
@@ -318,7 +318,7 @@ run_scaling() {
 
     [[ -n "$log_prefix" ]] || log_info "========================================"
     [[ -n "$log_prefix" ]] || log_info "Experiment 3: Scaling Analysis"
-    log_info "2 strategies × 5 agent counts × $TRIALS trials = $((2 * 5 * TRIALS)) runs"
+    log_info "2 strategies × 4 agent counts × $TRIALS trials = $((2 * 4 * TRIALS)) runs"
     [[ -n "$log_prefix" ]] || log_info "========================================"
 
     # Uses Chain B: 7B → 14B (ports 8004-8005) - load balanced with main-grid
@@ -333,7 +333,7 @@ run_scaling() {
         --n 7 \
         --empty 8 \
         --max-ticks $MAX_TICKS \
-        --agents 2,4,8,16,32 \
+        --agents 2,4,8,16 \
         --strategies "$MAIN_STRATEGIES" \
         --output "$RESULTS_DIR/scaling.json"
 
