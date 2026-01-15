@@ -242,4 +242,175 @@ mod tests {
             assert_eq!(artifact.total_violations(), 0);
         }
     }
+
+    #[test]
+    fn test_generated_square_latin_property_rows() {
+        // Verify each row contains exactly one of each number 1..=n
+        let config = GeneratorConfig {
+            n: 5,
+            empty_cells: 0,
+            seed: Some(999),
+        };
+        let generator = LatinSquareGenerator::new(config);
+        let artifact = generator.generate().unwrap();
+        let grid = artifact.grid();
+
+        for (row_idx, row) in grid.iter().enumerate() {
+            let mut seen = vec![false; 5];
+            for cell in row {
+                let val = cell.expect("No empty cells") as usize;
+                assert!(val >= 1 && val <= 5, "Row {} has out of range value {}", row_idx, val);
+                assert!(!seen[val - 1], "Row {} has duplicate value {}", row_idx, val);
+                seen[val - 1] = true;
+            }
+            assert!(seen.iter().all(|&x| x), "Row {} missing some values", row_idx);
+        }
+    }
+
+    #[test]
+    fn test_generated_square_latin_property_columns() {
+        // Verify each column contains exactly one of each number 1..=n
+        let config = GeneratorConfig {
+            n: 5,
+            empty_cells: 0,
+            seed: Some(888),
+        };
+        let generator = LatinSquareGenerator::new(config);
+        let artifact = generator.generate().unwrap();
+        let grid = artifact.grid();
+
+        for col_idx in 0..5 {
+            let mut seen = vec![false; 5];
+            for row in grid.iter() {
+                let val = row[col_idx].expect("No empty cells") as usize;
+                assert!(val >= 1 && val <= 5, "Column {} has out of range value {}", col_idx, val);
+                assert!(!seen[val - 1], "Column {} has duplicate value {}", col_idx, val);
+                seen[val - 1] = true;
+            }
+            assert!(seen.iter().all(|&x| x), "Column {} missing some values", col_idx);
+        }
+    }
+
+    #[test]
+    fn test_different_seeds_produce_different_grids() {
+        let config1 = GeneratorConfig {
+            n: 4,
+            empty_cells: 4,
+            seed: Some(1),
+        };
+        let config2 = GeneratorConfig {
+            n: 4,
+            empty_cells: 4,
+            seed: Some(2),
+        };
+
+        let artifact1 = LatinSquareGenerator::new(config1).generate().unwrap();
+        let artifact2 = LatinSquareGenerator::new(config2).generate().unwrap();
+
+        // Different seeds should produce different grids (overwhelmingly likely)
+        assert_ne!(artifact1.grid(), artifact2.grid());
+    }
+
+    #[test]
+    fn test_empty_cells_capped_at_grid_size() {
+        // Request more empty cells than exist in the grid
+        let config = GeneratorConfig {
+            n: 3,
+            empty_cells: 100, // Only 9 cells exist
+            seed: Some(42),
+        };
+        let generator = LatinSquareGenerator::new(config);
+        let artifact = generator.generate().unwrap();
+
+        // Should cap at n*n = 9 empty cells
+        assert_eq!(artifact.empty_count(), 9);
+    }
+
+    #[test]
+    fn test_zero_empty_cells_produces_solved_puzzle() {
+        let config = GeneratorConfig {
+            n: 4,
+            empty_cells: 0,
+            seed: Some(42),
+        };
+        let artifact = LatinSquareGenerator::new(config).generate().unwrap();
+
+        assert_eq!(artifact.empty_count(), 0);
+        assert!(artifact.is_solved());
+        assert_eq!(artifact.total_violations(), 0);
+    }
+
+    #[test]
+    fn test_batch_generates_multiple_puzzles() {
+        let config = GeneratorConfig {
+            n: 4,
+            empty_cells: 4,
+            seed: None, // Random seeds for variety
+        };
+        let generator = LatinSquareGenerator::new(config);
+        let batch = generator.generate_batch(5).unwrap();
+
+        assert_eq!(batch.len(), 5);
+
+        // Each puzzle should be valid
+        for artifact in &batch {
+            assert_eq!(artifact.empty_count(), 4);
+            assert_eq!(artifact.total_violations(), 0);
+        }
+    }
+
+    #[test]
+    fn test_batch_generates_varied_puzzles() {
+        // Without a seed, each puzzle should be different
+        let config = GeneratorConfig {
+            n: 4,
+            empty_cells: 4,
+            seed: None,
+        };
+        let generator = LatinSquareGenerator::new(config);
+        let batch = generator.generate_batch(10).unwrap();
+
+        // Verify variety by checking grids are not all identical
+        // (with random seeds, the chance of all 10 being identical is vanishingly small)
+        let first_grid = batch[0].grid();
+        let all_same = batch.iter().all(|a| a.grid() == first_grid);
+        assert!(!all_same, "Batch should generate varied puzzles without a seed");
+    }
+
+    #[test]
+    fn test_custom_difficulty() {
+        let difficulty = Difficulty::Custom {
+            n: 7,
+            empty_cells: 21,
+        };
+        let config = difficulty.config();
+
+        assert_eq!(config.n, 7);
+        assert_eq!(config.empty_cells, 21);
+
+        let artifact = difficulty.generator().generate().unwrap();
+        assert_eq!(artifact.empty_count(), 21);
+        assert_eq!(artifact.total_violations(), 0);
+    }
+
+    #[test]
+    fn test_large_grid_validity() {
+        // Test with 10x10 grid
+        let config = GeneratorConfig {
+            n: 10,
+            empty_cells: 50,
+            seed: Some(777),
+        };
+        let artifact = LatinSquareGenerator::new(config).generate().unwrap();
+
+        assert_eq!(artifact.empty_count(), 50);
+        assert_eq!(artifact.total_violations(), 0);
+
+        // Verify grid dimensions
+        let grid = artifact.grid();
+        assert_eq!(grid.len(), 10);
+        for row in grid {
+            assert_eq!(row.len(), 10);
+        }
+    }
 }

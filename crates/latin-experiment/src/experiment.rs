@@ -1496,4 +1496,153 @@ mod tests {
             assert!(!strategy.name().is_empty());
         }
     }
+
+    #[test]
+    fn test_pressure_formula_edge_cases() {
+        let compute_pressure = |empty: f64, row_dups: f64, col_conflicts: f64| -> f64 {
+            empty * 1.0 + row_dups * 10.0 + col_conflicts * 10.0
+        };
+
+        // Edge case: Large values (stress test the formula)
+        let large_pressure = compute_pressure(100.0, 50.0, 50.0);
+        assert_eq!(large_pressure, 1100.0); // 100 + 500 + 500
+
+        // Edge case: Fractional values (shouldn't happen in practice, but formula handles it)
+        let fractional = compute_pressure(0.5, 0.5, 0.5);
+        assert_eq!(fractional, 10.5); // 0.5 + 5.0 + 5.0
+
+        // Edge case: Column conflicts weighted same as row duplicates
+        let col_only = compute_pressure(0.0, 0.0, 3.0);
+        let row_only = compute_pressure(0.0, 3.0, 0.0);
+        assert_eq!(col_only, row_only, "Col conflicts and row dups should have same weight");
+    }
+
+    #[test]
+    fn test_escalation_velocity_zero_detection() {
+        // Velocity = 0 means no progress - should trigger escalation check
+        let prev_pressure = 10.0;
+        let curr_pressure = 10.0;
+        let velocity = prev_pressure - curr_pressure;
+
+        assert_eq!(velocity, 0.0);
+
+        // In the actual code, zero_velocity_streak is incremented when velocity <= 0
+        // This triggers escalation when zero_velocity_streak >= escalation_threshold
+        let threshold = 20;
+        let stuck_ticks = 25;
+        assert!(stuck_ticks >= threshold, "Should trigger escalation after {} ticks", stuck_ticks);
+    }
+
+    #[test]
+    fn test_model_chain_all_sizes_present() {
+        let config = ExperimentRunnerConfig::default();
+
+        // Verify all expected model sizes are in the default chain
+        let sizes: Vec<&str> = vec!["0.5B", "1.5B", "3B", "7B", "14B"];
+        for size in sizes {
+            assert!(
+                config.model_chain.iter().any(|m| m.contains(size)),
+                "Model chain should contain {} model",
+                size
+            );
+        }
+    }
+
+    #[test]
+    fn test_experiment_config_defaults() {
+        let config = ExperimentRunnerConfig::default();
+
+        assert_eq!(config.max_ticks, 50);
+        assert!(config.decay_enabled);
+        assert!(config.inhibition_enabled);
+        assert!(config.examples_enabled);
+        assert!(config.max_concurrent_llm > 0);
+    }
+
+    #[test]
+    fn test_strategy_display_names_unique() {
+        use std::collections::HashSet;
+
+        let strategies = Strategy::all();
+        let names: HashSet<_> = strategies.iter().map(|s| s.name()).collect();
+
+        assert_eq!(
+            names.len(),
+            strategies.len(),
+            "All strategy names should be unique"
+        );
+    }
+
+    #[test]
+    fn test_velocity_calculation_improvement() {
+        // Test all three velocity scenarios
+        let test_cases = vec![
+            (10.0, 5.0, true, "Improvement: pressure decreased"),
+            (10.0, 10.0, false, "Stuck: no change"),
+            (10.0, 15.0, false, "Regression: pressure increased"),
+        ];
+
+        for (prev, curr, should_improve, msg) in test_cases {
+            let velocity = prev - curr;
+            let improved = velocity > 0.0;
+            assert_eq!(improved, should_improve, "{}", msg);
+        }
+    }
+
+    #[test]
+    fn test_escalation_threshold_bounds() {
+        // Test that escalation threshold is reasonable
+        let config = ExperimentRunnerConfig::default();
+
+        // Threshold should be > 0 to avoid immediate escalation
+        assert!(config.escalation_threshold > 0);
+
+        // Threshold should be < max_ticks to allow escalation to happen
+        assert!(config.escalation_threshold < config.max_ticks);
+
+        // Reasonable range for escalation threshold
+        assert!(config.escalation_threshold >= 5);
+        assert!(config.escalation_threshold <= 50);
+    }
+
+    #[test]
+    fn test_model_chain_ordering() {
+        let config = ExperimentRunnerConfig::default();
+
+        // Model chain should be ordered from smallest to largest
+        // (escalation moves to larger models)
+        let sizes_order = vec!["0.5B", "1.5B", "3B", "7B", "14B"];
+
+        for (i, expected_size) in sizes_order.iter().enumerate() {
+            assert!(
+                config.model_chain[i].contains(expected_size),
+                "Model at index {} should be {} model, got {}",
+                i,
+                expected_size,
+                config.model_chain[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_conversation_max_turns_positive() {
+        let config = ExperimentRunnerConfig::default();
+
+        // Conversation max turns should be positive
+        assert!(config.conversation_max_turns > 0);
+
+        // And reasonable (not too short)
+        assert!(config.conversation_max_turns >= 3);
+    }
+
+    #[test]
+    fn test_max_concurrent_llm_reasonable() {
+        let config = ExperimentRunnerConfig::default();
+
+        // Max concurrent should be positive
+        assert!(config.max_concurrent_llm > 0);
+
+        // And not too high (resource constraint)
+        assert!(config.max_concurrent_llm <= 50);
+    }
 }

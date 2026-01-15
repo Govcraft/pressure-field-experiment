@@ -487,4 +487,321 @@ mod tests {
         let row = vec![Some(1), None, Some(3), None];
         assert_eq!(LatinSquareArtifact::format_row(&row), "1 _ 3 _");
     }
+
+    #[test]
+    fn test_apply_multiple_patches_sequentially() {
+        // This tests the scenario that was buggy: multiple patches applied in sequence
+        let mut artifact = sample_puzzle();
+        let regions = artifact.region_ids();
+
+        // Patch row 0: fill empty cells
+        let patch0 = Patch {
+            region: regions[0],
+            op: PatchOp::Replace("1 2 3 4".to_string()),
+            rationale: "Fill row 0".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch0).unwrap();
+        assert_eq!(artifact.grid()[0], vec![Some(1), Some(2), Some(3), Some(4)]);
+
+        // Patch row 1: fill empty cells
+        let patch1 = Patch {
+            region: regions[1],
+            op: PatchOp::Replace("3 2 4 4".to_string()),
+            rationale: "Fill row 1".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch1).unwrap();
+        assert_eq!(artifact.grid()[1], vec![Some(3), Some(2), Some(4), Some(4)]);
+
+        // Verify both rows are updated
+        let view0 = artifact.read_region(regions[0]).unwrap();
+        let view1 = artifact.read_region(regions[1]).unwrap();
+        assert_eq!(view0.content, "1 2 3 4");
+        assert_eq!(view1.content, "3 2 4 4");
+    }
+
+    #[test]
+    fn test_grid_returns_current_state() {
+        // Verify that grid() returns the actual current state after patches
+        let mut artifact = sample_puzzle();
+        let regions = artifact.region_ids();
+
+        // Initial state
+        let initial_grid = artifact.grid().clone();
+        assert_eq!(initial_grid[0][1], None); // Row 0, Col 1 is empty
+
+        // Apply patch
+        let patch = Patch {
+            region: regions[0],
+            op: PatchOp::Replace("1 2 3 4".to_string()),
+            rationale: "Fill row".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch).unwrap();
+
+        // grid() should return updated state
+        let updated_grid = artifact.grid();
+        assert_eq!(updated_grid[0][1], Some(2)); // Now filled
+        assert_ne!(initial_grid[0][1], updated_grid[0][1]);
+    }
+
+    #[test]
+    fn test_patch_preserves_other_rows() {
+        // Ensure patching one row doesn't affect others
+        let mut artifact = sample_puzzle();
+        let regions = artifact.region_ids();
+
+        let row1_before = artifact.grid()[1].clone();
+        let row2_before = artifact.grid()[2].clone();
+        let row3_before = artifact.grid()[3].clone();
+
+        // Patch only row 0
+        let patch = Patch {
+            region: regions[0],
+            op: PatchOp::Replace("1 2 3 4".to_string()),
+            rationale: "Fill row 0".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch).unwrap();
+
+        // Other rows unchanged
+        assert_eq!(artifact.grid()[1], row1_before);
+        assert_eq!(artifact.grid()[2], row2_before);
+        assert_eq!(artifact.grid()[3], row3_before);
+    }
+
+    #[test]
+    fn test_column_availability_updates_after_patch() {
+        // Column availability should reflect current grid state
+        let mut artifact = sample_puzzle();
+        let regions = artifact.region_ids();
+
+        // Initial: column 1 has only value 2 (in row 1) and 4 (in row 3)
+        // So for row 0, available values in col 1 are: 1, 3
+        let avail_before = artifact.column_availability(0);
+        assert!(avail_before[&1].contains(&1));
+        assert!(avail_before[&1].contains(&3));
+
+        // Patch row 0 to put 2 in column 1
+        let patch = Patch {
+            region: regions[0],
+            op: PatchOp::Replace("1 2 3 4".to_string()),
+            rationale: "Fill row".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch).unwrap();
+
+        // Now for row 2, column 1 should NOT have 2 available (row 0 and row 1 both have 2)
+        let avail_after = artifact.column_availability(2);
+        assert!(!avail_after[&1].contains(&2), "2 should not be available in col 1 for row 2");
+    }
+
+    // =========================================================================
+    // Solve Detection Tests - Critical for experiment validity
+    // =========================================================================
+
+    #[test]
+    fn test_is_solved_detects_row_duplicate() {
+        // A grid that looks complete but has a row duplicate
+        let grid = vec![
+            vec![Some(1), Some(2), Some(3), Some(4)],
+            vec![Some(2), Some(2), Some(4), Some(3)], // Duplicate 2 in row
+            vec![Some(3), Some(4), Some(1), Some(2)],
+            vec![Some(4), Some(3), Some(2), Some(1)],
+        ];
+        let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
+        assert!(!artifact.is_solved(), "Should detect row duplicate");
+    }
+
+    #[test]
+    fn test_is_solved_detects_column_duplicate() {
+        // A grid that looks complete but has a column duplicate
+        let grid = vec![
+            vec![Some(1), Some(2), Some(3), Some(4)],
+            vec![Some(1), Some(3), Some(4), Some(2)], // Column 0 has duplicate 1
+            vec![Some(3), Some(4), Some(1), Some(2)],
+            vec![Some(4), Some(1), Some(2), Some(3)],
+        ];
+        let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
+        assert!(!artifact.is_solved(), "Should detect column duplicate");
+    }
+
+    #[test]
+    fn test_is_solved_detects_out_of_range_value() {
+        // A grid with a value outside valid range
+        let grid = vec![
+            vec![Some(1), Some(2), Some(3), Some(5)], // 5 is out of range for 4x4
+            vec![Some(2), Some(1), Some(4), Some(3)],
+            vec![Some(3), Some(4), Some(1), Some(2)],
+            vec![Some(4), Some(3), Some(2), Some(1)],
+        ];
+        let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
+        assert!(!artifact.is_solved(), "Should detect out-of-range value");
+    }
+
+    #[test]
+    fn test_is_solved_detects_zero_value() {
+        // A grid with zero (invalid)
+        let grid = vec![
+            vec![Some(1), Some(2), Some(3), Some(0)], // 0 is invalid
+            vec![Some(2), Some(1), Some(4), Some(3)],
+            vec![Some(3), Some(4), Some(1), Some(2)],
+            vec![Some(4), Some(3), Some(2), Some(1)],
+        ];
+        let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
+        assert!(!artifact.is_solved(), "Should detect zero value");
+    }
+
+    #[test]
+    fn test_is_solved_valid_5x5() {
+        // Valid 5x5 Latin square
+        let grid = vec![
+            vec![Some(1), Some(2), Some(3), Some(4), Some(5)],
+            vec![Some(2), Some(3), Some(4), Some(5), Some(1)],
+            vec![Some(3), Some(4), Some(5), Some(1), Some(2)],
+            vec![Some(4), Some(5), Some(1), Some(2), Some(3)],
+            vec![Some(5), Some(1), Some(2), Some(3), Some(4)],
+        ];
+        let artifact = LatinSquareArtifact::new(5, grid, "test").unwrap();
+        assert!(artifact.is_solved(), "Valid 5x5 should be solved");
+    }
+
+    #[test]
+    fn test_is_solved_valid_7x7() {
+        // Valid 7x7 Latin square (the size used in experiments)
+        let grid = vec![
+            vec![Some(1), Some(2), Some(3), Some(4), Some(5), Some(6), Some(7)],
+            vec![Some(2), Some(3), Some(4), Some(5), Some(6), Some(7), Some(1)],
+            vec![Some(3), Some(4), Some(5), Some(6), Some(7), Some(1), Some(2)],
+            vec![Some(4), Some(5), Some(6), Some(7), Some(1), Some(2), Some(3)],
+            vec![Some(5), Some(6), Some(7), Some(1), Some(2), Some(3), Some(4)],
+            vec![Some(6), Some(7), Some(1), Some(2), Some(3), Some(4), Some(5)],
+            vec![Some(7), Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)],
+        ];
+        let artifact = LatinSquareArtifact::new(7, grid, "test").unwrap();
+        assert!(artifact.is_solved(), "Valid 7x7 should be solved");
+    }
+
+    // =========================================================================
+    // Violation Counting Tests - Used for pressure calculation
+    // =========================================================================
+
+    #[test]
+    fn test_total_violations_empty_grid() {
+        let grid = vec![
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+        ];
+        let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
+        assert_eq!(artifact.total_violations(), 0, "Empty grid has no violations");
+    }
+
+    #[test]
+    fn test_total_violations_counts_row_duplicates() {
+        let grid = vec![
+            vec![Some(1), Some(1), None, None], // One duplicate
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+        ];
+        let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
+        assert_eq!(artifact.total_violations(), 1, "Should count one row violation");
+    }
+
+    #[test]
+    fn test_total_violations_counts_column_duplicates() {
+        let grid = vec![
+            vec![Some(1), None, None, None],
+            vec![Some(1), None, None, None], // Column duplicate
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+        ];
+        let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
+        assert_eq!(artifact.total_violations(), 1, "Should count one column violation");
+    }
+
+    #[test]
+    fn test_total_violations_multiple() {
+        let grid = vec![
+            vec![Some(1), Some(1), None, None], // Row duplicate
+            vec![Some(1), None, None, None],    // Column duplicate with row 0
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+        ];
+        let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
+        // Row 0 has 1 duplicate, Column 0 has 1 duplicate
+        assert_eq!(artifact.total_violations(), 2, "Should count row and column violations");
+    }
+
+    #[test]
+    fn test_empty_count() {
+        let artifact = sample_puzzle();
+        // sample_puzzle has 8 empty cells out of 16
+        assert_eq!(artifact.empty_count(), 8, "Should count 8 empty cells");
+    }
+
+    #[test]
+    fn test_empty_count_full_grid() {
+        let grid = vec![
+            vec![Some(1), Some(2), Some(3), Some(4)],
+            vec![Some(2), Some(1), Some(4), Some(3)],
+            vec![Some(3), Some(4), Some(1), Some(2)],
+            vec![Some(4), Some(3), Some(2), Some(1)],
+        ];
+        let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
+        assert_eq!(artifact.empty_count(), 0, "Full grid has no empty cells");
+    }
+
+    // =========================================================================
+    // Region ID Stability Tests - Critical for patch routing
+    // =========================================================================
+
+    #[test]
+    fn test_region_ids_stable_across_patches() {
+        let mut artifact = sample_puzzle();
+        let regions_before = artifact.region_ids();
+
+        // Apply a patch
+        let patch = Patch {
+            region: regions_before[0],
+            op: PatchOp::Replace("1 2 3 4".to_string()),
+            rationale: "test".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch).unwrap();
+
+        let regions_after = artifact.region_ids();
+        assert_eq!(regions_before, regions_after, "Region IDs should be stable after patch");
+    }
+
+    #[test]
+    fn test_region_ids_deterministic() {
+        // Same puzzle should produce same region IDs
+        let artifact1 = sample_puzzle();
+        let artifact2 = sample_puzzle();
+        assert_eq!(
+            artifact1.region_ids(),
+            artifact2.region_ids(),
+            "Same puzzle should have same region IDs"
+        );
+    }
+
+    #[test]
+    fn test_region_count_matches_grid_size() {
+        for n in 4..=7 {
+            let grid = vec![vec![None; n]; n];
+            let artifact = LatinSquareArtifact::new(n, grid, "test").unwrap();
+            assert_eq!(
+                artifact.region_ids().len(),
+                n,
+                "Should have {} regions for {}x{} grid",
+                n,
+                n,
+                n
+            );
+        }
+    }
 }

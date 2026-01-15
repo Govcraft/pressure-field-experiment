@@ -520,4 +520,110 @@ This satisfies all requirements."#;
         let explore = SamplingConfig::exploration();
         assert!(explore.temperature > 0.5);
     }
+
+    #[test]
+    fn test_parse_row_response_with_brackets() {
+        assert_eq!(
+            parse_row_response("[1, 2, 3, 4]", 4),
+            Some("1 2 3 4".to_string())
+        );
+        assert_eq!(
+            parse_row_response("[1 2 3 4]", 4),
+            Some("1 2 3 4".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_row_response_multiline_finds_valid() {
+        let response = r#"Let me think about this...
+The row must satisfy several constraints.
+Looking at the available numbers:
+1 2 3 4 5 6 7
+This completes the row correctly."#;
+        assert_eq!(parse_row_response(response, 7), Some("1 2 3 4 5 6 7".to_string()));
+    }
+
+    #[test]
+    fn test_parse_row_response_out_of_range() {
+        // Numbers outside 1-n should be filtered
+        assert_eq!(parse_row_response("0 1 2 3", 4), None); // 0 is invalid
+        assert_eq!(parse_row_response("1 2 3 5", 4), None); // 5 > 4
+        assert_eq!(parse_row_response("1 2 3 -1", 4), None); // negative invalid
+    }
+
+    #[test]
+    fn test_parse_row_response_empty() {
+        assert_eq!(parse_row_response("", 4), None);
+        assert_eq!(parse_row_response("   ", 4), None);
+        assert_eq!(parse_row_response("\n\n", 4), None);
+    }
+
+    #[test]
+    fn test_parse_row_response_extra_numbers() {
+        // Too many numbers - should still work if exactly n valid ones on a line
+        assert_eq!(
+            parse_row_response("1 2 3 4", 4),
+            Some("1 2 3 4".to_string())
+        );
+        // Multiple lines with different lengths - picks the valid one
+        let response = "1 2\n1 2 3 4\n5 6 7";
+        assert_eq!(parse_row_response(response, 4), Some("1 2 3 4".to_string()));
+    }
+
+    #[test]
+    fn test_parse_row_response_json_format() {
+        // Sometimes LLMs return JSON-like responses
+        assert_eq!(
+            parse_row_response("\"row\": [1, 2, 3, 4]", 4),
+            Some("1 2 3 4".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_row_response_6x6() {
+        assert_eq!(
+            parse_row_response("1 2 3 4 5 6", 6),
+            Some("1 2 3 4 5 6".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_row_response_8x8() {
+        assert_eq!(
+            parse_row_response("1 2 3 4 5 6 7 8", 8),
+            Some("1 2 3 4 5 6 7 8".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_row_response_preserves_order() {
+        // Order matters - this should parse as-is
+        assert_eq!(
+            parse_row_response("4 3 2 1", 4),
+            Some("4 3 2 1".to_string())
+        );
+        assert_eq!(
+            parse_row_response("3 1 4 2", 4),
+            Some("3 1 4 2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_sampling_config_exploitation_deterministic() {
+        let config = SamplingConfig::exploitation();
+        // Low temperature for more deterministic outputs
+        assert!(config.temperature <= 0.3);
+        // Top_p controls nucleus sampling
+        assert!(config.top_p >= 0.8);
+        assert!(config.top_p <= 0.95);
+    }
+
+    #[test]
+    fn test_sampling_config_exploration_creative() {
+        let config = SamplingConfig::exploration();
+        // Higher temperature for more diverse outputs
+        assert!(config.temperature >= 0.5);
+        // Top_p allows diversity
+        assert!(config.top_p <= 0.95);
+    }
 }

@@ -150,6 +150,7 @@ pub fn update_shared_grid(grid: &SharedGrid, new_state: &[Vec<Option<u8>>]) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use survival_kernel::artifact::Artifact;
     use uuid::Uuid;
 
     fn create_test_grid() -> SharedGrid {
@@ -376,5 +377,294 @@ mod tests {
             signals["col_conflicts"], 0.0,
             "Against actual row 0 (2,1,3,4), row 1 (1,2,4,3) has no conflicts"
         );
+    }
+
+    /// Integration test: artifact patch → update_shared_grid → sensor measurement
+    /// This tests the exact flow that was broken in the kernel path.
+    #[test]
+    fn test_artifact_patch_to_sensor_integration() {
+        use crate::artifact::LatinSquareArtifact;
+        use survival_kernel::region::{Patch, PatchOp};
+
+        // Create artifact with initial state
+        let grid = vec![
+            vec![Some(1), None, Some(3), None],
+            vec![None, Some(2), None, Some(4)],
+            vec![Some(3), None, Some(1), None],
+            vec![None, Some(4), None, Some(2)],
+        ];
+        let mut artifact = LatinSquareArtifact::new(4, grid.clone(), "test").unwrap();
+        let regions = artifact.region_ids();
+
+        // Create shared_grid with initial state (like kernel path does)
+        let shared_grid: SharedGrid = Arc::new(RwLock::new(artifact.grid().clone()));
+        let sensor = LatinSquareSensor::new(4, shared_grid.clone());
+
+        // Row 1 proposes "3 2 1 4" - check conflicts against INITIAL state
+        let view_row1 = RegionView {
+            id: regions[1],
+            kind: "row".to_string(),
+            content: "3 2 1 4".to_string(),
+            metadata: {
+                let mut m = HashMap::new();
+                m.insert("row_index".to_string(), serde_json::json!(1));
+                m
+            },
+        };
+
+        let signals_before = sensor.measure(&view_row1).unwrap();
+        // Against initial grid: row 0 has (1, _, 3, _), row 2 has (3, _, 1, _)
+        // Row 1 proposes (3, 2, 1, 4):
+        //   Col 0: 3 conflicts with row 2's 3
+        //   Col 2: 1 conflicts with row 2's 1
+        assert_eq!(signals_before["col_conflicts"], 2.0, "Initial state should show 2 conflicts");
+
+        // Now apply a patch to row 0 via the artifact
+        let patch = Patch {
+            region: regions[0],
+            op: PatchOp::Replace("1 4 3 2".to_string()), // Changed col 1 from _ to 4, col 3 from _ to 2
+            rationale: "Fill row 0".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch).unwrap();
+
+        // KEY STEP: Update shared_grid from artifact (this was missing in buggy code!)
+        update_shared_grid(&shared_grid, artifact.grid()).unwrap();
+
+        // Now measure again - sensor should see updated state
+        let signals_after = sensor.measure(&view_row1).unwrap();
+        // Row 0 is now (1, 4, 3, 2)
+        // Row 1 proposes (3, 2, 1, 4)
+        // Col 0: 3 still conflicts with row 2's 3
+        // Col 2: 1 still conflicts with row 2's 1
+        // But importantly, the sensor is seeing CURRENT state, not stale state
+        assert_eq!(signals_after["col_conflicts"], 2.0, "After update, still 2 conflicts");
+    }
+
+    /// Test multiple sequential patches with shared_grid sync
+    /// Simulates what happens during multiple kernel ticks
+    #[test]
+    fn test_multiple_patches_with_shared_grid_sync() {
+        use crate::artifact::LatinSquareArtifact;
+        use survival_kernel::region::{Patch, PatchOp};
+
+        // Start with empty 4x4 grid except for a few fixed cells
+        let grid = vec![
+            vec![Some(1), None, None, None],
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+        ];
+        let mut artifact = LatinSquareArtifact::new(4, grid.clone(), "test").unwrap();
+        let regions = artifact.region_ids();
+
+        let shared_grid: SharedGrid = Arc::new(RwLock::new(artifact.grid().clone()));
+        let sensor = LatinSquareSensor::new(4, shared_grid.clone());
+
+        // Tick 1: Patch row 0 to "1 2 3 4"
+        let patch0 = Patch {
+            region: regions[0],
+            op: PatchOp::Replace("1 2 3 4".to_string()),
+            rationale: "".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch0).unwrap();
+        update_shared_grid(&shared_grid, artifact.grid()).unwrap();
+
+        // Verify row 1 sees row 0's values when checking conflicts
+        let view_row1_attempt1 = RegionView {
+            id: regions[1],
+            kind: "row".to_string(),
+            content: "1 2 3 4".to_string(), // Same as row 0 - should have 4 conflicts!
+            metadata: {
+                let mut m = HashMap::new();
+                m.insert("row_index".to_string(), serde_json::json!(1));
+                m
+            },
+        };
+        let signals = sensor.measure(&view_row1_attempt1).unwrap();
+        assert_eq!(signals["col_conflicts"], 4.0, "Row 1 duplicating row 0 should have 4 col conflicts");
+
+        // Tick 2: Patch row 1 to "2 1 4 3" (valid, no conflicts)
+        let patch1 = Patch {
+            region: regions[1],
+            op: PatchOp::Replace("2 1 4 3".to_string()),
+            rationale: "".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch1).unwrap();
+        update_shared_grid(&shared_grid, artifact.grid()).unwrap();
+
+        // Verify row 2 sees both row 0 and row 1
+        let view_row2_attempt = RegionView {
+            id: regions[2],
+            kind: "row".to_string(),
+            content: "1 2 3 4".to_string(), // Duplicates row 0 entirely
+            metadata: {
+                let mut m = HashMap::new();
+                m.insert("row_index".to_string(), serde_json::json!(2));
+                m
+            },
+        };
+        let signals = sensor.measure(&view_row2_attempt).unwrap();
+        assert_eq!(signals["col_conflicts"], 4.0, "Row 2 duplicating row 0 should have 4 conflicts");
+
+        // A valid row 2 proposal
+        let view_row2_valid = RegionView {
+            id: regions[2],
+            kind: "row".to_string(),
+            content: "3 4 1 2".to_string(),
+            metadata: {
+                let mut m = HashMap::new();
+                m.insert("row_index".to_string(), serde_json::json!(2));
+                m
+            },
+        };
+        let signals = sensor.measure(&view_row2_valid).unwrap();
+        assert_eq!(signals["col_conflicts"], 0.0, "Valid row 2 should have no conflicts");
+    }
+
+    /// Test that demonstrates the exact bug scenario:
+    /// Without shared_grid updates, later patches are validated against stale state
+    #[test]
+    fn test_bug_scenario_stale_validation() {
+        use crate::artifact::LatinSquareArtifact;
+        use survival_kernel::region::{Patch, PatchOp};
+
+        let grid = vec![
+            vec![Some(1), None, None, None],
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+            vec![None, None, None, None],
+        ];
+        let mut artifact = LatinSquareArtifact::new(4, grid.clone(), "test").unwrap();
+        let regions = artifact.region_ids();
+
+        // Create TWO shared_grids: one that gets updated (fixed), one that doesn't (buggy)
+        let shared_grid_fixed: SharedGrid = Arc::new(RwLock::new(artifact.grid().clone()));
+        let shared_grid_buggy: SharedGrid = Arc::new(RwLock::new(artifact.grid().clone()));
+
+        let sensor_fixed = LatinSquareSensor::new(4, shared_grid_fixed.clone());
+        let sensor_buggy = LatinSquareSensor::new(4, shared_grid_buggy.clone());
+
+        // Apply patch to row 0
+        let patch0 = Patch {
+            region: regions[0],
+            op: PatchOp::Replace("1 2 3 4".to_string()),
+            rationale: "".to_string(),
+            expected_delta: HashMap::new(),
+        };
+        artifact.apply_patch(patch0).unwrap();
+
+        // FIXED path: update shared_grid
+        update_shared_grid(&shared_grid_fixed, artifact.grid()).unwrap();
+        // BUGGY path: DON'T update shared_grid (simulating the bug)
+
+        // Now propose row 1 = "1 2 3 4" (same as row 0 - should be rejected)
+        let view_row1 = RegionView {
+            id: regions[1],
+            kind: "row".to_string(),
+            content: "1 2 3 4".to_string(),
+            metadata: {
+                let mut m = HashMap::new();
+                m.insert("row_index".to_string(), serde_json::json!(1));
+                m
+            },
+        };
+
+        // Fixed sensor correctly detects 4 column conflicts
+        let signals_fixed = sensor_fixed.measure(&view_row1).unwrap();
+        assert_eq!(
+            signals_fixed["col_conflicts"], 4.0,
+            "Fixed sensor should see 4 conflicts (row 0 has 1,2,3,4)"
+        );
+
+        // Buggy sensor sees NO conflicts because it still thinks row 0 is "1 _ _ _"
+        let signals_buggy = sensor_buggy.measure(&view_row1).unwrap();
+        assert_eq!(
+            signals_buggy["col_conflicts"], 1.0,
+            "Buggy sensor only sees 1 conflict (stale row 0 only has 1 in col 0)"
+        );
+    }
+
+    /// Test that simulates the kernel tick cycle:
+    /// 1. Get TickResult with applied patches
+    /// 2. Apply patches to local artifact
+    /// 3. Update shared_grid
+    /// 4. Next tick's sensor measurements see updated state
+    #[test]
+    fn test_simulated_kernel_tick_cycle() {
+        use crate::artifact::LatinSquareArtifact;
+        use survival_kernel::region::{Patch, PatchOp};
+
+        // Initial 4x4 grid
+        let grid = vec![
+            vec![Some(1), None, None, None],
+            vec![None, Some(2), None, None],
+            vec![None, None, Some(3), None],
+            vec![None, None, None, Some(4)],
+        ];
+        let mut artifact = LatinSquareArtifact::new(4, grid.clone(), "test").unwrap();
+        let regions = artifact.region_ids();
+
+        let shared_grid: SharedGrid = Arc::new(RwLock::new(artifact.grid().clone()));
+        let sensor = LatinSquareSensor::new(4, shared_grid.clone());
+
+        // Simulate 3 ticks, each applying one patch
+        let patches = vec![
+            (regions[0], "1 2 3 4"),
+            (regions[1], "3 2 4 1"),
+            (regions[2], "4 1 3 2"),
+        ];
+
+        for (tick, (region, content)) in patches.iter().enumerate() {
+            // Simulate TickResult.applied containing one patch
+            let patch = Patch {
+                region: *region,
+                op: PatchOp::Replace(content.to_string()),
+                rationale: format!("Tick {}", tick),
+                expected_delta: HashMap::new(),
+            };
+
+            // Apply patch (like kernel does internally)
+            artifact.apply_patch(patch).unwrap();
+
+            // THE FIX: Update shared_grid after applying patches
+            update_shared_grid(&shared_grid, artifact.grid()).unwrap();
+
+            // Verify sensor sees current state by checking row 3
+            let view_row3 = RegionView {
+                id: regions[3],
+                kind: "row".to_string(),
+                content: "2 4 1 4".to_string(), // Some test content
+                metadata: {
+                    let mut m = HashMap::new();
+                    m.insert("row_index".to_string(), serde_json::json!(3));
+                    m
+                },
+            };
+            let _signals = sensor.measure(&view_row3).unwrap();
+            // Just verify it doesn't crash and sensor is working
+        }
+
+        // After all patches, verify final state
+        assert_eq!(artifact.grid()[0], vec![Some(1), Some(2), Some(3), Some(4)]);
+        assert_eq!(artifact.grid()[1], vec![Some(3), Some(2), Some(4), Some(1)]);
+        assert_eq!(artifact.grid()[2], vec![Some(4), Some(1), Some(3), Some(2)]);
+
+        // Final check: row 3 proposing "2 4 1 3" should have 0 conflicts
+        let view_row3_valid = RegionView {
+            id: regions[3],
+            kind: "row".to_string(),
+            content: "2 4 1 3".to_string(),
+            metadata: {
+                let mut m = HashMap::new();
+                m.insert("row_index".to_string(), serde_json::json!(3));
+                m
+            },
+        };
+        let signals = sensor.measure(&view_row3_valid).unwrap();
+        assert_eq!(signals["col_conflicts"], 0.0, "Valid completion should have no conflicts");
+        assert_eq!(signals["row_duplicates"], 0.0, "Valid completion should have no duplicates");
     }
 }

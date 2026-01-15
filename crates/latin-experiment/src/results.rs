@@ -352,4 +352,400 @@ mod tests {
         assert!(summary.solve_rate_ci.0 <= summary.solve_rate);
         assert!(summary.solve_rate_ci.1 >= summary.solve_rate);
     }
+
+    #[test]
+    fn test_solve_rate_confidence_interval_bounds() {
+        let mut results = GridResults::new();
+
+        // Add results with 50% solve rate for predictable SE
+        for trial in 0..10 {
+            results.add(ExperimentResult {
+                config: ExperimentConfig {
+                    strategy: "test".to_string(),
+                    agent_count: 1,
+                    n: 4,
+                    empty_cells: 4,
+                    decay_enabled: true,
+                    inhibition_enabled: true,
+                    examples_enabled: true,
+                    trial,
+                    seed: None,
+                },
+                started_at: Utc::now(),
+                ended_at: Utc::now(),
+                total_ticks: 10,
+                solved: trial % 2 == 0, // 50% solve rate
+                final_pressure: if trial % 2 == 0 { 0.0 } else { 1.0 },
+                pressure_history: vec![],
+                patches_per_tick: vec![],
+                empty_cells_history: vec![],
+                example_bank_stats: None,
+                tick_metrics: vec![],
+                escalation_events: vec![],
+                final_model: "test".to_string(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                total_patch_rejections: HashMap::new(),
+                conversation_stats: None,
+            });
+        }
+
+        results.compute_summary();
+        let summary = results.summary.values().next().unwrap();
+
+        assert_eq!(summary.solve_rate, 0.5);
+        // SE for p=0.5, n=10: sqrt(0.5*0.5/10) = sqrt(0.025) ≈ 0.158
+        assert!((summary.solve_rate_se - 0.158).abs() < 0.01);
+        // CI should be within [0, 1]
+        assert!(summary.solve_rate_ci.0 >= 0.0);
+        assert!(summary.solve_rate_ci.1 <= 1.0);
+    }
+
+    #[test]
+    fn test_solve_rate_100_percent() {
+        let mut results = GridResults::new();
+
+        for trial in 0..5 {
+            results.add(ExperimentResult {
+                config: ExperimentConfig {
+                    strategy: "perfect".to_string(),
+                    agent_count: 1,
+                    n: 4,
+                    empty_cells: 2,
+                    decay_enabled: true,
+                    inhibition_enabled: true,
+                    examples_enabled: true,
+                    trial,
+                    seed: None,
+                },
+                started_at: Utc::now(),
+                ended_at: Utc::now(),
+                total_ticks: 5,
+                solved: true, // 100% solve rate
+                final_pressure: 0.0,
+                pressure_history: vec![],
+                patches_per_tick: vec![],
+                empty_cells_history: vec![],
+                example_bank_stats: None,
+                tick_metrics: vec![],
+                escalation_events: vec![],
+                final_model: "test".to_string(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                total_patch_rejections: HashMap::new(),
+                conversation_stats: None,
+            });
+        }
+
+        results.compute_summary();
+        let summary = results.summary.values().next().unwrap();
+
+        assert_eq!(summary.solve_rate, 1.0);
+        // SE for p=1.0: sqrt(1.0*0.0/n) = 0
+        assert_eq!(summary.solve_rate_se, 0.0);
+        // CI upper bound should be clamped to 1.0
+        assert_eq!(summary.solve_rate_ci.1, 1.0);
+    }
+
+    #[test]
+    fn test_avg_ticks_standard_error() {
+        let mut results = GridResults::new();
+
+        let tick_values = [8, 10, 12, 14, 16]; // variance = 10, std = ~3.16
+        for (trial, &ticks) in tick_values.iter().enumerate() {
+            results.add(ExperimentResult {
+                config: ExperimentConfig {
+                    strategy: "variance".to_string(),
+                    agent_count: 1,
+                    n: 4,
+                    empty_cells: 4,
+                    decay_enabled: true,
+                    inhibition_enabled: true,
+                    examples_enabled: true,
+                    trial,
+                    seed: None,
+                },
+                started_at: Utc::now(),
+                ended_at: Utc::now(),
+                total_ticks: ticks,
+                solved: true,
+                final_pressure: 0.0,
+                pressure_history: vec![],
+                patches_per_tick: vec![],
+                empty_cells_history: vec![],
+                example_bank_stats: None,
+                tick_metrics: vec![],
+                escalation_events: vec![],
+                final_model: "test".to_string(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                total_patch_rejections: HashMap::new(),
+                conversation_stats: None,
+            });
+        }
+
+        results.compute_summary();
+        let summary = results.summary.values().next().unwrap();
+
+        assert_eq!(summary.avg_ticks, 12.0);
+        assert_eq!(summary.min_ticks, 8);
+        assert_eq!(summary.max_ticks, 16);
+        // SE should be positive and reasonable
+        assert!(summary.avg_ticks_se > 0.0);
+        assert!(summary.avg_ticks_se < 3.0);
+    }
+
+    #[test]
+    fn test_multiple_strategies_grouped_separately() {
+        let mut results = GridResults::new();
+
+        // Add results for two different strategies
+        for trial in 0..3 {
+            results.add(ExperimentResult {
+                config: ExperimentConfig {
+                    strategy: "strategy_a".to_string(),
+                    agent_count: 2,
+                    n: 4,
+                    empty_cells: 4,
+                    decay_enabled: true,
+                    inhibition_enabled: true,
+                    examples_enabled: true,
+                    trial,
+                    seed: None,
+                },
+                started_at: Utc::now(),
+                ended_at: Utc::now(),
+                total_ticks: 10,
+                solved: true,
+                final_pressure: 0.0,
+                pressure_history: vec![],
+                patches_per_tick: vec![],
+                empty_cells_history: vec![],
+                example_bank_stats: None,
+                tick_metrics: vec![],
+                escalation_events: vec![],
+                final_model: "test".to_string(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                total_patch_rejections: HashMap::new(),
+                conversation_stats: None,
+            });
+
+            results.add(ExperimentResult {
+                config: ExperimentConfig {
+                    strategy: "strategy_b".to_string(),
+                    agent_count: 2,
+                    n: 4,
+                    empty_cells: 4,
+                    decay_enabled: true,
+                    inhibition_enabled: true,
+                    examples_enabled: true,
+                    trial,
+                    seed: None,
+                },
+                started_at: Utc::now(),
+                ended_at: Utc::now(),
+                total_ticks: 20,
+                solved: false,
+                final_pressure: 5.0,
+                pressure_history: vec![],
+                patches_per_tick: vec![],
+                empty_cells_history: vec![],
+                example_bank_stats: None,
+                tick_metrics: vec![],
+                escalation_events: vec![],
+                final_model: "test".to_string(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                total_patch_rejections: HashMap::new(),
+                conversation_stats: None,
+            });
+        }
+
+        results.compute_summary();
+
+        // Should have separate summaries for each strategy
+        assert_eq!(results.summary.len(), 2);
+
+        let key_a = "strategy_a:agents=2:decay=true:inhibit=true:examples=true";
+        let key_b = "strategy_b:agents=2:decay=true:inhibit=true:examples=true";
+
+        let summary_a = results.summary.get(key_a).unwrap();
+        let summary_b = results.summary.get(key_b).unwrap();
+
+        assert_eq!(summary_a.solve_rate, 1.0);
+        assert_eq!(summary_a.avg_ticks, 10.0);
+
+        assert_eq!(summary_b.solve_rate, 0.0);
+        assert_eq!(summary_b.avg_ticks, 20.0);
+    }
+
+    #[test]
+    fn test_patch_rejection_enum_coverage() {
+        // Verify all rejection reasons are serializable/deserializable
+        let rejections = vec![
+            PatchRejection::DidNotReducePressure,
+            PatchRejection::ParseFailure,
+            PatchRejection::WouldIncreaseViolations,
+            PatchRejection::Duplicate,
+            PatchRejection::InhibitionCooldown,
+        ];
+
+        for rejection in rejections {
+            let json = serde_json::to_string(&rejection).unwrap();
+            let parsed: PatchRejection = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, rejection);
+        }
+    }
+
+    #[test]
+    fn test_escalation_event_serialization() {
+        let event = EscalationEvent {
+            tick: 15,
+            from_model: "Qwen/Qwen2.5-3B".to_string(),
+            to_model: "Qwen/Qwen2.5-7B".to_string(),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: EscalationEvent = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.tick, 15);
+        assert_eq!(parsed.from_model, "Qwen/Qwen2.5-3B");
+        assert_eq!(parsed.to_model, "Qwen/Qwen2.5-7B");
+    }
+
+    #[test]
+    fn test_tick_metrics_token_tracking() {
+        let metrics = TickMetrics {
+            tick: 5,
+            pressure_before: 10.0,
+            pressure_after: 8.0,
+            patches_proposed: 4,
+            patches_applied: 2,
+            empty_cells: 6,
+            violations: 0,
+            llm_calls: 4,
+            duration_ms: 150,
+            model_used: "Qwen/Qwen2.5-3B".to_string(),
+            prompt_tokens: 512,
+            completion_tokens: 64,
+            patch_rejections: HashMap::from([
+                (PatchRejection::DidNotReducePressure, 1),
+                (PatchRejection::ParseFailure, 1),
+            ]),
+            messages_per_tick: None,
+        };
+
+        // Verify serialization/deserialization preserves all fields
+        let json = serde_json::to_string(&metrics).unwrap();
+        let parsed: TickMetrics = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.prompt_tokens, 512);
+        assert_eq!(parsed.completion_tokens, 64);
+        assert_eq!(parsed.patch_rejections.len(), 2);
+    }
+
+    #[test]
+    fn test_format_duration() {
+        assert_eq!(format_duration(50), "50ms");
+        assert_eq!(format_duration(999), "999ms");
+        assert_eq!(format_duration(1000), "1.0s");
+        assert_eq!(format_duration(5500), "5.5s");
+        assert_eq!(format_duration(59999), "60.0s");
+        assert_eq!(format_duration(60000), "1.0m");
+        assert_eq!(format_duration(150000), "2.5m");
+    }
+
+    #[test]
+    fn test_experiment_result_full_serialization() {
+        let result = ExperimentResult {
+            config: ExperimentConfig {
+                strategy: "pressure_field".to_string(),
+                agent_count: 4,
+                n: 6,
+                empty_cells: 12,
+                decay_enabled: true,
+                inhibition_enabled: true,
+                examples_enabled: false,
+                trial: 0,
+                seed: Some(42),
+            },
+            started_at: Utc::now(),
+            ended_at: Utc::now(),
+            total_ticks: 25,
+            solved: true,
+            final_pressure: 0.0,
+            pressure_history: vec![10.0, 8.0, 5.0, 2.0, 0.0],
+            patches_per_tick: vec![2, 3, 2, 1, 0],
+            empty_cells_history: vec![12, 10, 7, 4, 0],
+            example_bank_stats: None,
+            tick_metrics: vec![],
+            escalation_events: vec![
+                EscalationEvent {
+                    tick: 10,
+                    from_model: "3B".to_string(),
+                    to_model: "7B".to_string(),
+                },
+            ],
+            final_model: "Qwen/Qwen2.5-7B".to_string(),
+            total_prompt_tokens: 2048,
+            total_completion_tokens: 256,
+            total_patch_rejections: HashMap::from([
+                (PatchRejection::DidNotReducePressure, 5),
+            ]),
+            conversation_stats: None,
+        };
+
+        let json = serde_json::to_string_pretty(&result).unwrap();
+        let parsed: ExperimentResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.total_ticks, 25);
+        assert!(parsed.solved);
+        assert_eq!(parsed.escalation_events.len(), 1);
+        assert_eq!(parsed.total_prompt_tokens, 2048);
+        assert_eq!(parsed.total_patch_rejections.len(), 1);
+    }
+
+    #[test]
+    fn test_single_trial_no_standard_error() {
+        let mut results = GridResults::new();
+
+        // Single trial should have SE = 0
+        results.add(ExperimentResult {
+            config: ExperimentConfig {
+                strategy: "single".to_string(),
+                agent_count: 1,
+                n: 4,
+                empty_cells: 4,
+                decay_enabled: true,
+                inhibition_enabled: true,
+                examples_enabled: true,
+                trial: 0,
+                seed: None,
+            },
+            started_at: Utc::now(),
+            ended_at: Utc::now(),
+            total_ticks: 10,
+            solved: true,
+            final_pressure: 0.0,
+            pressure_history: vec![],
+            patches_per_tick: vec![],
+            empty_cells_history: vec![],
+            example_bank_stats: None,
+            tick_metrics: vec![],
+            escalation_events: vec![],
+            final_model: "test".to_string(),
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_patch_rejections: HashMap::new(),
+            conversation_stats: None,
+        });
+
+        results.compute_summary();
+        let summary = results.summary.values().next().unwrap();
+
+        assert_eq!(summary.trials, 1);
+        assert_eq!(summary.solve_rate_se, 0.0);
+        assert_eq!(summary.avg_ticks_se, 0.0);
+    }
 }
