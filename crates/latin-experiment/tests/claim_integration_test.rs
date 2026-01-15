@@ -384,3 +384,273 @@ async fn test_different_values_same_column_allowed() {
 
     runtime.shutdown_all().await.unwrap();
 }
+
+/// Test that verifies the full ProposeForRegion -> ClaimBatch -> ClaimBatchResult flow
+/// using the same envelope routing pattern as the real LlmActor.
+///
+/// This catches bugs where:
+/// - LlmActor doesn't properly create envelope with new_envelope()
+/// - ClaimManager handle is None or not passed correctly
+/// - ClaimBatchResult doesn't route back to the sender
+#[tokio::test]
+async fn test_propose_for_region_claim_flow_end_to_end() {
+    use survival_kernel::messages::ProposeForRegion;
+    use survival_kernel::pressure::Signals;
+    use survival_kernel::region::{RegionState, RegionView};
+
+    let mut runtime = ActonApp::launch_async().await;
+
+    // Spawn ClaimManager
+    let claim_manager_handle = ClaimManager::spawn(&mut runtime).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Track received ClaimBatchResults
+    let results = Arc::new(RwLock::new(Vec::new()));
+    let results_clone = results.clone();
+
+    // Create a mock actor that mimics the EXACT pattern used in LlmActor:
+    // - Receives ProposeForRegion
+    // - Uses context.new_envelope(&claim_manager.reply_address()) to send ClaimBatch
+    // - Handles ClaimBatchResult
+    let mut mock_llm = runtime.new_actor_with_name::<MockActorState>("MockLlmActor".to_string());
+    mock_llm.model.name = "MockLlmActor".to_string();
+    mock_llm.model.received_results = results_clone;
+
+    // Subscribe BEFORE starting
+    mock_llm.handle().subscribe::<ProposeForRegion>().await;
+    mock_llm.handle().subscribe::<ClaimBatchResult>().await;
+
+    let claim_manager_for_handler = claim_manager_handle.clone();
+
+    // Handle ProposeForRegion - this mimics the LlmActor pattern exactly
+    mock_llm.act_on::<ProposeForRegion>(move |_actor, context| {
+        let msg = context.message().clone();
+        let claim_manager = claim_manager_for_handler.clone();
+
+        // THIS IS THE CRITICAL PATTERN - use context.new_envelope()
+        // If this doesn't work, claims won't reach ClaimManager
+        let request_envelope = context.new_envelope(&claim_manager.reply_address());
+
+        Reply::pending(async move {
+            let claim_batch = ClaimBatch {
+                correlation_id: msg.correlation_id,
+                claims: vec![(0, 1), (1, 2)], // Simulated LLM output
+                region_id: msg.region_id,
+                actor_name: "MockLlmActor".to_string(),
+                patch: mock_patch(msg.region_id, "1 2 _ _"),
+                prompt_tokens: 10,
+                completion_tokens: 5,
+            };
+
+            request_envelope.send(claim_batch).await;
+        })
+    });
+
+    // Handle ClaimBatchResult - record that we received it
+    mock_llm.mutate_on::<ClaimBatchResult>(|actor, context| {
+        let msg = context.message().clone();
+        let results = actor.model.received_results.clone();
+
+        Reply::pending(async move {
+            results.write().await.push(msg);
+        })
+    });
+
+    let mock_llm_handle = mock_llm.start().await;
+
+    // Now send ProposeForRegion - this is what the coordinator does
+    let region_id = test_region_id("test_row");
+    mock_llm_handle
+        .send(ProposeForRegion {
+            correlation_id: "e2e-test".to_string(),
+            region_id,
+            region_view: RegionView {
+                id: region_id,
+                kind: "row".to_string(),
+                content: "_ _ _ _".to_string(),
+                metadata: HashMap::new(),
+            },
+            signals: Signals::new(),
+            pressures: Default::default(),
+            state: RegionState::default(),
+            claim_manager: Some(claim_manager_handle.clone()),
+        })
+        .await;
+
+    // Wait for the full round-trip
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // CRITICAL ASSERTION: We must have received a ClaimBatchResult
+    // If this fails, claims are not reaching ClaimManager or responses aren't routing back
+    let received = results.read().await;
+    assert!(
+        !received.is_empty(),
+        "CRITICAL: No ClaimBatchResult received! Claims are not reaching ClaimManager. \
+         Check that: (1) claim_manager handle is passed in ProposeForRegion, \
+         (2) context.new_envelope() is used correctly, \
+         (3) ClaimManager uses reply_envelope() to respond"
+    );
+
+    assert_eq!(received.len(), 1, "Should receive exactly one result");
+    assert!(
+        received[0].all_granted,
+        "Claims should be granted (no conflicts)"
+    );
+    assert_eq!(received[0].correlation_id, "e2e-test");
+
+    runtime.shutdown_all().await.unwrap();
+}
+
+/// Test that verifies claims are denied when two actors compete via ProposeForRegion
+#[tokio::test]
+async fn test_propose_for_region_concurrent_claims_denied() {
+    use survival_kernel::messages::ProposeForRegion;
+    use survival_kernel::pressure::Signals;
+    use survival_kernel::region::{RegionState, RegionView};
+
+    let mut runtime = ActonApp::launch_async().await;
+
+    // Spawn ClaimManager
+    let claim_manager_handle = ClaimManager::spawn(&mut runtime).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Track results for both actors
+    let results1 = Arc::new(RwLock::new(Vec::new()));
+    let results2 = Arc::new(RwLock::new(Vec::new()));
+
+    // Spawn two mock LLM actors
+    let mock_llm1 = spawn_propose_handler(
+        &mut runtime,
+        "MockLlm1",
+        results1.clone(),
+        claim_manager_handle.clone(),
+        vec![(0, 5), (1, 3)], // Will claim col 0 = 5
+    )
+    .await;
+
+    let mock_llm2 = spawn_propose_handler(
+        &mut runtime,
+        "MockLlm2",
+        results2.clone(),
+        claim_manager_handle.clone(),
+        vec![(0, 5), (2, 7)], // Also wants col 0 = 5 - CONFLICT!
+    )
+    .await;
+
+    let region_id1 = test_region_id("row_0");
+    let region_id2 = test_region_id("row_1");
+
+    // First actor proposes
+    mock_llm1
+        .send(ProposeForRegion {
+            correlation_id: "actor1".to_string(),
+            region_id: region_id1,
+            region_view: RegionView {
+                id: region_id1,
+                kind: "row".to_string(),
+                content: "_ _ _ _".to_string(),
+                metadata: HashMap::new(),
+            },
+            signals: Signals::new(),
+            pressures: Default::default(),
+            state: RegionState::default(),
+            claim_manager: Some(claim_manager_handle.clone()),
+        })
+        .await;
+
+    // Wait for first claim to be processed
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Second actor proposes - should be DENIED because (0, 5) is already claimed
+    mock_llm2
+        .send(ProposeForRegion {
+            correlation_id: "actor2".to_string(),
+            region_id: region_id2,
+            region_view: RegionView {
+                id: region_id2,
+                kind: "row".to_string(),
+                content: "_ _ _ _".to_string(),
+                metadata: HashMap::new(),
+            },
+            signals: Signals::new(),
+            pressures: Default::default(),
+            state: RegionState::default(),
+            claim_manager: Some(claim_manager_handle.clone()),
+        })
+        .await;
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Verify results
+    let received1 = results1.read().await;
+    let received2 = results2.read().await;
+
+    assert_eq!(received1.len(), 1, "Actor 1 should receive result");
+    assert_eq!(received2.len(), 1, "Actor 2 should receive result");
+
+    assert!(
+        received1[0].all_granted,
+        "First actor should have claims granted"
+    );
+    assert!(
+        !received2[0].all_granted,
+        "Second actor should have claims DENIED due to conflict on (0, 5)"
+    );
+
+    runtime.shutdown_all().await.unwrap();
+}
+
+/// Helper to spawn an actor that handles ProposeForRegion with specific claims
+async fn spawn_propose_handler(
+    runtime: &mut ActorRuntime,
+    name: &str,
+    results: Arc<RwLock<Vec<ClaimBatchResult>>>,
+    claim_manager: ActorHandle,
+    claims_to_make: Vec<(usize, u8)>,
+) -> ActorHandle {
+    use survival_kernel::messages::ProposeForRegion;
+
+    let mut actor = runtime.new_actor_with_name::<MockActorState>(name.to_string());
+    actor.model.name = name.to_string();
+    actor.model.received_results = results;
+
+    actor.handle().subscribe::<ProposeForRegion>().await;
+    actor.handle().subscribe::<ClaimBatchResult>().await;
+
+    let actor_name = name.to_string();
+    let claims = claims_to_make.clone();
+
+    actor.act_on::<ProposeForRegion>(move |_actor, context| {
+        let msg = context.message().clone();
+        let cm = claim_manager.clone();
+        let name = actor_name.clone();
+        let claims = claims.clone();
+
+        let request_envelope = context.new_envelope(&cm.reply_address());
+
+        Reply::pending(async move {
+            request_envelope
+                .send(ClaimBatch {
+                    correlation_id: msg.correlation_id,
+                    claims,
+                    region_id: msg.region_id,
+                    actor_name: name,
+                    patch: mock_patch(msg.region_id, "test"),
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                })
+                .await;
+        })
+    });
+
+    actor.mutate_on::<ClaimBatchResult>(|actor, context| {
+        let msg = context.message().clone();
+        let results = actor.model.received_results.clone();
+
+        Reply::pending(async move {
+            results.write().await.push(msg);
+        })
+    });
+
+    actor.start().await
+}

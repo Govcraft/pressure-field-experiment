@@ -1,0 +1,9 @@
+{
+    "timestamp": "20260114-212024",
+    "trials": 30,
+    "parallel": 10,
+    "model_chain": "Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B",
+    "escalation_threshold": 10,
+    "hostname": "unknown",
+    "gpu": "unknown"
+}
