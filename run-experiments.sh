@@ -434,6 +434,125 @@ run_difficulty() {
     log_success "Difficulty scaling experiment complete"
 }
 
+# Re-run: Pressure Field Only
+# Purpose: Re-run only pressure_field experiments after bug fix
+# Bug: SharedGrid was not updated in kernel path, causing stale validation
+run_pressure_field_only() {
+    local log_prefix="${1:-}"
+
+    [[ -n "$log_prefix" ]] || log_info "========================================"
+    [[ -n "$log_prefix" ]] || log_info "Re-run: Pressure Field Only (Bug Fix)"
+    log_info "Re-running pressure_field across all experiments"
+    log_info "Main: 3 agents × $TRIALS = $((3 * TRIALS)) runs"
+    log_info "Scaling: 4 agents × $TRIALS = $((4 * TRIALS)) runs"
+    log_info "Escalation: 2 configs × $TRIALS = $((2 * TRIALS)) runs"
+    log_info "Difficulty: 2 levels × $TRIALS = $((2 * TRIALS)) runs"
+    log_info "Total: $((3 * TRIALS + 4 * TRIALS + 2 * TRIALS + 2 * TRIALS)) runs"
+    [[ -n "$log_prefix" ]] || log_info "========================================"
+
+    # Main Grid - pressure_field only (Chain A: 3B → 7B → 14B)
+    log_info "Running Main Grid (pressure_field only)..."
+    run_cmd "Main Grid (pressure_field)" \
+        "$LATIN_EXPERIMENT" \
+        --vllm-host "$VLLM_HOST_A" \
+        --vllm-hosts "$VLLM_HOSTS_A" \
+        --model-chain "$MODEL_CHAIN_A" \
+        --escalation-threshold "$ESCALATION_THRESHOLD" \
+        grid \
+        --trials "$TRIALS" \
+        --n 7 \
+        --empty 7 \
+        --max-ticks $MAX_TICKS \
+        --agents 2,4,8 \
+        --strategies "pressure_field" \
+        --output "$RESULTS_DIR/main-grid-pressure_field.json"
+
+    # Scaling - pressure_field only (Chain B: 7B → 14B)
+    log_info "Running Scaling (pressure_field only)..."
+    run_cmd "Scaling (pressure_field)" \
+        "$LATIN_EXPERIMENT" \
+        --vllm-host "$VLLM_HOST_B" \
+        --vllm-hosts "$VLLM_HOSTS_B" \
+        --model-chain "$MODEL_CHAIN_B" \
+        --escalation-threshold "$ESCALATION_THRESHOLD" \
+        grid \
+        --trials "$TRIALS" \
+        --n 7 \
+        --empty 8 \
+        --max-ticks $MAX_TICKS \
+        --agents 2,4,8,16 \
+        --strategies "pressure_field" \
+        --output "$RESULTS_DIR/scaling-pressure_field.json"
+
+    # Escalation without - pressure_field only (3B only)
+    log_info "Running Escalation WITHOUT (pressure_field only)..."
+    run_cmd "Escalation without (pressure_field)" \
+        "$LATIN_EXPERIMENT" \
+        --vllm-host "$VLLM_HOST_A" \
+        --model-chain "Qwen/Qwen2.5-3B" \
+        grid \
+        --trials "$TRIALS" \
+        --n 7 \
+        --empty 8 \
+        --max-ticks $MAX_TICKS \
+        --agents 4 \
+        --strategies "pressure_field" \
+        --output "$RESULTS_DIR/escalation-without-pressure_field.json"
+
+    # Escalation with - pressure_field only (Chain A: 3B → 7B → 14B)
+    log_info "Running Escalation WITH (pressure_field only)..."
+    run_cmd "Escalation with (pressure_field)" \
+        "$LATIN_EXPERIMENT" \
+        --vllm-host "$VLLM_HOST_A" \
+        --vllm-hosts "$VLLM_HOSTS_A" \
+        --model-chain "$MODEL_CHAIN_A" \
+        --escalation-threshold "$ESCALATION_THRESHOLD" \
+        grid \
+        --trials "$TRIALS" \
+        --n 7 \
+        --empty 8 \
+        --max-ticks $MAX_TICKS \
+        --agents 4 \
+        --strategies "pressure_field" \
+        --output "$RESULTS_DIR/escalation-with-pressure_field.json"
+
+    # Difficulty Easy - pressure_field only (Chain B: 7B → 14B)
+    log_info "Running Difficulty Easy (pressure_field only)..."
+    run_cmd "Difficulty Easy (pressure_field)" \
+        "$LATIN_EXPERIMENT" \
+        --vllm-host "$VLLM_HOST_B" \
+        --vllm-hosts "$VLLM_HOSTS_B" \
+        --model-chain "$MODEL_CHAIN_B" \
+        --escalation-threshold "$ESCALATION_THRESHOLD" \
+        grid \
+        --trials "$TRIALS" \
+        --n 5 \
+        --empty 5 \
+        --max-ticks $MAX_TICKS \
+        --agents 4 \
+        --strategies "pressure_field" \
+        --output "$RESULTS_DIR/difficulty-easy-pressure_field.json"
+
+    # Difficulty Hard - pressure_field only (Chain B: 7B → 14B)
+    log_info "Running Difficulty Hard (pressure_field only)..."
+    run_cmd "Difficulty Hard (pressure_field)" \
+        "$LATIN_EXPERIMENT" \
+        --vllm-host "$VLLM_HOST_B" \
+        --vllm-hosts "$VLLM_HOSTS_B" \
+        --model-chain "$MODEL_CHAIN_B" \
+        --escalation-threshold "$ESCALATION_THRESHOLD" \
+        grid \
+        --trials "$TRIALS" \
+        --n 7 \
+        --empty 7 \
+        --max-ticks $MAX_TICKS \
+        --agents 4 \
+        --strategies "pressure_field" \
+        --output "$RESULTS_DIR/difficulty-hard-pressure_field.json"
+
+    log_success "Pressure field re-run complete"
+}
+
 run_all_sequential() {
     local start_time
     start_time=$(date +%s)
@@ -536,11 +655,12 @@ Options:
     -h, --help      Show this help message
 
 Experiments (Optimized Protocol - ~1,740 total runs, down from ~3,240):
-    main-grid       Strategy comparison: 5 strategies × 4 agents × 30 = 600 runs
+    main-grid       Strategy comparison: 5 strategies × 3 agents × 30 = 450 runs
     ablation        Mechanism ablation: 8 configs × 30 = 240 runs
-    scaling         Agent scaling: 2 strategies × 5 agents × 30 = 300 runs
+    scaling         Agent scaling: 2 strategies × 4 agents × 30 = 240 runs
     escalation      Escalation impact: 2 configs × 5 strategies × 30 = 300 runs
     difficulty      Difficulty scaling: 2 levels × 5 strategies × 30 = 300 runs
+    pressure-field-only  Re-run pressure_field only (bug fix): ~330 runs
     all             Run all experiments (default)
 
 Strategies:
@@ -609,6 +729,9 @@ run_internal() {
         difficulty)
             run_difficulty parallel
             ;;
+        pressure-field-only)
+            run_pressure_field_only parallel
+            ;;
         *)
             log_error "Unknown internal experiment: $experiment"
             exit 1
@@ -650,7 +773,7 @@ main() {
                 print_usage
                 exit 0
                 ;;
-            main-grid|ablation|scaling|escalation|difficulty|all)
+            main-grid|ablation|scaling|escalation|difficulty|pressure-field-only|all)
                 experiment="$1"
                 shift
                 ;;
@@ -680,6 +803,9 @@ main() {
             ;;
         difficulty)
             run_difficulty
+            ;;
+        pressure-field-only)
+            run_pressure_field_only
             ;;
         all)
             run_all
