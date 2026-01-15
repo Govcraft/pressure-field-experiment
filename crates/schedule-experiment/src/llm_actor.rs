@@ -393,6 +393,7 @@ Answer:"#,
     info!(
         region_id = %msg.region_id,
         time_range = %time_range,
+        model = %config.model,
         example_count = examples.len(),
         "Generating schedule patch with LLM"
     );
