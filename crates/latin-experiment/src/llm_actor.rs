@@ -398,10 +398,11 @@ fn configure_llm_actor(actor: &mut ManagedActor<Idle, LlmActorState>) {
                     completion_tokens: msg.completion_tokens,
                 }
             } else {
-                debug!(
+                info!(
                     correlation_id = %msg.correlation_id,
                     actor_name = %msg.actor_name,
-                    "Claims denied, submitting empty proposal"
+                    region = %msg.patch.region,
+                    "Proposal DISCARDED - claims denied by stigmergic coordinator"
                 );
                 PatchProposal {
                     correlation_id: msg.correlation_id,

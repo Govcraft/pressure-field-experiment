@@ -27,6 +27,10 @@ pub struct ClaimManagerState {
     /// Active claims: (column, value) -> region that claimed it
     /// Using DashMap for thread-safe concurrent access
     claims: DashMap<(usize, u8), RegionId>,
+    /// Count of batches granted this tick (for metrics)
+    batches_granted: usize,
+    /// Count of batches denied this tick (for metrics)
+    batches_denied: usize,
 }
 
 impl std::fmt::Debug for ClaimManagerState {
@@ -103,7 +107,29 @@ impl ClaimManager {
         // Handle ResetClaims - clear all claims at tick start
         actor.mutate_on::<ResetClaims>(|actor, _context| {
             let claim_count = actor.model.claims.len();
+            let granted = actor.model.batches_granted;
+            let denied = actor.model.batches_denied;
+
+            // Log tick summary at info level for monitoring
+            if granted > 0 || denied > 0 {
+                let denial_rate = if granted + denied > 0 {
+                    (denied as f64 / (granted + denied) as f64) * 100.0
+                } else {
+                    0.0
+                };
+                tracing::info!(
+                    granted = granted,
+                    denied = denied,
+                    denial_rate = format!("{:.1}%", denial_rate),
+                    active_claims = claim_count,
+                    "ClaimManager tick summary (stigmergy effectiveness)"
+                );
+            }
+
+            // Reset for new tick
             actor.model.claims.clear();
+            actor.model.batches_granted = 0;
+            actor.model.batches_denied = 0;
 
             tracing::debug!(
                 cleared = claim_count,
@@ -160,12 +186,16 @@ impl ClaimManager {
                 for key in granted_claims {
                     actor.model.claims.remove(&key);
                 }
-                tracing::debug!(
+                actor.model.batches_denied += 1;
+                // Log at info level - this shows stigmergic coordination working!
+                tracing::info!(
                     region_id = %msg.region_id,
-                    claims = msg.claims.len(),
-                    "ClaimManager: Batch DENIED - rolled back"
+                    actor = %msg.actor_name,
+                    claims = ?msg.claims,
+                    "CLAIM DENIED - stigmergy prevented duplicate proposal"
                 );
             } else {
+                actor.model.batches_granted += 1;
                 tracing::debug!(
                     region_id = %msg.region_id,
                     claims = msg.claims.len(),
