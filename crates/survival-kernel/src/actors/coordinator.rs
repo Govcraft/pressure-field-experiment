@@ -23,11 +23,11 @@ use crate::artifact::Artifact;
 use crate::config::KernelConfig;
 use crate::kernel::TickResult;
 use crate::messages::{
-    ApplyDecay, CoordinatorReady, MeasureRegion, MeasurementResult, PatchActorReady,
-    PatchActorsReady, PatchProposal, PressureResponse, ProposeForRegion, QueryPressure,
-    RegionApplyPatch, RegionPatchResult, RegisterRegionActors, SaveArtifact, SensorReady,
-    SensorsReady, SetOutputDir, Tick, TickComplete, ValidatePatch, ValidatePatchResponse,
-    WaitForPatchActors, WaitForSensors,
+    ApplyDecay, ClaimManagerReady, CoordinatorReady, MeasureRegion, MeasurementResult,
+    PatchActorReady, PatchActorsReady, PatchProposal, PressureResponse, ProposeForRegion,
+    QueryPressure, RegionApplyPatch, RegionPatchResult, RegisterRegionActors, ResetClaims,
+    SaveArtifact, SensorReady, SensorsReady, SetOutputDir, Tick, TickComplete, ValidatePatch,
+    ValidatePatchResponse, WaitForPatchActors, WaitForSensors,
 };
 use crate::pressure::PressureVector;
 use crate::region::{Patch, RegionId, RegionView};
@@ -195,6 +195,8 @@ pub struct KernelCoordinatorState {
     pending_actor_waits: Vec<(usize, tokio::sync::oneshot::Sender<usize>)>,
     /// Pending waits for sensors: (expected_count, reply_sender)
     pending_sensor_waits: Vec<(usize, tokio::sync::oneshot::Sender<usize>)>,
+    /// Handle to ClaimManager for stigmergic column/value claims
+    claim_manager: Option<ActorHandle>,
 }
 
 impl Default for KernelCoordinatorState {
@@ -217,6 +219,7 @@ impl Default for KernelCoordinatorState {
             velocity_history: Vec::new(),
             pending_actor_waits: Vec::new(),
             pending_sensor_waits: Vec::new(),
+            claim_manager: None,
         }
     }
 }
@@ -267,6 +270,7 @@ impl Clone for KernelCoordinatorState {
             velocity_history: self.velocity_history.clone(),
             pending_actor_waits: Vec::new(), // Can't clone oneshot::Sender
             pending_sensor_waits: Vec::new(), // Can't clone oneshot::Sender
+            claim_manager: self.claim_manager.clone(),
         }
     }
 }
@@ -334,6 +338,7 @@ impl KernelCoordinator {
         actor.handle().subscribe::<PatchActorReady>().await;
         actor.handle().subscribe::<PatchProposal>().await;
         actor.handle().subscribe::<PressureResponse>().await;
+        actor.handle().subscribe::<ClaimManagerReady>().await;
 
         // Configure handlers before starting
         configure_handlers(&mut actor);
@@ -444,6 +449,14 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             regions = actor.model.region_actors.len(),
             "Registered region actors"
         );
+        Reply::ready()
+    });
+
+    // Handle ClaimManager registration
+    actor.mutate_on::<ClaimManagerReady>(|actor, context| {
+        let handle = context.message().handle.clone();
+        actor.model.claim_manager = Some(handle);
+        debug!("ClaimManager registered for stigmergic coordination");
         Reply::ready()
     });
 
@@ -582,6 +595,10 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
 
         // Broadcast decay and measurements via broker
         Reply::pending(async move {
+            // Phase 0: Reset claims for stigmergic coordination
+            // Must happen before proposals so all agents start with a clean slate
+            broker.broadcast(ResetClaims).await;
+
             // Broadcast decay to all region actors via broker
             // RegionActors subscribe to ApplyDecay
             broker.broadcast(decay_msg).await;
@@ -813,6 +830,9 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let handles = actor.model.patch_actor_handles.clone();
         let handle_count = handles.len();
 
+        // Get claim_manager handle for stigmergic coordination
+        let claim_manager = actor.model.claim_manager.clone();
+
         if handle_count == 0 {
             warn!("No patch actors registered, skipping proposal phase");
             return Reply::ready();
@@ -834,6 +854,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                     signals,
                     pressures,
                     state,
+                    claim_manager: claim_manager.clone(),
                 };
 
                 // Direct send instead of broadcast

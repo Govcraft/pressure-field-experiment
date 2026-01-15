@@ -79,6 +79,8 @@ pub struct ProposeForRegion {
     pub pressures: PressureVector,
     /// Current state for this region
     pub state: RegionState,
+    /// Handle to ClaimManager for stigmergic column/value claims (optional for backwards compat)
+    pub claim_manager: Option<acton_reactive::prelude::ActorHandle>,
 }
 
 /// Patch proposal result - sent back to Coordinator.
@@ -328,5 +330,87 @@ pub struct SaveArtifact {
 pub struct SetOutputDir {
     /// Directory to write validation artifacts
     pub path: std::path::PathBuf,
+}
+
+// ============================================================================
+// ClaimManager Messages - Stigmergic Column/Value Reservations
+// ============================================================================
+
+/// Request to claim multiple column/value pairs atomically for this tick.
+///
+/// Sent by LlmActors to ClaimManager using `envelope.new_envelope()` after
+/// parsing LLM response but before submitting the PatchProposal. This implements
+/// stigmergic coordination by allowing agents to "deposit pheromones" (claims)
+/// that other agents can see.
+///
+/// The message carries all context needed to submit a proposal, so that the
+/// response can include it back - avoiding the need for pending state in LlmActor.
+///
+/// ## Usage Pattern (acton-reactive envelope routing)
+///
+/// ```text
+/// LlmActor ProposeForRegion handler:
+///     let request_envelope = envelope.new_envelope(&claim_manager.reply_address());
+///     request_envelope.send(ClaimBatch { ... }).await;
+///
+/// ClaimManager ClaimBatch handler:
+///     let reply_envelope = envelope.reply_envelope();
+///     reply_envelope.send(ClaimBatchResult { ... }).await;
+///
+/// LlmActor ClaimBatchResult handler:
+///     if result.all_granted { submit proposal }
+/// ```
+#[derive(Debug, Clone)]
+pub struct ClaimBatch {
+    /// Correlation ID for the original ProposeForRegion request
+    pub correlation_id: String,
+    /// Column/value pairs to claim atomically
+    pub claims: Vec<(usize, u8)>,
+    /// Region (row) making the claims
+    pub region_id: RegionId,
+    /// Actor name for the proposal
+    pub actor_name: String,
+    /// The proposed patch (travels with the claim request)
+    pub patch: crate::region::Patch,
+    /// Prompt tokens used (for metrics tracking)
+    pub prompt_tokens: u32,
+    /// Completion tokens used (for metrics tracking)
+    pub completion_tokens: u32,
+}
+
+/// Response to a batch claim request.
+///
+/// Sent by ClaimManager back to the requesting actor via `envelope.reply_envelope()`.
+/// Contains all the context needed to submit the proposal.
+#[derive(Debug, Clone)]
+pub struct ClaimBatchResult {
+    /// Correlation ID matching the original ProposeForRegion request
+    pub correlation_id: String,
+    /// Whether ALL claims were granted (atomic: all or nothing)
+    pub all_granted: bool,
+    /// Actor name for the proposal
+    pub actor_name: String,
+    /// The proposed patch (returned from the claim request)
+    pub patch: crate::region::Patch,
+    /// Prompt tokens used (for metrics tracking)
+    pub prompt_tokens: u32,
+    /// Completion tokens used (for metrics tracking)
+    pub completion_tokens: u32,
+}
+
+/// Reset all claims at the start of a new tick.
+///
+/// Broadcast by coordinator at tick start to clear all reservations,
+/// giving all agents a fresh start for the new tick.
+#[derive(Debug, Clone)]
+pub struct ResetClaims;
+
+/// Notification that ClaimManager is ready.
+///
+/// Broadcast by ClaimManager on start. Includes handle for direct messaging.
+#[derive(Debug, Clone)]
+pub struct ClaimManagerReady {
+    /// The ClaimManager actor's handle for direct message sending
+    pub handle: acton_reactive::prelude::ActorHandle,
 }
 

@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use acton_reactive::prelude::*;
 
-use crate::actors::{KernelCoordinator, RegionActor};
+use crate::actors::{ClaimManager, KernelCoordinator, RegionActor};
 use crate::messages::Tick;
 use crate::artifact::Artifact;
 use crate::config::KernelConfig;
@@ -160,7 +160,10 @@ impl AsyncKernelBuilder {
         let pressure_axes = self.coordinator.config.pressure_axes.clone();
         let validation_sensor = self.validation_sensor.clone();
 
-        // Spawn the coordinator first (it subscribes to SensorReady)
+        // Spawn ClaimManager first (it broadcasts ClaimManagerReady that coordinator needs)
+        ClaimManager::spawn(runtime).await;
+
+        // Spawn the coordinator (it subscribes to ClaimManagerReady, SensorReady)
         let coordinator_handle = self.coordinator.spawn(runtime).await;
 
         // Spawn sensor actors - they self-register via SensorReady broadcast
@@ -222,7 +225,10 @@ impl AsyncKernelBuilder {
         let pressure_axes = config.pressure_axes.clone();
         let validation_sensor = self.validation_sensor.clone();
 
-        // Spawn the coordinator first
+        // Spawn ClaimManager first (it broadcasts ClaimManagerReady that coordinator needs)
+        ClaimManager::spawn(runtime).await;
+
+        // Spawn the coordinator (it subscribes to ClaimManagerReady)
         let coordinator_handle = self.coordinator.spawn(runtime).await;
 
         // Spawn sensor actors (capture count before moving)

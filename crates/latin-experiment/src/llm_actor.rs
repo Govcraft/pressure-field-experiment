@@ -2,6 +2,14 @@
 //!
 //! Proposes row patches to fill empty cells and resolve conflicts.
 //! Supports sampling diversity (varying temperature/top-p) and few-shot learning.
+//!
+//! ## Acton-Reactive Pattern for Claims
+//!
+//! Uses proper envelope routing for stigmergic coordination:
+//! - ProposeForRegion handler: do LLM call, send ClaimBatch via `envelope.new_envelope()`
+//! - ClaimBatchResult handler: if granted, broadcast PatchProposal
+//!
+//! No oneshot channels or manual correlation tracking needed.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,9 +18,12 @@ use acton_reactive::prelude::*;
 use anyhow::Result;
 use rand::Rng;
 use tokio::sync::{RwLock, Semaphore};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
-use survival_kernel::messages::{CoordinatorReady, PatchActorReady, PatchProposal, ProposeForRegion};
+use survival_kernel::messages::{
+    ClaimBatch, ClaimBatchResult, CoordinatorReady, PatchActorReady, PatchProposal,
+    ProposeForRegion,
+};
 use survival_kernel::region::{Patch, PatchOp};
 
 use crate::example_bank::ExampleBank;
@@ -202,6 +213,9 @@ impl LlmActor {
         // Subscribe to ProposeForRegion broadcasts BEFORE starting
         actor.handle().subscribe::<ProposeForRegion>().await;
 
+        // Subscribe to ClaimBatchResult for stigmergic coordination response
+        actor.handle().subscribe::<ClaimBatchResult>().await;
+
         // Subscribe to CoordinatorReady - we'll respond with PatchActorReady
         // This ensures the coordinator exists before we try to register
         actor.handle().subscribe::<CoordinatorReady>().await;
@@ -226,6 +240,7 @@ impl LlmActor {
 }
 
 fn configure_llm_actor(actor: &mut ManagedActor<Idle, LlmActorState>) {
+    // Handle ProposeForRegion - generate patch and send claim request
     actor.act_on::<ProposeForRegion>(|actor, context| {
         let msg = context.message().clone();
         let broker = actor.broker().clone();
@@ -233,6 +248,17 @@ fn configure_llm_actor(actor: &mut ManagedActor<Idle, LlmActorState>) {
         let config = actor.model.config.clone();
         let semaphore = actor.model.semaphore.clone();
         let example_bank = actor.model.example_bank.clone();
+
+        // Get envelope for proper request-response routing
+        let claim_manager = msg.claim_manager.clone();
+        let envelope_for_claim = if claim_manager.is_some() {
+            // Create envelope that maintains reply chain to this actor
+            Some(context.new_envelope(
+                &claim_manager.as_ref().unwrap().reply_address(),
+            ))
+        } else {
+            None
+        };
 
         let Some(config) = config else {
             warn!("ProposeForRegion: no config");
@@ -266,29 +292,126 @@ fn configure_llm_actor(actor: &mut ManagedActor<Idle, LlmActorState>) {
             let result = generate_patch(&config_snapshot, &msg, &examples).await;
             // Permit is dropped here, releasing the slot
 
-            let (patches, prompt_tokens, completion_tokens) = match result {
-                Ok((Some(patch), prompt_t, completion_t)) => {
-                    (vec![(1.0, patch)], prompt_t, completion_t)
-                }
-                Ok((None, prompt_t, completion_t)) => {
-                    debug!(region_id = %msg.region_id, "No patch generated");
-                    (vec![], prompt_t, completion_t)
-                }
+            let (patch_opt, prompt_tokens, completion_tokens) = match result {
+                Ok((patch, prompt_t, completion_t)) => (patch, prompt_t, completion_t),
                 Err(e) => {
                     warn!(region_id = %msg.region_id, error = %e, "Failed to generate patch");
-                    (vec![], 0, 0)
+                    (None, 0, 0)
                 }
             };
 
-            let proposal = PatchProposal {
-                correlation_id: msg.correlation_id,
-                actor_name: name,
-                patches,
-                prompt_tokens,
-                completion_tokens,
+            // Handle the result based on whether we have a patch and claim manager
+            match (patch_opt, envelope_for_claim) {
+                (Some(patch), Some(envelope)) => {
+                    // Stigmergic coordination: claim cells before proposing
+                    let new_content = match &patch.op {
+                        PatchOp::Replace(content) => content.as_str(),
+                        _ => "",
+                    };
+
+                    let n = msg
+                        .region_view
+                        .metadata
+                        .get("n")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(6) as usize;
+
+                    let filled_cells =
+                        extract_filled_cells(&msg.region_view.content, new_content, n);
+
+                    if filled_cells.is_empty() {
+                        // No cells to claim - submit directly
+                        debug!(region_id = %msg.region_id, "No cells to claim, submitting directly");
+                        let proposal = PatchProposal {
+                            correlation_id: msg.correlation_id,
+                            actor_name: name,
+                            patches: vec![(1.0, patch)],
+                            prompt_tokens,
+                            completion_tokens,
+                        };
+                        broker.broadcast(proposal).await;
+                    } else {
+                        // Send ClaimBatch via envelope (proper acton-reactive pattern)
+                        // The ClaimBatchResult handler will receive the response and submit
+                        trace!(
+                            region_id = %msg.region_id,
+                            cells = filled_cells.len(),
+                            "Sending ClaimBatch via envelope"
+                        );
+                        envelope
+                            .send(ClaimBatch {
+                                correlation_id: msg.correlation_id,
+                                claims: filled_cells,
+                                region_id: msg.region_id,
+                                actor_name: name,
+                                patch,
+                                prompt_tokens,
+                                completion_tokens,
+                            })
+                            .await;
+                    }
+                }
+                (Some(patch), None) => {
+                    // No claim manager - submit patch directly (backwards compat)
+                    let proposal = PatchProposal {
+                        correlation_id: msg.correlation_id,
+                        actor_name: name,
+                        patches: vec![(1.0, patch)],
+                        prompt_tokens,
+                        completion_tokens,
+                    };
+                    broker.broadcast(proposal).await;
+                }
+                (None, _) => {
+                    // No patch generated
+                    debug!(region_id = %msg.region_id, "No patch generated");
+                    let proposal = PatchProposal {
+                        correlation_id: msg.correlation_id,
+                        actor_name: name,
+                        patches: vec![],
+                        prompt_tokens,
+                        completion_tokens,
+                    };
+                    broker.broadcast(proposal).await;
+                }
+            }
+        })
+    });
+
+    // Handle ClaimBatchResult - submit proposal if claims granted
+    actor.act_on::<ClaimBatchResult>(|actor, context| {
+        let msg = context.message().clone();
+        let broker = actor.broker().clone();
+
+        Reply::pending(async move {
+            let proposal = if msg.all_granted {
+                trace!(
+                    correlation_id = %msg.correlation_id,
+                    actor_name = %msg.actor_name,
+                    "All claims granted, submitting patch proposal"
+                );
+                PatchProposal {
+                    correlation_id: msg.correlation_id,
+                    actor_name: msg.actor_name,
+                    patches: vec![(1.0, msg.patch)],
+                    prompt_tokens: msg.prompt_tokens,
+                    completion_tokens: msg.completion_tokens,
+                }
+            } else {
+                debug!(
+                    correlation_id = %msg.correlation_id,
+                    actor_name = %msg.actor_name,
+                    "Claims denied, submitting empty proposal"
+                );
+                PatchProposal {
+                    correlation_id: msg.correlation_id,
+                    actor_name: msg.actor_name,
+                    patches: vec![],
+                    prompt_tokens: msg.prompt_tokens,
+                    completion_tokens: msg.completion_tokens,
+                }
             };
 
-            // Broadcast result (coordinator subscribes to PatchProposal)
             broker.broadcast(proposal).await;
         })
     });
@@ -478,6 +601,40 @@ fn parse_row_response(response: &str, n: usize) -> Option<String> {
     None
 }
 
+/// Extract which cells were filled by comparing original and new content.
+///
+/// Returns a list of (column_index, value) pairs for cells that changed from empty to filled.
+/// Content format: space-separated values where "_" represents empty.
+fn extract_filled_cells(original: &str, new_content: &str, n: usize) -> Vec<(usize, u8)> {
+    let parse_cells = |s: &str| -> Vec<Option<u8>> {
+        s.split_whitespace()
+            .take(n)
+            .map(|token| {
+                if token == "_" {
+                    None
+                } else {
+                    token.parse::<u8>().ok()
+                }
+            })
+            .collect()
+    };
+
+    let orig_cells = parse_cells(original);
+    let new_cells = parse_cells(new_content);
+
+    orig_cells
+        .iter()
+        .zip(new_cells.iter())
+        .enumerate()
+        .filter_map(|(col, (orig, new))| {
+            match (orig, new) {
+                (None, Some(v)) => Some((col, *v)), // Was empty, now filled
+                _ => None,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -540,7 +697,10 @@ The row must satisfy several constraints.
 Looking at the available numbers:
 1 2 3 4 5 6 7
 This completes the row correctly."#;
-        assert_eq!(parse_row_response(response, 7), Some("1 2 3 4 5 6 7".to_string()));
+        assert_eq!(
+            parse_row_response(response, 7),
+            Some("1 2 3 4 5 6 7".to_string())
+        );
     }
 
     #[test]
