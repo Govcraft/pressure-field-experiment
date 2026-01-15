@@ -3,9 +3,9 @@
 //! These sensors measure various quality signals that contribute to
 //! the overall pressure of a schedule region (time block).
 //!
-//! IMPORTANT: Sensors parse RegionView.content directly to support
-//! proposed patch evaluation. The kernel creates hypothetical RegionViews
-//! with new content to measure what pressure would be after a patch.
+//! All sensors read directly from the shared ScheduleGrid (actual state).
+//! Clone-based patch validation is handled at the artifact level, so
+//! sensors only need to measure current state for EMA updates.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -26,104 +26,6 @@ pub type SharedSchedule = Arc<RwLock<ScheduleGrid>>;
 pub trait ScheduleSensor: Sensor {
     /// Get the shared schedule grid.
     fn schedule(&self) -> &SharedSchedule;
-}
-
-/// Parse the content string to count filled slots per room.
-///
-/// Content format:
-/// ```text
-/// Room A: 5 (08:00-09:00), 7 (09:00-10:00)
-/// Room B: [empty]
-/// Room C: 12 (08:30-09:30)
-/// ```
-///
-/// Returns (empty_room_count, total_room_count, filled_slot_estimate)
-fn parse_content_for_gaps(content: &str, block_slots: usize) -> (usize, usize, usize) {
-    let mut empty_rooms = 0;
-    let mut total_rooms = 0;
-    let mut filled_slots = 0;
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        // Look for "Room X:" lines
-        if line.to_lowercase().starts_with("room") && line.contains(':') {
-            total_rooms += 1;
-
-            if line.to_lowercase().contains("[empty]") || line.ends_with(':') {
-                empty_rooms += 1;
-            } else {
-                // Count meetings in this room by counting commas + 1 (or just meeting IDs)
-                // Each meeting takes approximately duration_slots slots
-                // For simplicity, count meeting entries and assume average 2 slots each
-                let after_colon = line.split(':').nth(1).unwrap_or("");
-                let meeting_count = after_colon
-                    .split(',')
-                    .filter(|s| !s.trim().is_empty() && !s.to_lowercase().contains("empty"))
-                    .count();
-
-                // Estimate filled slots (assume 2 slots per meeting on average)
-                filled_slots += meeting_count * 2;
-            }
-        }
-    }
-
-    (empty_rooms, total_rooms, filled_slots.min(total_rooms * block_slots))
-}
-
-/// Parse content to extract meeting IDs scheduled in each room for overlap detection.
-fn parse_content_for_meetings(content: &str) -> HashMap<String, Vec<u32>> {
-    let mut room_meetings: HashMap<String, Vec<u32>> = HashMap::new();
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        if line.to_lowercase().starts_with("room") && line.contains(':') {
-            // Extract room name (e.g., "Room A" -> "A")
-            let room_name = line
-                .split(':')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .replace("Room ", "")
-                .replace("room ", "");
-
-            let after_colon = line.split(':').nth(1).unwrap_or("");
-            let mut meetings = Vec::new();
-
-            // Extract meeting IDs (first number in each comma-separated segment)
-            for segment in after_colon.split(',') {
-                let segment = segment.trim();
-                if segment.is_empty() || segment.to_lowercase().contains("empty") {
-                    continue;
-                }
-
-                // Find first number in segment
-                let mut num_str = String::new();
-                for c in segment.chars() {
-                    if c.is_ascii_digit() {
-                        num_str.push(c);
-                    } else if !num_str.is_empty() {
-                        break;
-                    }
-                }
-
-                if let Ok(meeting_id) = num_str.parse::<u32>() {
-                    meetings.push(meeting_id);
-                }
-            }
-
-            room_meetings.insert(room_name, meetings);
-        }
-    }
-
-    room_meetings
 }
 
 /// Sensor that measures gap (unscheduled) time in a time block.
@@ -149,6 +51,11 @@ impl Sensor for GapSensor {
         let mut signals = HashMap::new();
 
         // Extract time block info from metadata
+        let day = region
+            .metadata
+            .get("day")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u8;
         let start_slot = region
             .metadata
             .get("start_slot")
@@ -162,17 +69,20 @@ impl Sensor for GapSensor {
 
         let block_size = (end_slot - start_slot) as usize;
 
-        // Get room count from shared schedule
-        let num_rooms = {
-            let schedule = self.schedule.read().map_err(|e| anyhow::anyhow!("{}", e))?;
-            schedule.rooms.len()
-        };
-
+        // Read actual state from shared grid
+        let schedule = self.schedule.read().map_err(|e| anyhow::anyhow!("{}", e))?;
+        let num_rooms = schedule.rooms.len();
         let total_slots = block_size * num_rooms;
 
-        // Parse content to count filled slots (supports proposed patch evaluation)
-        let (_empty_rooms, _total_rooms, filled_slots) =
-            parse_content_for_gaps(&region.content, block_size);
+        // Count filled slots by scanning the actual grid
+        let mut filled_slots = 0;
+        for room in &schedule.rooms {
+            for slot in start_slot..end_slot {
+                if schedule.get(room.id, day, slot).is_some() {
+                    filled_slots += 1;
+                }
+            }
+        }
 
         let empty_slots = total_slots.saturating_sub(filled_slots);
 
@@ -219,14 +129,35 @@ impl Sensor for OverlapSensor {
     fn measure(&self, region: &RegionView) -> Result<Signals> {
         let mut signals = HashMap::new();
 
-        // Parse meeting IDs from content (supports proposed patch evaluation)
-        let room_meetings = parse_content_for_meetings(&region.content);
+        // Extract time block info from metadata
+        let day = region
+            .metadata
+            .get("day")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u8;
+        let start_slot = region
+            .metadata
+            .get("start_slot")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u8;
+        let end_slot = region
+            .metadata
+            .get("end_slot")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u8;
 
-        // Get all unique meeting IDs from content
-        let meeting_ids: Vec<u32> = room_meetings.values().flatten().copied().collect();
-
-        // Look up attendees from shared schedule
+        // Read actual state from shared grid
         let schedule = self.schedule.read().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // Collect unique meeting IDs in this block from the grid
+        let mut meeting_ids: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        for room in &schedule.rooms {
+            for slot in start_slot..end_slot {
+                if let Some(meeting_id) = schedule.get(room.id, day, slot) {
+                    meeting_ids.insert(meeting_id);
+                }
+            }
+        }
 
         // Build attendee -> meetings map
         let mut attendee_meetings: HashMap<u32, Vec<u32>> = HashMap::new();
@@ -285,6 +216,11 @@ impl Sensor for UtilizationSensor {
         let mut signals = HashMap::new();
 
         // Extract time block info from metadata
+        let day = region
+            .metadata
+            .get("day")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u8;
         let start_slot = region
             .metadata
             .get("start_slot")
@@ -298,11 +234,9 @@ impl Sensor for UtilizationSensor {
 
         let block_size = (end_slot - start_slot) as usize;
 
-        // Get room count from shared schedule
-        let num_rooms = {
-            let schedule = self.schedule.read().map_err(|e| anyhow::anyhow!("{}", e))?;
-            schedule.rooms.len()
-        };
+        // Read actual state from shared grid
+        let schedule = self.schedule.read().map_err(|e| anyhow::anyhow!("{}", e))?;
+        let num_rooms = schedule.rooms.len();
 
         if num_rooms == 0 || block_size == 0 {
             signals.insert("utilization_variance".to_string(), 0.0);
@@ -310,20 +244,17 @@ impl Sensor for UtilizationSensor {
             return Ok(signals);
         }
 
-        // Parse content to get meetings per room (supports proposed patch evaluation)
-        let room_meetings = parse_content_for_meetings(&region.content);
-
-        // Calculate utilization per room (estimate 2 slots per meeting)
+        // Calculate utilization per room from actual grid state
         let mut room_utilizations = Vec::new();
-        for (_room_name, meetings) in &room_meetings {
-            let estimated_slots = (meetings.len() * 2).min(block_size);
-            let utilization = estimated_slots as f64 / block_size as f64;
+        for room in &schedule.rooms {
+            let mut filled_slots = 0;
+            for slot in start_slot..end_slot {
+                if schedule.get(room.id, day, slot).is_some() {
+                    filled_slots += 1;
+                }
+            }
+            let utilization = filled_slots as f64 / block_size as f64;
             room_utilizations.push(utilization);
-        }
-
-        // Pad with zeros for rooms not mentioned in content (assumed empty)
-        while room_utilizations.len() < num_rooms {
-            room_utilizations.push(0.0);
         }
 
         // Calculate average and variance
@@ -358,7 +289,7 @@ impl ScheduleSensor for UtilizationSensor {
 
 /// Sensor that measures unscheduled meeting count.
 ///
-/// This is a global sensor that doesn't depend on the region.
+/// Reports global unscheduled meeting count from the grid.
 #[derive(Clone)]
 pub struct UnscheduledSensor {
     schedule: SharedSchedule,
@@ -378,6 +309,7 @@ impl Sensor for UnscheduledSensor {
     fn measure(&self, _region: &RegionView) -> Result<Signals> {
         let mut signals = HashMap::new();
 
+        // Read actual unscheduled count from grid
         let schedule = self.schedule.read().map_err(|e| anyhow::anyhow!("{}", e))?;
         let unscheduled = schedule.count_unscheduled();
         let total = schedule.meetings.len();

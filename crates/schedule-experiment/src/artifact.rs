@@ -358,11 +358,57 @@ impl ScheduleArtifact {
 
     /// Get total pressure (higher = worse).
     pub fn total_pressure(&self) -> f64 {
-        let unscheduled = self.schedule.count_unscheduled() as f64;
-        let overlaps = self.schedule.count_overlaps() as f64;
+        compute_pressure_from_grid(&self.schedule)
+    }
 
-        // Weight overlaps heavily (constraint violations)
-        unscheduled * 1.0 + overlaps * 10.0
+    /// Get region metadata (day, start_slot, end_slot) for a region ID.
+    pub fn region_metadata(&self, region_id: &RegionId) -> Option<(u8, u8, u8)> {
+        self.region_map.get(region_id).copied()
+    }
+
+    /// Evaluate a patch by applying to a cloned grid and measuring actual pressure.
+    ///
+    /// Returns (should_accept, pressure_delta) where:
+    /// - should_accept: true if patch improves pressure (delta > 0)
+    /// - pressure_delta: old_pressure - new_pressure (positive = improvement)
+    ///
+    /// This maintains Nash equilibrium by only accepting moves that improve state.
+    pub fn evaluate_patch(&self, patch: &Patch) -> (bool, f64) {
+        // Get region metadata
+        let Some((day, start_slot, end_slot)) = self.region_metadata(&patch.region) else {
+            return (false, 0.0);
+        };
+
+        // Clone the schedule grid
+        let mut test_schedule = self.schedule.clone();
+
+        // Apply patch to the clone
+        if let PatchOp::Replace(new_content) = &patch.op {
+            if let Ok(assignments) = self.parse_block_schedule(new_content, day, start_slot, end_slot)
+            {
+                apply_block_schedule_to_grid(
+                    &mut test_schedule,
+                    day,
+                    start_slot,
+                    end_slot,
+                    &assignments,
+                );
+            } else {
+                // Parse failed - reject patch
+                return (false, 0.0);
+            }
+        } else {
+            // Only Replace operations are supported for schedule patches
+            return (false, 0.0);
+        }
+
+        // Measure pressure from both grids (actual state)
+        let old_pressure = compute_pressure_from_grid(&self.schedule);
+        let new_pressure = compute_pressure_from_grid(&test_schedule);
+
+        let delta = old_pressure - new_pressure;
+        // Accept only if strict improvement (delta > 0)
+        (delta > 0.0, delta)
     }
 
     /// Sync the shared schedule after a patch.
@@ -534,6 +580,70 @@ impl ScheduleArtifact {
         }
 
         Ok(())
+    }
+}
+
+/// Compute total pressure from a schedule grid.
+///
+/// This measures actual state, not estimated state.
+fn compute_pressure_from_grid(schedule: &ScheduleGrid) -> f64 {
+    let unscheduled = schedule.count_unscheduled() as f64;
+    let overlaps = schedule.count_overlaps() as f64;
+
+    // Weight overlaps heavily (constraint violations)
+    unscheduled * 1.0 + overlaps * 10.0
+}
+
+/// Apply a block schedule to any ScheduleGrid (not just self.schedule).
+///
+/// This enables clone-based patch evaluation.
+fn apply_block_schedule_to_grid(
+    schedule: &mut ScheduleGrid,
+    day: u8,
+    start_slot: u8,
+    end_slot: u8,
+    assignments: &[(MeetingId, RoomId, u8)],
+) {
+    // First, clear all meetings from this block
+    for room in 0..schedule.rooms.len() as u32 {
+        for slot in start_slot..end_slot {
+            if let Some(meeting_id) = schedule.get(room, day, slot) {
+                // Mark meeting as unscheduled
+                if let Some(meeting) = schedule.meetings.get_mut(&meeting_id) {
+                    meeting.scheduled = None;
+                }
+            }
+            schedule.set(room, day, slot, None);
+        }
+    }
+
+    // Then, place new assignments
+    for &(meeting_id, room_id, slot) in assignments {
+        // Get duration first (immutable borrow)
+        let duration = schedule
+            .meetings
+            .get(&meeting_id)
+            .map(|m| m.duration_slots)
+            .unwrap_or(0);
+
+        if duration == 0 {
+            continue;
+        }
+
+        // Place meeting on grid
+        for s in slot..slot + duration {
+            if s < end_slot {
+                schedule.set(room_id, day, s, Some(meeting_id));
+            }
+        }
+
+        // Update meeting's scheduled state (separate mutable borrow)
+        if let Some(meeting) = schedule.meetings.get_mut(&meeting_id) {
+            meeting.scheduled = Some(ScheduledMeeting {
+                room: room_id,
+                start: TimeSlot::new(day, slot),
+            });
+        }
     }
 }
 
@@ -767,6 +877,16 @@ impl Artifact for ScheduleArtifact {
 
     fn on_patch_applied(&mut self, _patch: &Patch) {
         // Learning callback - could be used for example bank/pheromone deposits
+    }
+
+    fn evaluate_patch(&self, patch: &Patch) -> (bool, f64) {
+        // Clone-based validation - apply to clone, measure actual pressure
+        ScheduleArtifact::evaluate_patch(self, patch)
+    }
+
+    fn total_pressure(&self) -> Option<f64> {
+        // Return actual pressure from grid state
+        Some(ScheduleArtifact::total_pressure(self))
     }
 }
 

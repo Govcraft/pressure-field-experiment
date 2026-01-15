@@ -30,8 +30,8 @@ use survival_kernel::{
 use crate::artifact::{ScheduleArtifact, SharedSchedule};
 use crate::example_bank::{ExampleBank, ExampleBankConfig};
 use crate::generator::{ScheduleGenerator, ScheduleGeneratorConfig};
-use crate::llm_actor::{LlmActor, LlmActorConfig, SamplingBand, SamplingConfig, UpdateModel};
-use crate::results::{EscalationEvent, ExperimentConfig, ExperimentResult, PatchRejection, TickMetrics};
+use crate::llm_actor::{LlmActor, LlmActorConfig, SamplingBand, SamplingConfig, UpdateBand, UpdateModel};
+use crate::results::{BandEscalationEvent, EscalationEvent, ExperimentConfig, ExperimentResult, PatchRejection, TickMetrics};
 use crate::sensors::CombinedScheduleSensor;
 use crate::vllm_client::VllmClient;
 
@@ -57,6 +57,10 @@ pub struct ExperimentRunnerConfig {
     pub model_chain: Vec<String>,
     /// Number of ticks with zero velocity before escalating model
     pub escalation_threshold: usize,
+    /// Number of ticks before escalating sampling band (before model escalation)
+    /// Band escalates at: band_escalation_interval, 2*band_escalation_interval
+    /// Model escalates at: 3*band_escalation_interval
+    pub band_escalation_interval: usize,
     /// Maximum ticks before giving up
     pub max_ticks: usize,
     /// Maximum concurrent LLM requests
@@ -84,7 +88,8 @@ impl Default for ExperimentRunnerConfig {
                 "qwen2.5:7b".to_string(),
                 "qwen2.5:14b".to_string(),
             ],
-            escalation_threshold: 20,
+            escalation_threshold: 21, // Divisible by 3 for clean band intervals
+            band_escalation_interval: 7, // 21 / 3 = 7 ticks per band level
             max_ticks: 50,
             max_concurrent_llm: 8,
             generator_config: ScheduleGeneratorConfig::easy(),
@@ -344,8 +349,10 @@ impl ExperimentRunner {
         let mut tick_results = Vec::new();
         let mut pressure_history = Vec::new();
         let mut escalation_events = Vec::new();
+        let mut band_escalation_events = Vec::new();
         let mut current_model_idx = initial_model_idx;
         let mut current_model = initial_model;
+        let mut current_band_level: usize = 0; // 0 = Exploitation, 1 = Balanced, 2 = Exploration
         let mut ticks_without_progress = 0;
         let mut previous_pressure = f64::MAX; // First tick always shows "progress"
         let mut current_tick = 0usize;
@@ -421,39 +428,80 @@ impl ExperimentRunner {
             let is_complete = result.is_complete;
             tick_results.push(result);
 
-            // Check for escalation
-            if ticks_without_progress >= self.config.escalation_threshold
-                && current_model_idx + 1 < self.config.model_chain.len()
-            {
-                let old_model = current_model.clone();
-                current_model_idx += 1;
-                current_model = self.config.model_chain[current_model_idx].clone();
-                let new_host = self.config.get_vllm_host(current_model_idx).to_string();
+            // Check for escalation (progressive: band first, then model)
+            if ticks_without_progress >= self.config.band_escalation_interval {
+                if current_band_level < 2 {
+                    // Escalate sampling band first
+                    let old_band = match current_band_level {
+                        0 => SamplingBand::Exploitation,
+                        1 => SamplingBand::Balanced,
+                        _ => SamplingBand::Exploration,
+                    };
+                    current_band_level += 1;
+                    let new_band = match current_band_level {
+                        1 => SamplingBand::Balanced,
+                        _ => SamplingBand::Exploration,
+                    };
 
-                info!(
-                    tick = current_tick,
-                    from_model = %old_model,
-                    to_model = %current_model,
-                    new_host = %new_host,
-                    "Escalating model due to stall"
-                );
+                    info!(
+                        tick = current_tick,
+                        from_band = ?old_band,
+                        to_band = ?new_band,
+                        "Escalating sampling band before model escalation"
+                    );
 
-                // Broadcast UpdateModel to all LLM actors
-                runtime
-                    .broker()
-                    .broadcast(UpdateModel {
-                        model: current_model.clone(),
-                        host: new_host,
-                    })
-                    .await;
+                    // Broadcast UpdateBand to all LLM actors
+                    runtime
+                        .broker()
+                        .broadcast(UpdateBand { band: new_band })
+                        .await;
 
-                escalation_events.push(EscalationEvent {
-                    tick: current_tick,
-                    from_model: old_model,
-                    to_model: current_model.clone(),
-                });
+                    band_escalation_events.push(BandEscalationEvent {
+                        tick: current_tick,
+                        from_band: format!("{:?}", old_band),
+                        to_band: format!("{:?}", new_band),
+                    });
 
-                ticks_without_progress = 0;
+                    ticks_without_progress = 0;
+                } else if current_model_idx + 1 < self.config.model_chain.len() {
+                    // Already at Exploration band, escalate model and reset band
+                    let old_model = current_model.clone();
+                    current_model_idx += 1;
+                    current_model = self.config.model_chain[current_model_idx].clone();
+                    let new_host = self.config.get_vllm_host(current_model_idx).to_string();
+
+                    info!(
+                        tick = current_tick,
+                        from_model = %old_model,
+                        to_model = %current_model,
+                        new_host = %new_host,
+                        "Escalating model and resetting band to Exploitation"
+                    );
+
+                    // Broadcast UpdateModel to all LLM actors
+                    runtime
+                        .broker()
+                        .broadcast(UpdateModel {
+                            model: current_model.clone(),
+                            host: new_host,
+                        })
+                        .await;
+
+                    // Reset to Exploitation band for new model
+                    current_band_level = 0;
+                    runtime
+                        .broker()
+                        .broadcast(UpdateBand { band: SamplingBand::Exploitation })
+                        .await;
+
+                    escalation_events.push(EscalationEvent {
+                        tick: current_tick,
+                        from_model: old_model,
+                        to_model: current_model.clone(),
+                    });
+
+                    ticks_without_progress = 0;
+                }
             }
 
             // Check termination conditions
@@ -466,14 +514,16 @@ impl ExperimentRunner {
                 info!(tick = current_tick, "Max ticks reached");
                 break;
             }
-            // Stop if fully escalated and still stuck
+            // Stop if fully escalated (max band + max model) and still stuck
             if current_model_idx == self.config.model_chain.len().saturating_sub(1)
-                && ticks_without_progress >= self.config.escalation_threshold
+                && current_band_level >= 2
+                && ticks_without_progress >= self.config.band_escalation_interval
             {
                 info!(
                     tick = current_tick,
                     model = %current_model,
-                    "Converged at largest model with no progress"
+                    band_level = current_band_level,
+                    "Converged at largest model and highest band with no progress"
                 );
                 break;
             }
@@ -561,6 +611,7 @@ impl ExperimentRunner {
             example_bank_stats,
             tick_metrics,
             escalation_events,
+            band_escalation_events,
             final_model: current_model,
             total_prompt_tokens,
             total_completion_tokens,
@@ -794,6 +845,7 @@ impl ExperimentRunner {
             example_bank_stats,
             tick_metrics,
             escalation_events,
+            band_escalation_events: Vec::new(), // Baselines don't use band escalation
             final_model: current_model,
             total_prompt_tokens,
             total_completion_tokens,

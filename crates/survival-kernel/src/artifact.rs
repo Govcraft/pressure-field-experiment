@@ -54,4 +54,32 @@ pub trait Artifact: Send + Sync {
     fn is_complete(&self) -> bool {
         false
     }
+
+    /// Optional: evaluate a patch before applying it.
+    ///
+    /// This performs clone-based validation: applies the patch to a cloned
+    /// copy of the artifact, measures the actual pressure change, and returns
+    /// whether the patch should be accepted.
+    ///
+    /// Returns `(should_accept, pressure_delta)` where:
+    /// - `should_accept`: true if the patch improves pressure (delta > 0)
+    /// - `pressure_delta`: old_pressure - new_pressure (positive = improvement)
+    ///
+    /// This maintains Nash equilibrium by only accepting moves that improve state.
+    ///
+    /// Default implementation accepts all patches (backward compatible).
+    fn evaluate_patch(&self, _patch: &Patch) -> (bool, f64) {
+        (true, 0.0)
+    }
+
+    /// Optional: get the total pressure of the artifact.
+    ///
+    /// Returns the actual pressure computed directly from the artifact state.
+    /// This is used for tick-level pressure reporting and should match the
+    /// pressure calculation used in `evaluate_patch()`.
+    ///
+    /// Default implementation returns None (use EMA-based calculation).
+    fn total_pressure(&self) -> Option<f64> {
+        None
+    }
 }

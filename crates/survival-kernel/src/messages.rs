@@ -305,6 +305,40 @@ pub struct ValidatePatchResponse {
     pub original_path: std::path::PathBuf,
 }
 
+/// Request coordinator to evaluate a patch using clone-based validation.
+///
+/// Sent from RegionActor to Coordinator. The coordinator clones the artifact,
+/// applies the patch to the clone, measures actual pressure, and returns
+/// whether the patch should be accepted (maintains Nash equilibrium).
+#[derive(Debug, Clone)]
+pub struct EvaluatePatch {
+    /// Correlation ID for this evaluation request
+    pub correlation_id: String,
+    /// The patch to evaluate
+    pub patch: Patch,
+    /// Current timestamp
+    pub now_ms: u64,
+    /// Inhibition window after applying (milliseconds)
+    pub inhibit_ms: u64,
+}
+
+/// Response with patch evaluation result.
+///
+/// Sent from Coordinator back to RegionActor with the evaluation decision.
+#[derive(Debug, Clone)]
+pub struct EvaluatePatchResponse {
+    /// Correlation ID matching the original request
+    pub correlation_id: String,
+    /// Region being evaluated
+    pub region_id: RegionId,
+    /// Whether the patch should be accepted
+    pub should_accept: bool,
+    /// Measured pressure improvement (positive = better)
+    pub pressure_delta: f64,
+    /// The new content (for updating region state if accepted)
+    pub new_content: String,
+}
+
 /// Register region actors with the coordinator.
 ///
 /// Sent after spawning all RegionActors during kernel initialization.

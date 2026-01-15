@@ -13,11 +13,11 @@ use tracing::{info, warn};
 
 use crate::config::PressureAxisConfig;
 use crate::messages::{
-    ApplyDecay, MeasurementResult, PressureResponse, QueryPressure, RefreshContent,
-    RegionApplyPatch, RegionPatchResult, ValidatePatch, ValidatePatchResponse,
+    ApplyDecay, EvaluatePatch, EvaluatePatchResponse, MeasurementResult, PressureResponse,
+    QueryPressure, RefreshContent, RegionApplyPatch, RegionPatchResult,
 };
 use crate::pressure::{Sensor, Signals};
-use crate::region::{PatchOp, RegionId, RegionState, RegionView};
+use crate::region::{RegionId, RegionState, RegionView};
 
 /// Pending patch validation state.
 #[derive(Clone)]
@@ -255,7 +255,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
         })
     });
 
-    // Handle RegionApplyPatch - request validation from coordinator
+    // Handle RegionApplyPatch - request evaluation from coordinator
     actor.mutate_on::<RegionApplyPatch>(|actor, context| {
         let msg = context.message().clone();
         let coordinator = actor.model.coordinator.clone();
@@ -266,49 +266,40 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
             return Reply::ready();
         };
 
-        // Compute new content from patch
-        let new_content = match &msg.patch.op {
-            PatchOp::Replace(new) => new.clone(),
-            PatchOp::Delete => String::new(),
-            PatchOp::InsertAfter(insert) => {
-                format!("{}\n{}", actor.model.content, insert)
-            }
-        };
-
         // Save pending validation state
         let validation_id = msg.correlation_id.clone();
         actor.model.pending_validations.insert(
             validation_id.clone(),
             PendingValidation {
                 correlation_id: msg.correlation_id.clone(),
-                new_content: new_content.clone(),
+                new_content: String::new(), // Will be filled by coordinator response
                 now_ms: msg.now_ms,
                 inhibit_ms: msg.inhibit_ms,
                 rationale: msg.patch.rationale.clone(),
             },
         );
 
-        // Send ValidatePatch to coordinator to get file paths
-        let validate_msg = ValidatePatch {
+        // Send EvaluatePatch to coordinator for clone-based validation
+        let evaluate_msg = EvaluatePatch {
             correlation_id: validation_id,
-            region_id,
-            new_content,
-            tick: msg.tick,
+            patch: msg.patch,
+            now_ms: msg.now_ms,
+            inhibit_ms: msg.inhibit_ms,
         };
 
         Reply::pending(async move {
-            coordinator.send(validate_msg).await;
+            coordinator.send(evaluate_msg).await;
         })
     });
 
-    // Handle ValidatePatchResponse - use sensor-based validation
-    actor.mutate_on::<ValidatePatchResponse>(|actor, context| {
+    // Handle EvaluatePatchResponse - use coordinator's clone-based validation result
+    actor.mutate_on::<EvaluatePatchResponse>(|actor, context| {
         let msg = context.message().clone();
         let coordinator = actor.model.coordinator.clone();
         let region_id = actor.model.region_id.clone();
 
         let Some(coordinator) = coordinator else {
-            warn!(region_id = %region_id, "ValidatePatchResponse: coordinator not set");
+            warn!(region_id = %region_id, "EvaluatePatchResponse: coordinator not set");
             return Reply::ready();
         };
 
@@ -317,119 +308,27 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
             warn!(
                 region_id = %region_id,
                 correlation_id = %msg.correlation_id,
-                "ValidatePatchResponse: no pending validation found"
+                "EvaluatePatchResponse: no pending validation found"
             );
             return Reply::ready();
         };
 
-        // Use sensor-based validation: measure pressure of current vs proposed content
-        let Some(sensor) = actor.model.sensor.as_ref() else {
-            // No sensor - accept all patches (rely on coordinator-level validation)
-            info!(region_id = %region_id, "No sensor - accepting patch without validation");
-            let pressure_delta = 0.0;
-            actor.model.content = pending.new_content.clone();
-            actor.model.state.suppress_until_ms = Some(pending.now_ms + pending.inhibit_ms);
-            actor.model.state.provenance.push(pending.rationale.clone());
-
-            let result = RegionPatchResult {
-                correlation_id: pending.correlation_id,
-                region_id: region_id.clone(),
-                success: true,
-                new_content: Some(pending.new_content),
-                pressure_delta,
-                error: None,
-            };
-            return Reply::pending(async move {
-                coordinator.send(result).await;
-            });
-        };
-
-        // Measure current content pressure
-        let current_view = RegionView {
-            id: region_id.clone(),
-            kind: actor.model.kind.clone(),
-            content: actor.model.content.clone(),
-            metadata: actor.model.metadata.clone(),
-        };
-        let current_signals = match sensor.measure(&current_view) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!(region_id = %region_id, error = %e, "Failed to measure current content");
-                let result = RegionPatchResult {
-                    correlation_id: pending.correlation_id,
-                    region_id: region_id.clone(),
-                    success: false,
-                    new_content: None,
-                    pressure_delta: 0.0,
-                    error: Some(format!("Sensor error: {}", e)),
-                };
-                return Reply::pending(async move {
-                    coordinator.send(result).await;
-                });
-            }
-        };
-
-        // Measure proposed content pressure
-        let proposed_view = RegionView {
-            id: region_id.clone(),
-            kind: actor.model.kind.clone(),
-            content: pending.new_content.clone(),
-            metadata: actor.model.metadata.clone(),
-        };
-        let proposed_signals = match sensor.measure(&proposed_view) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!(region_id = %region_id, error = %e, "Failed to measure proposed content");
-                let result = RegionPatchResult {
-                    correlation_id: pending.correlation_id,
-                    region_id: region_id.clone(),
-                    success: false,
-                    new_content: None,
-                    pressure_delta: 0.0,
-                    error: Some(format!("Sensor error on proposed: {}", e)),
-                };
-                return Reply::pending(async move {
-                    coordinator.send(result).await;
-                });
-            }
-        };
-
-        // Calculate weighted pressure for both using pressure axes config
-        let current_pressure: f64 = actor.model.pressure_axes.iter()
-            .map(|axis| {
-                let signal = current_signals.get(&axis.expr).copied().unwrap_or(0.0);
-                signal * axis.weight
-            })
-            .sum();
-
-        let proposed_pressure: f64 = actor.model.pressure_axes.iter()
-            .map(|axis| {
-                let signal = proposed_signals.get(&axis.expr).copied().unwrap_or(0.0);
-                signal * axis.weight
-            })
-            .sum();
-
-        // Pressure delta: positive means improvement (pressure decreased)
-        let pressure_delta = current_pressure - proposed_pressure;
-
-        // Reject if patch increases pressure
-        if pressure_delta < 0.0 {
+        // Use coordinator's clone-based evaluation result
+        if !msg.should_accept {
             warn!(
                 region_id = %region_id,
-                current_pressure = current_pressure,
-                proposed_pressure = proposed_pressure,
-                delta = pressure_delta,
-                "Patch rejected - increases pressure"
+                delta = msg.pressure_delta,
+                "Patch rejected - no improvement (coordinator validation)"
             );
             let result = RegionPatchResult {
-                correlation_id: pending.correlation_id,
+                correlation_id: msg.correlation_id,
                 region_id: region_id.clone(),
                 success: false,
                 new_content: None,
-                pressure_delta,
+                pressure_delta: msg.pressure_delta,
                 error: Some(format!(
-                    "Patch increases pressure by {:.2}",
-                    -pressure_delta
+                    "Patch provides no improvement (delta={:.2})",
+                    msg.pressure_delta
                 )),
             };
             return Reply::pending(async move {
@@ -440,13 +339,11 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
         // Accept patch
         info!(
             region_id = %region_id,
-            current_pressure = current_pressure,
-            proposed_pressure = proposed_pressure,
-            pressure_delta = pressure_delta,
-            "Patch accepted"
+            pressure_delta = msg.pressure_delta,
+            "Patch accepted (coordinator validation)"
         );
 
-        actor.model.content = pending.new_content.clone();
+        actor.model.content = msg.new_content.clone();
         actor.model.state.fitness = (actor.model.state.fitness + 0.03).min(1.0);
         actor.model.state.confidence = (actor.model.state.confidence + 0.05).min(1.0);
         actor.model.state.suppress_until_ms = Some(pending.now_ms + pending.inhibit_ms);
@@ -454,11 +351,11 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
         actor.model.state.provenance.push(pending.rationale);
 
         let result = RegionPatchResult {
-            correlation_id: pending.correlation_id,
+            correlation_id: msg.correlation_id,
             region_id,
             success: true,
-            new_content: Some(pending.new_content),
-            pressure_delta,
+            new_content: Some(msg.new_content),
+            pressure_delta: msg.pressure_delta,
             error: None,
         };
 

@@ -29,6 +29,16 @@ pub struct UpdateModel {
     pub host: String,
 }
 
+/// Message to update the sampling band for all actors.
+///
+/// Broadcast to all LLM actors when the experiment detects a stall
+/// and wants to try different sampling parameters before escalating models.
+#[derive(Clone, Debug)]
+pub struct UpdateBand {
+    /// New sampling band
+    pub band: SamplingBand,
+}
+
 use crate::example_bank::ExampleBank;
 use crate::vllm_client::VllmClient;
 
@@ -98,7 +108,7 @@ impl SamplingConfig {
 }
 
 /// Sampling bands for diversity.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SamplingBand {
     Exploitation,
     Balanced,
@@ -180,6 +190,7 @@ impl LlmActor {
         actor.handle().subscribe::<ProposeForRegion>().await;
         actor.handle().subscribe::<CoordinatorReady>().await;
         actor.handle().subscribe::<UpdateModel>().await;
+        actor.handle().subscribe::<UpdateBand>().await;
 
         // On CoordinatorReady, announce ourselves
         actor.act_on::<CoordinatorReady>(|actor, _context| {
@@ -212,6 +223,26 @@ impl LlmActor {
                     );
                     cfg.model = msg.model;
                     cfg.host = msg.host;
+                }
+            })
+        });
+
+        // Handle band updates during escalation (before model escalation)
+        actor.act_on::<UpdateBand>(|actor, context| {
+            let msg = context.message().clone();
+            let config = actor.model.config.clone();
+            let actor_name = actor.model.name.clone();
+
+            Reply::pending(async move {
+                if let Some(config) = config {
+                    let mut cfg = config.write().await;
+                    info!(
+                        actor = %actor_name,
+                        from = ?cfg.band,
+                        to = ?msg.band,
+                        "Escalating sampling band"
+                    );
+                    cfg.band = msg.band;
                 }
             })
         });

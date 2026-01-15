@@ -48,6 +48,21 @@ pub struct EscalationEvent {
     pub to_model: String,
 }
 
+/// Record of a sampling band escalation event.
+///
+/// When the pressure-field strategy detects zero progress, it first tries
+/// increasing sampling diversity (shifting bands) before escalating to a
+/// larger model. This struct captures when a band transition occurred.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BandEscalationEvent {
+    /// Tick at which band escalation occurred
+    pub tick: usize,
+    /// Band being escalated from
+    pub from_band: String,
+    /// Band being escalated to
+    pub to_band: String,
+}
+
 /// Results from a single experiment run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExperimentResult {
@@ -75,6 +90,9 @@ pub struct ExperimentResult {
     pub tick_metrics: Vec<TickMetrics>,
     /// Model escalation events (when larger models were activated)
     pub escalation_events: Vec<EscalationEvent>,
+    /// Sampling band escalation events (before model escalation)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub band_escalation_events: Vec<BandEscalationEvent>,
     /// Which model tier was active when solved (or last model if unsolved)
     pub final_model: String,
     /// Total prompt tokens used across all ticks
@@ -331,6 +349,7 @@ mod tests {
                 example_bank_stats: None,
                 tick_metrics: vec![],
                 escalation_events: vec![],
+                band_escalation_events: vec![],
                 final_model: "test-model".to_string(),
                 total_prompt_tokens: 100,
                 total_completion_tokens: 50,
@@ -382,6 +401,7 @@ mod tests {
                 example_bank_stats: None,
                 tick_metrics: vec![],
                 escalation_events: vec![],
+                band_escalation_events: vec![],
                 final_model: "test".to_string(),
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
@@ -429,6 +449,7 @@ mod tests {
                 example_bank_stats: None,
                 tick_metrics: vec![],
                 escalation_events: vec![],
+                band_escalation_events: vec![],
                 final_model: "test".to_string(),
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
@@ -476,6 +497,7 @@ mod tests {
                 example_bank_stats: None,
                 tick_metrics: vec![],
                 escalation_events: vec![],
+                band_escalation_events: vec![],
                 final_model: "test".to_string(),
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
@@ -524,6 +546,7 @@ mod tests {
                 example_bank_stats: None,
                 tick_metrics: vec![],
                 escalation_events: vec![],
+                band_escalation_events: vec![],
                 final_model: "test".to_string(),
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
@@ -554,6 +577,7 @@ mod tests {
                 example_bank_stats: None,
                 tick_metrics: vec![],
                 escalation_events: vec![],
+                band_escalation_events: vec![],
                 final_model: "test".to_string(),
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
@@ -687,6 +711,7 @@ mod tests {
                     to_model: "7B".to_string(),
                 },
             ],
+            band_escalation_events: vec![],
             final_model: "Qwen/Qwen2.5-7B".to_string(),
             total_prompt_tokens: 2048,
             total_completion_tokens: 256,
@@ -734,6 +759,7 @@ mod tests {
             example_bank_stats: None,
             tick_metrics: vec![],
             escalation_events: vec![],
+            band_escalation_events: vec![],
             final_model: "test".to_string(),
             total_prompt_tokens: 0,
             total_completion_tokens: 0,

@@ -23,11 +23,11 @@ use crate::artifact::Artifact;
 use crate::config::KernelConfig;
 use crate::kernel::TickResult;
 use crate::messages::{
-    ApplyDecay, ClaimManagerReady, CoordinatorReady, MeasureRegion, MeasurementResult,
-    PatchActorReady, PatchActorsReady, PatchProposal, PressureResponse, ProposeForRegion,
-    QueryPressure, RegionApplyPatch, RegionPatchResult, RegisterRegionActors, ResetClaims,
-    SaveArtifact, SensorReady, SensorsReady, SetOutputDir, Tick, TickComplete, ValidatePatch,
-    ValidatePatchResponse, WaitForPatchActors, WaitForSensors,
+    ApplyDecay, ClaimManagerReady, CoordinatorReady, EvaluatePatch, EvaluatePatchResponse,
+    MeasureRegion, MeasurementResult, PatchActorReady, PatchActorsReady, PatchProposal,
+    PressureResponse, ProposeForRegion, QueryPressure, RegionApplyPatch, RegionPatchResult,
+    RegisterRegionActors, ResetClaims, SaveArtifact, SensorReady, SensorsReady, SetOutputDir,
+    Tick, TickComplete, ValidatePatch, ValidatePatchResponse, WaitForPatchActors, WaitForSensors,
 };
 use crate::pressure::PressureVector;
 use crate::region::{Patch, RegionId, RegionView};
@@ -1111,7 +1111,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             actor.model.stable_ticks = 0;
         }
 
-        // Calculate total pressure delta
+        // Calculate total pressure delta (for logging)
         let total_delta: f64 = pending
             .results
             .iter()
@@ -1119,7 +1119,13 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .map(|r| r.pressure_delta)
             .sum();
 
-        let new_pressure = pending.last_total_pressure - total_delta;
+        // Use actual artifact pressure if available, otherwise fall back to EMA-based
+        let new_pressure = actor
+            .model
+            .artifact
+            .as_ref()
+            .and_then(|a| a.total_pressure())
+            .unwrap_or_else(|| pending.last_total_pressure - total_delta);
 
         // Get previous tick's final pressure for display (before updating history)
         // This matches the comparison used for velocity calculation
@@ -1305,6 +1311,63 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             })
         } else {
             warn!(region = %msg.region_id, "No actor handle for region");
+            Reply::ready()
+        }
+    });
+
+    // Handle EvaluatePatch - use artifact's clone-based validation
+    actor.act_on::<EvaluatePatch>(|actor, context| {
+        let msg = context.message().clone();
+        let region_actors: HashMap<RegionId, ActorHandle> = actor
+            .model
+            .region_actors
+            .iter()
+            .map(|e| (e.key().clone(), e.value().clone()))
+            .collect();
+
+        let region_id = msg.patch.region.clone();
+
+        // Extract new content from patch
+        let new_content = match &msg.patch.op {
+            crate::region::PatchOp::Replace(content) => content.clone(),
+            crate::region::PatchOp::Delete => String::new(),
+            crate::region::PatchOp::InsertAfter(content) => {
+                // For InsertAfter, we need current content - get from artifact
+                if let Some(artifact) = actor.model.artifact.as_ref() {
+                    if let Ok(view) = artifact.read_region(region_id.clone()) {
+                        format!("{}\n{}", view.content, content)
+                    } else {
+                        content.clone()
+                    }
+                } else {
+                    content.clone()
+                }
+            }
+        };
+
+        // Use artifact's evaluate_patch for clone-based validation
+        let (should_accept, pressure_delta) =
+            if let Some(artifact) = actor.model.artifact.as_ref() {
+                artifact.evaluate_patch(&msg.patch)
+            } else {
+                warn!("EvaluatePatch: artifact not initialized");
+                (false, 0.0)
+            };
+
+        let response = EvaluatePatchResponse {
+            correlation_id: msg.correlation_id,
+            region_id: region_id.clone(),
+            should_accept,
+            pressure_delta,
+            new_content,
+        };
+
+        if let Some(handle) = region_actors.get(&region_id).cloned() {
+            Reply::pending(async move {
+                handle.send(response).await;
+            })
+        } else {
+            warn!(region = %region_id, "No actor handle for region");
             Reply::ready()
         }
     });

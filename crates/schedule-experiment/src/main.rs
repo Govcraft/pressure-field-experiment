@@ -179,18 +179,31 @@ async fn main() -> Result<()> {
             let runner = ExperimentRunner::new(config);
             let result = runner.run(strategy, agents, 0, seed).await?;
 
+            let initial_pressure = result.pressure_history.first().copied().unwrap_or(0.0);
+            let pressure_delta = initial_pressure - result.final_pressure;
+
             println!("\n=== Experiment Complete ===");
             println!("Strategy: {}", strategy.name());
             println!("Agents: {}", agents);
             println!("Solved: {}", result.solved);
             println!("Ticks: {}", result.total_ticks);
-            println!("Final pressure: {:.2}", result.final_pressure);
+            println!(
+                "Pressure: {:.2} -> {:.2} (delta: {:.2})",
+                initial_pressure, result.final_pressure, pressure_delta
+            );
             println!("Final model: {}", result.final_model);
             println!("Prompt tokens: {}", result.total_prompt_tokens);
             println!("Completion tokens: {}", result.total_completion_tokens);
 
+            if !result.band_escalation_events.is_empty() {
+                println!("\nBand escalation events:");
+                for event in &result.band_escalation_events {
+                    println!("  Tick {}: {} -> {}", event.tick, event.from_band, event.to_band);
+                }
+            }
+
             if !result.escalation_events.is_empty() {
-                println!("\nEscalation events:");
+                println!("\nModel escalation events:");
                 for event in &result.escalation_events {
                     println!("  Tick {}: {} -> {}", event.tick, event.from_model, event.to_model);
                 }
