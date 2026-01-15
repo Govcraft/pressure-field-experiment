@@ -155,7 +155,7 @@ impl AsyncKernelBuilder {
         let region_ids: Vec<RegionId> = self.coordinator.artifact.region_ids();
         let region_views: Vec<_> = region_ids
             .iter()
-            .filter_map(|rid| self.coordinator.artifact.read_region(*rid).ok().map(|v| (*rid, v)))
+            .filter_map(|rid| self.coordinator.artifact.read_region(rid.clone()).ok().map(|v| (rid.clone(), v)))
             .collect();
         let pressure_axes = self.coordinator.config.pressure_axes.clone();
         let validation_sensor = self.validation_sensor.clone();
@@ -178,7 +178,7 @@ impl AsyncKernelBuilder {
 
             for (rid, view) in region_views {
                 let region_actor = RegionActor::new(
-                    rid,
+                    rid.clone(),
                     view.kind,
                     view.content,
                     view.metadata,
@@ -220,7 +220,7 @@ impl AsyncKernelBuilder {
         let region_ids: Vec<RegionId> = self.coordinator.artifact.region_ids();
         let region_views: Vec<_> = region_ids
             .iter()
-            .filter_map(|rid| self.coordinator.artifact.read_region(*rid).ok().map(|v| (*rid, v)))
+            .filter_map(|rid| self.coordinator.artifact.read_region(rid.clone()).ok().map(|v| (rid.clone(), v)))
             .collect();
         let pressure_axes = config.pressure_axes.clone();
         let validation_sensor = self.validation_sensor.clone();
@@ -244,7 +244,7 @@ impl AsyncKernelBuilder {
 
             for (rid, view) in region_views {
                 let region_actor = RegionActor::new(
-                    rid,
+                    rid.clone(),
                     view.kind,
                     view.content,
                     view.metadata,

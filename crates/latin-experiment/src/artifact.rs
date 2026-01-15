@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use anyhow::{bail, Result};
+use mti::prelude::*;
 use survival_kernel::artifact::Artifact;
 use survival_kernel::region::{Patch, PatchOp, RegionId, RegionView};
 use uuid::Uuid;
@@ -17,6 +18,15 @@ use crate::sensors::SharedGrid;
 const REGION_NAMESPACE: Uuid = Uuid::from_bytes([
     0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc9,
 ]);
+
+/// Create a MagicTypeId for a region from puzzle_id and row index.
+fn create_region_mti(puzzle_id: &str, row_idx: usize) -> RegionId {
+    let name = format!("{}:row:{}", puzzle_id, row_idx);
+    let v5_uuid = Uuid::new_v5(&REGION_NAMESPACE, name.as_bytes());
+    let prefix = TypeIdPrefix::try_from("region").expect("region is a valid prefix");
+    let suffix = TypeIdSuffix::from(v5_uuid);
+    MagicTypeId::new(prefix, suffix)
+}
 
 /// A Latin Square puzzle artifact.
 ///
@@ -71,9 +81,8 @@ impl LatinSquareArtifact {
         let mut region_order = Vec::with_capacity(n);
 
         for row_idx in 0..n {
-            let id_string = format!("{}:row:{}", puzzle_id, row_idx);
-            let region_id = Uuid::new_v5(&REGION_NAMESPACE, id_string.as_bytes());
-            region_map.insert(region_id, row_idx);
+            let region_id = create_region_mti(&puzzle_id, row_idx);
+            region_map.insert(region_id.clone(), row_idx);
             region_order.push(region_id);
         }
 
@@ -408,7 +417,7 @@ mod tests {
     fn test_read_region() {
         let artifact = sample_puzzle();
         let regions = artifact.region_ids();
-        let view = artifact.read_region(regions[0]).unwrap();
+        let view = artifact.read_region(regions[0].clone()).unwrap();
 
         assert_eq!(view.content, "1 _ 3 _");
         assert_eq!(view.kind, "row");
@@ -420,7 +429,7 @@ mod tests {
         let regions = artifact.region_ids();
 
         let patch = Patch {
-            region: regions[0],
+            region: regions[0].clone(),
             op: PatchOp::Replace("1 2 3 4".to_string()),
             rationale: "Fill empty cells".to_string(),
             expected_delta: HashMap::new(),
@@ -428,7 +437,7 @@ mod tests {
 
         artifact.apply_patch(patch).unwrap();
 
-        let view = artifact.read_region(regions[0]).unwrap();
+        let view = artifact.read_region(regions[0].clone()).unwrap();
         assert_eq!(view.content, "1 2 3 4");
     }
 
@@ -439,7 +448,7 @@ mod tests {
 
         // Try to change fixed cell (1 at position 0)
         let patch = Patch {
-            region: regions[0],
+            region: regions[0].clone(),
             op: PatchOp::Replace("2 2 3 4".to_string()),
             rationale: "Bad patch".to_string(),
             expected_delta: HashMap::new(),
@@ -496,7 +505,7 @@ mod tests {
 
         // Patch row 0: fill empty cells
         let patch0 = Patch {
-            region: regions[0],
+            region: regions[0].clone(),
             op: PatchOp::Replace("1 2 3 4".to_string()),
             rationale: "Fill row 0".to_string(),
             expected_delta: HashMap::new(),
@@ -506,7 +515,7 @@ mod tests {
 
         // Patch row 1: fill empty cells
         let patch1 = Patch {
-            region: regions[1],
+            region: regions[1].clone(),
             op: PatchOp::Replace("3 2 4 4".to_string()),
             rationale: "Fill row 1".to_string(),
             expected_delta: HashMap::new(),
@@ -515,8 +524,8 @@ mod tests {
         assert_eq!(artifact.grid()[1], vec![Some(3), Some(2), Some(4), Some(4)]);
 
         // Verify both rows are updated
-        let view0 = artifact.read_region(regions[0]).unwrap();
-        let view1 = artifact.read_region(regions[1]).unwrap();
+        let view0 = artifact.read_region(regions[0].clone()).unwrap();
+        let view1 = artifact.read_region(regions[1].clone()).unwrap();
         assert_eq!(view0.content, "1 2 3 4");
         assert_eq!(view1.content, "3 2 4 4");
     }
@@ -533,7 +542,7 @@ mod tests {
 
         // Apply patch
         let patch = Patch {
-            region: regions[0],
+            region: regions[0].clone(),
             op: PatchOp::Replace("1 2 3 4".to_string()),
             rationale: "Fill row".to_string(),
             expected_delta: HashMap::new(),
@@ -558,7 +567,7 @@ mod tests {
 
         // Patch only row 0
         let patch = Patch {
-            region: regions[0],
+            region: regions[0].clone(),
             op: PatchOp::Replace("1 2 3 4".to_string()),
             rationale: "Fill row 0".to_string(),
             expected_delta: HashMap::new(),
@@ -585,7 +594,7 @@ mod tests {
 
         // Patch row 0 to put 2 in column 1
         let patch = Patch {
-            region: regions[0],
+            region: regions[0].clone(),
             op: PatchOp::Replace("1 2 3 4".to_string()),
             rationale: "Fill row".to_string(),
             expected_delta: HashMap::new(),
@@ -766,7 +775,7 @@ mod tests {
 
         // Apply a patch
         let patch = Patch {
-            region: regions_before[0],
+            region: regions_before[0].clone(),
             op: PatchOp::Replace("1 2 3 4".to_string()),
             rationale: "test".to_string(),
             expected_delta: HashMap::new(),

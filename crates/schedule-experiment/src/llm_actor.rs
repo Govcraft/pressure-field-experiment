@@ -391,11 +391,10 @@ Answer:"#,
     );
 
     info!(
-        region_id = %msg.region_id,
-        time_range = %time_range,
+        region = %msg.region_id,
         model = %config.model,
-        example_count = examples.len(),
-        "Generating schedule patch with LLM"
+        time_range = %time_range,
+        "Generate patch"
     );
 
     // Determine sampling parameters
@@ -441,7 +440,7 @@ Answer:"#,
 
     Ok((
         Some(Patch {
-            region: msg.region_id,
+            region: msg.region_id.clone(),
             op: PatchOp::Replace(new_content),
             rationale: "Optimized schedule for time block".to_string(),
             expected_delta: HashMap::new(),

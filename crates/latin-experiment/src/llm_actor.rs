@@ -251,14 +251,9 @@ fn configure_llm_actor(actor: &mut ManagedActor<Idle, LlmActorState>) {
 
         // Get envelope for proper request-response routing
         let claim_manager = msg.claim_manager.clone();
-        let envelope_for_claim = if claim_manager.is_some() {
-            // Create envelope that maintains reply chain to this actor
-            Some(context.new_envelope(
-                &claim_manager.as_ref().unwrap().reply_address(),
-            ))
-        } else {
-            None
-        };
+        let envelope_for_claim = claim_manager
+            .as_ref()
+            .map(|cm| context.new_envelope(&cm.reply_address()));
 
         let Some(config) = config else {
             warn!("ProposeForRegion: no config");
@@ -561,7 +556,7 @@ Answer:"#,
 
     Ok((
         Some(Patch {
-            region: msg.region_id,
+            region: msg.region_id.clone(),
             op: PatchOp::Replace(new_content),
             rationale: "Filled empty cells in row".to_string(),
             expected_delta: HashMap::new(),

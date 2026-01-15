@@ -229,7 +229,7 @@ impl Clone for KernelCoordinatorState {
         // Clone DashMaps by iterating and collecting
         let region_actors = DashMap::new();
         for entry in self.region_actors.iter() {
-            region_actors.insert(*entry.key(), entry.value().clone());
+            region_actors.insert(entry.key().clone(), entry.value().clone());
         }
 
         let pending_measurements = DashMap::new();
@@ -443,7 +443,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let msg = context.message();
         actor.model.region_actors.clear();
         for (region_id, handle) in &msg.actors {
-            actor.model.region_actors.insert(*region_id, handle.clone());
+            actor.model.region_actors.insert(region_id.clone(), handle.clone());
         }
         trace!(
             regions = actor.model.region_actors.len(),
@@ -570,7 +570,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let region_data: Vec<_> = artifact
             .region_ids()
             .iter()
-            .filter_map(|rid| artifact.read_region(*rid).ok().map(|view| (*rid, view)))
+            .filter_map(|rid| artifact.read_region(rid.clone()).ok().map(|view| (rid.clone(), view)))
             .collect();
 
         let sensor_count = actor.model.registered_sensors.len();
@@ -622,7 +622,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
     actor.mutate_on::<MeasurementResult>(|actor, context| {
         let result = context.message().clone();
         let correlation_id = result.correlation_id.clone();
-        let region_id = result.region_id;
+        let region_id = result.region_id.clone();
 
         let Some(mut pending) = actor.model.pending_measurements.get_mut(&correlation_id) else {
             warn!(
@@ -730,7 +730,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .filter(|r| !r.is_inhibited && r.total_pressure >= threshold)
             .map(|r| {
                 let pressures: PressureVector = r.state.pressure_ema.clone();
-                (r.region_id, r.view.clone(), pressures)
+                (r.region_id.clone(), r.view.clone(), pressures)
             })
             .collect();
 
@@ -919,7 +919,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let mut best_per_region: HashMap<RegionId, (f64, Patch)> = HashMap::new();
         for (score, patch) in all_patches {
             best_per_region
-                .entry(patch.region)
+                .entry(patch.region.clone())
                 .and_modify(|existing| {
                     if score > existing.0 {
                         *existing = (score, patch.clone());
@@ -1008,7 +1008,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .model
             .region_actors
             .iter()
-            .map(|e| (*e.key(), e.value().clone()))
+            .map(|e| (e.key().clone(), e.value().clone()))
             .collect();
         let current_tick = actor.model.current_tick;
 
@@ -1021,7 +1021,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         // Send patches to RegionActors
         Reply::pending(async move {
             for (_, patch) in top_patches {
-                let rid = patch.region;
+                let rid = patch.region.clone();
                 if let Some(region_handle) = region_actors.get(&rid) {
                     let msg = RegionApplyPatch {
                         correlation_id: patch_correlation_id.clone(),
@@ -1064,7 +1064,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         {
             // Create a patch to update the artifact
             let patch = Patch {
-                region: result.region_id,
+                region: result.region_id.clone(),
                 op: crate::region::PatchOp::Replace(new_content.clone()),
                 rationale: format!("Validated patch (δ={:.3})", result.pressure_delta),
                 expected_delta: HashMap::new(),
@@ -1095,7 +1095,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .iter()
             .filter(|r| r.success)
             .map(|r| Patch {
-                region: r.region_id,
+                region: r.region_id.clone(),
                 op: crate::region::PatchOp::Replace(r.new_content.clone().unwrap_or_default()),
                 rationale: format!("δ={:.3}", r.pressure_delta),
                 expected_delta: HashMap::new(),
@@ -1227,7 +1227,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .model
             .region_actors
             .iter()
-            .map(|e| (*e.key(), e.value().clone()))
+            .map(|e| (e.key().clone(), e.value().clone()))
             .collect();
 
         let Some(output_dir) = actor.model.output_dir.clone() else {
@@ -1260,7 +1260,8 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         };
 
         // Get the current content for the region being patched
-        let current_content = match artifact.read_region(msg.region_id) {
+        let region_id = msg.region_id.clone();
+        let current_content = match artifact.read_region(region_id.clone()) {
             Ok(view) => view.content,
             Err(e) => {
                 warn!(error = %e, "Failed to read region for validation");
@@ -1280,7 +1281,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         }
 
         // Write patched artifact
-        let region_short = format!("{:.8}", msg.region_id);
+        let region_short = format!("{:.8}", region_id);
         let artifact_path =
             output_dir.join(format!("tick_{}_region_{}.rs", msg.tick, region_short));
 
@@ -1293,12 +1294,12 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         // Send response to RegionActor
         let response = ValidatePatchResponse {
             correlation_id: msg.correlation_id,
-            region_id: msg.region_id,
+            region_id: region_id.clone(),
             artifact_path,
             original_path,
         };
 
-        if let Some(handle) = region_actors.get(&msg.region_id).cloned() {
+        if let Some(handle) = region_actors.get(&region_id).cloned() {
             Reply::pending(async move {
                 handle.send(response).await;
             })

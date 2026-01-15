@@ -80,10 +80,16 @@ pub fn measure_pressure_inline(
     sensor: &dyn Sensor,
     pressure_axes: &[crate::config::PressureAxisConfig],
 ) -> anyhow::Result<f64> {
+    use mti::prelude::*;
     use uuid::Uuid;
 
+    // Create a placeholder MagicTypeId for temporary measurement
+    let prefix = TypeIdPrefix::try_from("temp").expect("temp is valid prefix");
+    let suffix = TypeIdSuffix::from(Uuid::nil());
+    let placeholder_id = MagicTypeId::new(prefix, suffix);
+
     let view = RegionView {
-        id: Uuid::nil(),
+        id: placeholder_id,
         kind: kind.to_string(),
         content: content.to_string(),
         metadata: HashMap::new(),

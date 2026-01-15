@@ -38,6 +38,7 @@ use crate::vllm_client::VllmClient;
 /// Context for a single experiment run.
 #[derive(Debug, Clone)]
 struct RunContext {
+    agent_count: usize,
     trial: usize,
     seed: Option<u64>,
     started_at: chrono::DateTime<Utc>,
@@ -142,6 +143,14 @@ impl Strategy {
     }
 }
 
+/// Context for running baseline strategies.
+struct BaselineRunContext {
+    artifact: ScheduleArtifact,
+    example_bank: Arc<RwLock<ExampleBank>>,
+    sensor: CombinedScheduleSensor,
+    shared_schedule: SharedSchedule,
+}
+
 /// The experiment runner.
 pub struct ExperimentRunner {
     config: ExperimentRunnerConfig,
@@ -165,7 +174,7 @@ impl ExperimentRunner {
         let _start_time = Instant::now();
 
         // Generate schedule problem
-        let actual_seed = seed.unwrap_or_else(|| rand::random());
+        let actual_seed = seed.unwrap_or_else(rand::random);
         let mut generator = ScheduleGenerator::new(self.config.generator_config.clone(), actual_seed);
         let artifact = generator.generate();
 
@@ -203,6 +212,7 @@ impl ExperimentRunner {
         // For PressureField strategy, use the kernel-based coordination
         if strategy == Strategy::PressureField {
             let ctx = RunContext {
+                agent_count,
                 trial,
                 seed,
                 started_at,
@@ -220,18 +230,20 @@ impl ExperimentRunner {
         }
 
         // For baseline strategies, run simple tick loop
-        self.run_baseline_strategy(
-            strategy,
+        let baseline_ctx = BaselineRunContext {
             artifact,
             example_bank,
             sensor,
             shared_schedule,
+        };
+        let run_ctx = RunContext {
             agent_count,
             trial,
             seed,
             started_at,
-        )
-        .await
+        };
+        self.run_baseline_strategy(strategy, baseline_ctx, run_ctx)
+            .await
     }
 
     /// Run the pressure-field strategy using the kernel.
@@ -410,38 +422,38 @@ impl ExperimentRunner {
             tick_results.push(result);
 
             // Check for escalation
-            if ticks_without_progress >= self.config.escalation_threshold {
-                if current_model_idx + 1 < self.config.model_chain.len() {
-                    let old_model = current_model.clone();
-                    current_model_idx += 1;
-                    current_model = self.config.model_chain[current_model_idx].clone();
-                    let new_host = self.config.get_vllm_host(current_model_idx).to_string();
+            if ticks_without_progress >= self.config.escalation_threshold
+                && current_model_idx + 1 < self.config.model_chain.len()
+            {
+                let old_model = current_model.clone();
+                current_model_idx += 1;
+                current_model = self.config.model_chain[current_model_idx].clone();
+                let new_host = self.config.get_vllm_host(current_model_idx).to_string();
 
-                    info!(
-                        tick = current_tick,
-                        from_model = %old_model,
-                        to_model = %current_model,
-                        new_host = %new_host,
-                        "Escalating model due to stall"
-                    );
+                info!(
+                    tick = current_tick,
+                    from_model = %old_model,
+                    to_model = %current_model,
+                    new_host = %new_host,
+                    "Escalating model due to stall"
+                );
 
-                    // Broadcast UpdateModel to all LLM actors
-                    runtime
-                        .broker()
-                        .broadcast(UpdateModel {
-                            model: current_model.clone(),
-                            host: new_host,
-                        })
-                        .await;
+                // Broadcast UpdateModel to all LLM actors
+                runtime
+                    .broker()
+                    .broadcast(UpdateModel {
+                        model: current_model.clone(),
+                        host: new_host,
+                    })
+                    .await;
 
-                    escalation_events.push(EscalationEvent {
-                        tick: current_tick,
-                        from_model: old_model,
-                        to_model: current_model.clone(),
-                    });
+                escalation_events.push(EscalationEvent {
+                    tick: current_tick,
+                    from_model: old_model,
+                    to_model: current_model.clone(),
+                });
 
-                    ticks_without_progress = 0;
-                }
+                ticks_without_progress = 0;
             }
 
             // Check termination conditions
@@ -495,7 +507,7 @@ impl ExperimentRunner {
                 let model_at_tick = escalation_events
                     .iter()
                     .filter(|e| e.tick <= tick)
-                    .last()
+                    .next_back()
                     .map(|e| e.to_model.clone())
                     .unwrap_or_else(|| {
                         if self.config.model_chain.is_empty() {
@@ -561,17 +573,11 @@ impl ExperimentRunner {
     async fn run_baseline_strategy(
         &self,
         strategy: Strategy,
-        mut artifact: ScheduleArtifact,
-        example_bank: Arc<RwLock<ExampleBank>>,
-        sensor: CombinedScheduleSensor,
-        shared_schedule: SharedSchedule,
-        agent_count: usize,
-        trial: usize,
-        seed: Option<u64>,
-        started_at: chrono::DateTime<Utc>,
+        mut ctx: BaselineRunContext,
+        run_ctx: RunContext,
     ) -> Result<ExperimentResult> {
-        let num_meetings = artifact.meetings().len();
-        let initial_unscheduled = artifact.schedule().count_unscheduled();
+        let num_meetings = ctx.artifact.meetings().len();
+        let initial_unscheduled = ctx.artifact.schedule().count_unscheduled();
 
         // Tracking
         let mut pressure_history = Vec::new();
@@ -583,7 +589,7 @@ impl ExperimentRunner {
         let total_patch_rejections: HashMap<PatchRejection, usize> = HashMap::new();
 
         // Initial measurement
-        let initial_pressure = self.measure_total_pressure(&artifact, &sensor)?;
+        let initial_pressure = self.measure_total_pressure(&ctx.artifact, &ctx.sensor)?;
         pressure_history.push(initial_pressure);
 
         // Model escalation state
@@ -604,7 +610,7 @@ impl ExperimentRunner {
 
             // Apply decay to example bank
             if self.config.decay_enabled {
-                let bank = example_bank.read().await;
+                let bank = ctx.example_bank.read().await;
                 bank.apply_decay();
             }
 
@@ -612,24 +618,24 @@ impl ExperimentRunner {
             let region_id = match strategy {
                 Strategy::PressureField => unreachable!("PressureField handled separately"),
                 Strategy::Sequential => {
-                    let regions = artifact.region_ids();
-                    regions[tick % regions.len()]
+                    let regions = ctx.artifact.region_ids();
+                    regions[tick % regions.len()].clone()
                 }
                 Strategy::Random => {
-                    let regions = artifact.region_ids();
+                    let regions = ctx.artifact.region_ids();
                     let idx = rand::rng().random_range(0..regions.len());
-                    regions[idx]
+                    regions[idx].clone()
                 }
                 Strategy::Hierarchical => {
-                    self.select_highest_pressure_region(&artifact, &sensor)?
+                    self.select_highest_pressure_region(&ctx.artifact, &ctx.sensor)?
                 }
             };
 
-            let region_view = artifact.read_region(region_id)?;
+            let region_view = ctx.artifact.read_region(region_id.clone())?;
 
             // Get examples for few-shot learning
             let examples = if self.config.examples_enabled {
-                let bank = example_bank.read().await;
+                let bank = ctx.example_bank.read().await;
                 bank.get_examples_for_prompt()
             } else {
                 vec![]
@@ -646,48 +652,48 @@ impl ExperimentRunner {
 
             // Parse response and apply patch
             let mut patches_applied = 0;
-            if let Some(new_content) = self.parse_schedule_response(&response.content) {
-                if new_content != region_view.content {
-                    let patch = survival_kernel::region::Patch {
-                        region: region_id,
-                        op: survival_kernel::region::PatchOp::Replace(new_content.clone()),
-                        rationale: format!("{} strategy patch", strategy.name()),
-                        expected_delta: HashMap::new(),
-                    };
+            if let Some(new_content) = self.parse_schedule_response(&response.content)
+                && new_content != region_view.content
+            {
+                let patch = survival_kernel::region::Patch {
+                    region: region_id.clone(),
+                    op: survival_kernel::region::PatchOp::Replace(new_content.clone()),
+                    rationale: format!("{} strategy patch", strategy.name()),
+                    expected_delta: HashMap::new(),
+                };
 
-                    if artifact.apply_patch(patch).is_ok() {
-                        // Update shared schedule
-                        if let Ok(mut schedule) = shared_schedule.write() {
-                            *schedule = artifact.schedule().clone();
-                        }
-
-                        // Add to example bank
-                        if self.config.examples_enabled {
-                            let pressure_before = self.measure_region_pressure(&region_view, &sensor)?;
-                            let temp_view = survival_kernel::region::RegionView {
-                                id: region_id,
-                                kind: "time_block".to_string(),
-                                content: new_content.clone(),
-                                metadata: region_view.metadata.clone(),
-                            };
-                            let pressure_after = self.measure_region_pressure(&temp_view, &sensor)?;
-
-                            let bank = example_bank.read().await;
-                            bank.add_example(
-                                region_view.content.clone(),
-                                new_content,
-                                pressure_before,
-                                pressure_after,
-                            );
-                        }
-
-                        patches_applied = 1;
+                if ctx.artifact.apply_patch(patch).is_ok() {
+                    // Update shared schedule
+                    if let Ok(mut schedule) = ctx.shared_schedule.write() {
+                        *schedule = ctx.artifact.schedule().clone();
                     }
+
+                    // Add to example bank
+                    if self.config.examples_enabled {
+                        let pressure_before = self.measure_region_pressure(&region_view, &ctx.sensor)?;
+                        let temp_view = survival_kernel::region::RegionView {
+                            id: region_id.clone(),
+                            kind: "time_block".to_string(),
+                            content: new_content.clone(),
+                            metadata: region_view.metadata.clone(),
+                        };
+                        let pressure_after = self.measure_region_pressure(&temp_view, &ctx.sensor)?;
+
+                        let bank = ctx.example_bank.read().await;
+                        bank.add_example(
+                            region_view.content.clone(),
+                            new_content,
+                            pressure_before,
+                            pressure_after,
+                        );
+                    }
+
+                    patches_applied = 1;
                 }
             }
 
             // Track tick results
-            let current_pressure = self.measure_total_pressure(&artifact, &sensor)?;
+            let current_pressure = self.measure_total_pressure(&ctx.artifact, &ctx.sensor)?;
             pressure_history.push(current_pressure);
             patches_per_tick.push(patches_applied);
 
@@ -699,27 +705,27 @@ impl ExperimentRunner {
             }
 
             // Check for model escalation
-            if zero_velocity_ticks >= self.config.escalation_threshold {
-                if current_model_idx + 1 < self.config.model_chain.len() {
-                    let old_model = current_model.clone();
-                    current_model_idx += 1;
-                    current_model = self.config.model_chain[current_model_idx].clone();
+            if zero_velocity_ticks >= self.config.escalation_threshold
+                && current_model_idx + 1 < self.config.model_chain.len()
+            {
+                let old_model = current_model.clone();
+                current_model_idx += 1;
+                current_model = self.config.model_chain[current_model_idx].clone();
 
-                    info!(
-                        tick = tick,
-                        from_model = %old_model,
-                        to_model = %current_model,
-                        "Escalating model due to stall"
-                    );
+                info!(
+                    tick = tick,
+                    from_model = %old_model,
+                    to_model = %current_model,
+                    "Escalating model due to stall"
+                );
 
-                    escalation_events.push(EscalationEvent {
-                        tick,
-                        from_model: old_model,
-                        to_model: current_model.clone(),
-                    });
+                escalation_events.push(EscalationEvent {
+                    tick,
+                    from_model: old_model,
+                    to_model: current_model.clone(),
+                });
 
-                    zero_velocity_ticks = 0;
-                }
+                zero_velocity_ticks = 0;
             }
 
             let tick_duration = tick_start.elapsed();
@@ -742,7 +748,7 @@ impl ExperimentRunner {
             });
 
             // Check completion
-            if artifact.is_solved() {
+            if ctx.artifact.is_solved() {
                 info!(tick = tick, "Schedule solved!");
                 break;
             }
@@ -758,26 +764,26 @@ impl ExperimentRunner {
 
         let ended_at = Utc::now();
         let final_pressure = pressure_history.last().copied().unwrap_or(0.0);
-        let solved = artifact.is_solved();
+        let solved = ctx.artifact.is_solved();
 
         let example_bank_stats = {
-            let bank = example_bank.read().await;
+            let bank = ctx.example_bank.read().await;
             Some(bank.stats())
         };
 
         Ok(ExperimentResult {
             config: ExperimentConfig {
                 strategy: strategy.name().to_string(),
-                agent_count,
+                agent_count: run_ctx.agent_count,
                 n: num_meetings,
                 empty_cells: initial_unscheduled,
                 decay_enabled: self.config.decay_enabled,
                 inhibition_enabled: self.config.inhibition_enabled,
                 examples_enabled: self.config.examples_enabled,
-                trial,
-                seed,
+                trial: run_ctx.trial,
+                seed: run_ctx.seed,
             },
-            started_at,
+            started_at: run_ctx.started_at,
             ended_at,
             total_ticks: tick_metrics.len(),
             solved,
@@ -884,7 +890,7 @@ impl ExperimentRunner {
         }
         // Add global unscheduled count
         if let Some(first_region) = artifact.region_ids().first() {
-            let region_view = artifact.read_region(*first_region)?;
+            let region_view = artifact.read_region(first_region.clone())?;
             let signals = sensor.measure(&region_view)?;
             total += signals.get("unscheduled_count").unwrap_or(&0.0) * 1.5;
         }
@@ -911,14 +917,14 @@ impl ExperimentRunner {
         sensor: &CombinedScheduleSensor,
     ) -> Result<survival_kernel::region::RegionId> {
         let mut max_pressure = f64::NEG_INFINITY;
-        let mut selected = artifact.region_ids()[0];
+        let mut selected = artifact.region_ids()[0].clone();
 
         for region_id in artifact.region_ids() {
-            let region_view = artifact.read_region(region_id)?;
+            let region_view = artifact.read_region(region_id.clone())?;
             let pressure = self.measure_region_pressure(&region_view, sensor)?;
             if pressure > max_pressure {
                 max_pressure = pressure;
-                selected = region_id;
+                selected = region_id.clone();
             }
         }
 
@@ -1134,11 +1140,13 @@ mod tests {
 
     #[test]
     fn test_config_get_vllm_host_multi() {
-        let mut config = ExperimentRunnerConfig::default();
-        config.vllm_hosts = vec![
-            "http://host1:8000".to_string(),
-            "http://host2:8000".to_string(),
-        ];
+        let config = ExperimentRunnerConfig {
+            vllm_hosts: vec![
+                "http://host1:8000".to_string(),
+                "http://host2:8000".to_string(),
+            ],
+            ..Default::default()
+        };
         assert_eq!(config.get_vllm_host(0), "http://host1:8000");
         assert_eq!(config.get_vllm_host(1), "http://host2:8000");
         assert_eq!(config.get_vllm_host(5), "http://host2:8000"); // Clamped

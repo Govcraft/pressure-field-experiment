@@ -127,7 +127,7 @@ impl RegionActor {
     /// 1. Subscribe to `ApplyDecay` and `QueryPressure` broadcasts
     /// 2. Handle messages and broadcast `PressureResponse` results
     pub async fn spawn(self, runtime: &mut ActorRuntime, now_ms: u64) -> ActorHandle {
-        let region_id = self.region_id;
+        let region_id = self.region_id.clone();
         let region_id_short = format!("{:.8}", region_id);
 
         let mut actor = runtime
@@ -223,7 +223,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
     actor.act_on::<QueryPressure>(|actor, context| {
         let msg = context.message().clone();
         let broker = actor.broker().clone();
-        let region_id = actor.model.region_id;
+        let region_id = actor.model.region_id.clone();
         let kind = actor.model.kind.clone();
         let content = actor.model.content.clone();
         let metadata = actor.model.metadata.clone();
@@ -236,7 +236,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
 
         let response = PressureResponse {
             correlation_id: msg.correlation_id,
-            region_id,
+            region_id: region_id.clone(),
             total_pressure,
             is_inhibited,
             state,
@@ -259,7 +259,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
     actor.mutate_on::<RegionApplyPatch>(|actor, context| {
         let msg = context.message().clone();
         let coordinator = actor.model.coordinator.clone();
-        let region_id = actor.model.region_id;
+        let region_id = actor.model.region_id.clone();
 
         let Some(coordinator) = coordinator else {
             warn!(region_id = %region_id, "RegionApplyPatch: coordinator not set");
@@ -305,7 +305,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
     actor.mutate_on::<ValidatePatchResponse>(|actor, context| {
         let msg = context.message().clone();
         let coordinator = actor.model.coordinator.clone();
-        let region_id = actor.model.region_id;
+        let region_id = actor.model.region_id.clone();
 
         let Some(coordinator) = coordinator else {
             warn!(region_id = %region_id, "ValidatePatchResponse: coordinator not set");
@@ -333,7 +333,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
 
             let result = RegionPatchResult {
                 correlation_id: pending.correlation_id,
-                region_id,
+                region_id: region_id.clone(),
                 success: true,
                 new_content: Some(pending.new_content),
                 pressure_delta,
@@ -346,7 +346,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
 
         // Measure current content pressure
         let current_view = RegionView {
-            id: region_id,
+            id: region_id.clone(),
             kind: actor.model.kind.clone(),
             content: actor.model.content.clone(),
             metadata: actor.model.metadata.clone(),
@@ -357,7 +357,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
                 warn!(region_id = %region_id, error = %e, "Failed to measure current content");
                 let result = RegionPatchResult {
                     correlation_id: pending.correlation_id,
-                    region_id,
+                    region_id: region_id.clone(),
                     success: false,
                     new_content: None,
                     pressure_delta: 0.0,
@@ -371,7 +371,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
 
         // Measure proposed content pressure
         let proposed_view = RegionView {
-            id: region_id,
+            id: region_id.clone(),
             kind: actor.model.kind.clone(),
             content: pending.new_content.clone(),
             metadata: actor.model.metadata.clone(),
@@ -382,7 +382,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
                 warn!(region_id = %region_id, error = %e, "Failed to measure proposed content");
                 let result = RegionPatchResult {
                     correlation_id: pending.correlation_id,
-                    region_id,
+                    region_id: region_id.clone(),
                     success: false,
                     new_content: None,
                     pressure_delta: 0.0,
@@ -423,7 +423,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
             );
             let result = RegionPatchResult {
                 correlation_id: pending.correlation_id,
-                region_id,
+                region_id: region_id.clone(),
                 success: false,
                 new_content: None,
                 pressure_delta,

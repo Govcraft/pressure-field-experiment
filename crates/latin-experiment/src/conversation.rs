@@ -16,9 +16,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use regex::Regex;
 use survival_kernel::artifact::Artifact;
+use survival_kernel::region::RegionId;
 use tokio::sync::Semaphore;
 use tracing::{debug, warn};
-use uuid::Uuid;
 
 use crate::artifact::LatinSquareArtifact;
 use crate::sensors::SharedGrid;
@@ -51,7 +51,7 @@ pub struct ConversationMessage {
     pub turn: usize,
     pub role: AgentRole,
     pub content: String,
-    pub region_id: Option<Uuid>,
+    pub region_id: Option<RegionId>,
 }
 
 /// Conversation state for a single tick.
@@ -60,7 +60,7 @@ pub struct ConversationState {
     pub messages: Vec<ConversationMessage>,
     pub current_turn: usize,
     pub max_turns: usize,
-    pub target_region: Option<Uuid>,
+    pub target_region: Option<RegionId>,
     pub final_patch: Option<String>,
     /// Number of ticks where consensus was reached explicitly
     pub consensus_ticks: usize,
@@ -81,7 +81,7 @@ impl ConversationState {
         }
     }
 
-    pub fn add_message(&mut self, role: AgentRole, content: String, region_id: Option<Uuid>) {
+    pub fn add_message(&mut self, role: AgentRole, content: String, region_id: Option<RegionId>) {
         self.messages.push(ConversationMessage {
             turn: self.current_turn,
             role,
@@ -280,16 +280,16 @@ impl ConversationRunner {
                 n = n,
                 "Coordinator selected invalid region, falling back to 0"
             );
-            state.target_region = artifact.region_ids().first().copied();
+            state.target_region = artifact.region_ids().first().cloned();
         } else {
-            state.target_region = artifact.region_ids().get(region_idx).copied();
+            state.target_region = artifact.region_ids().get(region_idx).cloned();
         }
 
-        let Some(region_id) = state.target_region else {
+        let Some(ref region_id) = state.target_region else {
             return Ok((None, state));
         };
 
-        let region_view = artifact.read_region(region_id)?;
+        let region_view = artifact.read_region(region_id.clone())?;
         let row_idx = region_idx;
         let availability = self.format_availability(artifact, row_idx);
 
@@ -355,7 +355,7 @@ impl ConversationRunner {
             .enumerate()
             .filter_map(|(i, id)| {
                 artifact
-                    .read_region(*id)
+                    .read_region(id.clone())
                     .ok()
                     .map(|r| format!("Row {}: {}", i, r.content))
             })
@@ -434,7 +434,7 @@ impl ConversationRunner {
         let prompt = PromptTemplates::coordinator_decide(&history, region_content, n);
         let response = self.call_llm(&prompt).await?;
 
-        state.add_message(AgentRole::Coordinator, response.clone(), state.target_region);
+        state.add_message(AgentRole::Coordinator, response.clone(), state.target_region.clone());
 
         Ok(parse_coordinator_decision(&response, n))
     }
@@ -450,7 +450,7 @@ impl ConversationRunner {
         let prompt = PromptTemplates::proposer(region_content, availability, &history, row_idx);
         let response = self.call_llm(&prompt).await?;
 
-        state.add_message(AgentRole::Proposer, response.clone(), state.target_region);
+        state.add_message(AgentRole::Proposer, response.clone(), state.target_region.clone());
 
         Ok(parse_proposer_proposal(&response))
     }
@@ -469,7 +469,7 @@ impl ConversationRunner {
             PromptTemplates::validator(region_content, &proposal, column_values, row_values);
         let response = self.call_llm(&prompt).await?;
 
-        state.add_message(AgentRole::Validator, response.clone(), state.target_region);
+        state.add_message(AgentRole::Validator, response.clone(), state.target_region.clone());
 
         Ok(parse_validator_response(&response))
     }

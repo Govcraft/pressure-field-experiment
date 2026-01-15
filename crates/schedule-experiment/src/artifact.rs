@@ -8,15 +8,32 @@ use std::fmt;
 use std::sync::{Arc, RwLock};
 
 use anyhow::{bail, Result};
+use mti::prelude::*;
 use serde::{Deserialize, Serialize};
 use survival_kernel::artifact::Artifact;
 use survival_kernel::region::{Patch, PatchOp, RegionId, RegionView};
 use uuid::Uuid;
 
-/// Namespace UUID for generating deterministic region IDs.
+/// Namespace UUID for generating deterministic region IDs (MTI v5).
 const REGION_NAMESPACE: Uuid = Uuid::from_bytes([
     0x7b, 0xa8, 0xc9, 0x20, 0xae, 0xbe, 0x22, 0xe2, 0x91, 0xc5, 0x01, 0xd1, 0x5e, 0xe5, 0x41, 0xda,
 ]);
+
+/// Create a deterministic MTI-based region ID.
+///
+/// Uses MTI v5 pattern: namespace UUID + name -> deterministic, stable ID.
+/// Returns `MagicTypeId` like `region_01h455vb4pex5vsknk084sn02q`.
+fn create_region_mti(schedule_id: &str, day: u8, block: u8) -> RegionId {
+    let name = format!("{}:day:{}:block:{}", schedule_id, day, block);
+    // 1. Generate UUIDv5 from namespace + name (deterministic)
+    let v5_uuid = Uuid::new_v5(&REGION_NAMESPACE, name.as_bytes());
+    // 2. Create TypeIdPrefix (region is a valid prefix - lowercase, no special chars)
+    let prefix = TypeIdPrefix::try_from("region").expect("region is a valid prefix");
+    // 3. Create TypeIdSuffix from the UUID
+    let suffix = TypeIdSuffix::from(v5_uuid);
+    // 4. Combine into MagicTypeId
+    MagicTypeId::new(prefix, suffix)
+}
 
 /// Unique identifier for a meeting.
 pub type MeetingId = u32;
@@ -150,12 +167,11 @@ impl ScheduleGrid {
 
     /// Set meeting at a specific slot.
     pub fn set(&mut self, room: RoomId, day: u8, slot: u8, meeting: Option<MeetingId>) {
-        if let Some(r) = self.grid.get_mut(room as usize) {
-            if let Some(d) = r.get_mut(day as usize) {
-                if let Some(s) = d.get_mut(slot as usize) {
-                    *s = meeting;
-                }
-            }
+        if let Some(r) = self.grid.get_mut(room as usize)
+            && let Some(d) = r.get_mut(day as usize)
+            && let Some(s) = d.get_mut(slot as usize)
+        {
+            *s = meeting;
         }
     }
 
@@ -168,14 +184,14 @@ impl ScheduleGrid {
                 let mut attendees_in_slot: HashMap<AttendeeId, Vec<MeetingId>> = HashMap::new();
 
                 for room in 0..self.rooms.len() as u32 {
-                    if let Some(meeting_id) = self.get(room, day, slot) {
-                        if let Some(meeting) = self.meetings.get(&meeting_id) {
-                            for &attendee in &meeting.attendees {
-                                attendees_in_slot
-                                    .entry(attendee)
-                                    .or_default()
-                                    .push(meeting_id);
-                            }
+                    if let Some(meeting_id) = self.get(room, day, slot)
+                        && let Some(meeting) = self.meetings.get(&meeting_id)
+                    {
+                        for &attendee in &meeting.attendees {
+                            attendees_in_slot
+                                .entry(attendee)
+                                .or_default()
+                                .push(meeting_id);
                         }
                     }
                 }
@@ -256,7 +272,7 @@ impl ScheduleArtifact {
     ) -> Result<Self> {
         let schedule_id = schedule_id.into();
 
-        if slots_per_day % slots_per_block != 0 {
+        if !slots_per_day.is_multiple_of(slots_per_block) {
             bail!(
                 "slots_per_day ({}) must be divisible by slots_per_block ({})",
                 slots_per_day,
@@ -287,10 +303,9 @@ impl ScheduleArtifact {
                 let start_slot = block * slots_per_block;
                 let end_slot = start_slot + slots_per_block;
 
-                let id_string = format!("{}:day:{}:block:{}", schedule_id, day, block);
-                let region_id = Uuid::new_v5(&REGION_NAMESPACE, id_string.as_bytes());
+                let region_id = create_region_mti(&schedule_id, day, block);
 
-                region_map.insert(region_id, (day, start_slot, end_slot));
+                region_map.insert(region_id.clone(), (day, start_slot, end_slot));
                 region_order.push(region_id);
             }
         }
@@ -352,11 +367,11 @@ impl ScheduleArtifact {
 
     /// Sync the shared schedule after a patch.
     fn sync_shared_schedule(&self) {
-        if let Some(ref shared) = self.shared_schedule {
-            if let Ok(mut locked) = shared.write() {
-                locked.grid = self.schedule.grid.clone();
-                locked.meetings = self.schedule.meetings.clone();
-            }
+        if let Some(ref shared) = self.shared_schedule
+            && let Ok(mut locked) = shared.write()
+        {
+            locked.grid = self.schedule.grid.clone();
+            locked.meetings = self.schedule.meetings.clone();
         }
     }
 
@@ -369,7 +384,7 @@ impl ScheduleArtifact {
                 // Not yet scheduled
                 m.scheduled.is_none()
                     // And fits within the block
-                    && (m.duration_slots as u8) <= (end_slot - start_slot)
+                    && m.duration_slots <= (end_slot - start_slot)
             })
             .collect()
     }
@@ -839,7 +854,7 @@ mod tests {
     fn test_read_region() {
         let artifact = sample_artifact();
         let regions = artifact.region_ids();
-        let view = artifact.read_region(regions[0]).unwrap();
+        let view = artifact.read_region(regions[0].clone()).unwrap();
 
         assert_eq!(view.kind, "time_block");
         assert!(view.content.contains("Room A"));

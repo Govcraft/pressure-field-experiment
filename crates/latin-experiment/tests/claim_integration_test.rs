@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use acton_reactive::prelude::*;
+use mti::prelude::*;
 use tokio::sync::RwLock;
 use tokio::time::Duration;
 use uuid::Uuid;
@@ -25,7 +26,10 @@ use survival_kernel::region::{Patch, PatchOp, RegionId};
 
 /// Test helper to create a region ID from a name
 fn test_region_id(name: &str) -> RegionId {
-    Uuid::new_v5(&Uuid::NAMESPACE_DNS, name.as_bytes())
+    let v5_uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, name.as_bytes());
+    let prefix = TypeIdPrefix::try_from("test").expect("test is valid prefix");
+    let suffix = TypeIdSuffix::from(v5_uuid);
+    MagicTypeId::new(prefix, suffix)
 }
 
 /// Test helper to create a mock Patch
@@ -86,13 +90,14 @@ async fn spawn_mock_claimer(
         // Create envelope with proper reply chain using new_envelope
         let request_envelope = context.new_envelope(&msg.claim_manager.reply_address());
 
+        let region_id = msg.region_id.clone();
         Reply::pending(async move {
             let claim_batch = ClaimBatch {
                 correlation_id: msg.correlation_id,
                 claims: msg.claims,
-                region_id: msg.region_id,
+                region_id: region_id.clone(),
                 actor_name: name,
-                patch: mock_patch(msg.region_id, "test"),
+                patch: mock_patch(region_id, "test"),
                 prompt_tokens: 10,
                 completion_tokens: 5,
             };
@@ -228,7 +233,7 @@ async fn test_reset_claims_clears_all() {
         .send(TriggerClaim {
             correlation_id: "test-1".to_string(),
             claims: vec![(0, 5)],
-            region_id,
+            region_id: region_id.clone(),
             claim_manager: claim_manager_handle.clone(),
         })
         .await;
@@ -431,13 +436,14 @@ async fn test_propose_for_region_claim_flow_end_to_end() {
         // If this doesn't work, claims won't reach ClaimManager
         let request_envelope = context.new_envelope(&claim_manager.reply_address());
 
+        let region_id = msg.region_id.clone();
         Reply::pending(async move {
             let claim_batch = ClaimBatch {
                 correlation_id: msg.correlation_id,
                 claims: vec![(0, 1), (1, 2)], // Simulated LLM output
-                region_id: msg.region_id,
+                region_id: region_id.clone(),
                 actor_name: "MockLlmActor".to_string(),
-                patch: mock_patch(msg.region_id, "1 2 _ _"),
+                patch: mock_patch(region_id, "1 2 _ _"),
                 prompt_tokens: 10,
                 completion_tokens: 5,
             };
@@ -463,9 +469,9 @@ async fn test_propose_for_region_claim_flow_end_to_end() {
     mock_llm_handle
         .send(ProposeForRegion {
             correlation_id: "e2e-test".to_string(),
-            region_id,
+            region_id: region_id.clone(),
             region_view: RegionView {
-                id: region_id,
+                id: region_id.clone(),
                 kind: "row".to_string(),
                 content: "_ _ _ _".to_string(),
                 metadata: HashMap::new(),
@@ -544,7 +550,7 @@ async fn test_propose_for_region_concurrent_claims_denied() {
     mock_llm1
         .send(ProposeForRegion {
             correlation_id: "actor1".to_string(),
-            region_id: region_id1,
+            region_id: region_id1.clone(),
             region_view: RegionView {
                 id: region_id1,
                 kind: "row".to_string(),
@@ -565,7 +571,7 @@ async fn test_propose_for_region_concurrent_claims_denied() {
     mock_llm2
         .send(ProposeForRegion {
             correlation_id: "actor2".to_string(),
-            region_id: region_id2,
+            region_id: region_id2.clone(),
             region_view: RegionView {
                 id: region_id2,
                 kind: "row".to_string(),
@@ -627,15 +633,16 @@ async fn spawn_propose_handler(
         let claims = claims.clone();
 
         let request_envelope = context.new_envelope(&cm.reply_address());
+        let region_id = msg.region_id.clone();
 
         Reply::pending(async move {
             request_envelope
                 .send(ClaimBatch {
                     correlation_id: msg.correlation_id,
                     claims,
-                    region_id: msg.region_id,
+                    region_id: region_id.clone(),
                     actor_name: name,
-                    patch: mock_patch(msg.region_id, "test"),
+                    patch: mock_patch(region_id, "test"),
                     prompt_tokens: 10,
                     completion_tokens: 5,
                 })

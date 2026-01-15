@@ -22,6 +22,7 @@ use survival_kernel::artifact::Artifact;
 use survival_kernel::config::{
     ActivationConfig, DecayConfig, KernelConfig, PressureAxisConfig, SelectionConfig,
 };
+use survival_kernel::region::RegionId;
 use survival_kernel::{
     AsyncKernelBuilder, PatchActorsReady, SensorsReady, Tick, TickComplete, TickResult,
     WaitForPatchActors, WaitForSensors,
@@ -314,10 +315,10 @@ impl ExperimentRunner {
                 let mut applied = 0;
                 if let Some(new_content) = patch_opt {
                     // Find the target region (coordinator selected it)
-                    if let Some(region_id) = conv_state.target_region {
-                        let region_view = artifact.read_region(region_id)?;
+                    if let Some(ref region_id) = conv_state.target_region {
+                        let region_view = artifact.read_region(region_id.clone())?;
                         let patch = survival_kernel::region::Patch {
-                            region: region_id,
+                            region: region_id.clone(),
                             op: survival_kernel::region::PatchOp::Replace(new_content.clone()),
                             rationale: "Conversation consensus".to_string(),
                             expected_delta: HashMap::new(),
@@ -332,7 +333,7 @@ impl ExperimentRunner {
                                     let pressure_before =
                                         self.measure_region_pressure(&region_view, &sensor)?;
                                     let temp_view = survival_kernel::region::RegionView {
-                                        id: region_id,
+                                        id: region_id.clone(),
                                         kind: "row".to_string(),
                                         content: new_content.clone(),
                                         metadata: region_view.metadata.clone(),
@@ -380,12 +381,12 @@ impl ExperimentRunner {
                     }
                     Strategy::Sequential => {
                         let regions = artifact.region_ids();
-                        regions[tick % regions.len()]
+                        regions[tick % regions.len()].clone()
                     }
                     Strategy::Random => {
                         use rand::seq::IndexedRandom;
                         let regions = artifact.region_ids();
-                        *regions.choose(&mut rand::rng()).unwrap()
+                        regions.choose(&mut rand::rng()).cloned().unwrap()
                     }
                     Strategy::Hierarchical => {
                         // Simulate hierarchical by picking region with most empty cells
@@ -395,7 +396,7 @@ impl ExperimentRunner {
                 };
 
                 // Get region view
-                let region_view = artifact.read_region(region_id)?;
+                let region_view = artifact.read_region(region_id.clone())?;
                 let pressure_before = self.measure_region_pressure(&region_view, &sensor)?;
 
                 // Get examples for few-shot prompting
@@ -414,7 +415,7 @@ impl ExperimentRunner {
 
                 // Generate multiple patches concurrently using LLM
                 let patch_results = self
-                    .generate_concurrent_patches(&artifact, region_id, &examples, &current_model, current_model_idx)
+                    .generate_concurrent_patches(&artifact, region_id.clone(), &examples, &current_model, current_model_idx)
                     .await?;
 
                 // Tick-level tracking
@@ -439,7 +440,7 @@ impl ExperimentRunner {
 
                     // Validate that the patch reduces pressure
                     let temp_view = survival_kernel::region::RegionView {
-                        id: region_id,
+                        id: region_id.clone(),
                         kind: "row".to_string(),
                         content: new_content.clone(),
                         metadata: region_view.metadata.clone(),
@@ -449,7 +450,7 @@ impl ExperimentRunner {
                     if pressure_after < pressure_before || !self.config.decay_enabled {
                         // Apply patch
                         let patch = survival_kernel::region::Patch {
-                            region: region_id,
+                            region: region_id.clone(),
                             op: survival_kernel::region::PatchOp::Replace(new_content.clone()),
                             rationale: "Filled row".to_string(),
                             expected_delta: HashMap::new(),
@@ -689,16 +690,16 @@ impl ExperimentRunner {
         &self,
         artifact: &LatinSquareArtifact,
         sensor: &LatinSquareSensor,
-    ) -> Result<uuid::Uuid> {
+    ) -> Result<RegionId> {
         let mut max_pressure = f64::NEG_INFINITY;
-        let mut max_region = artifact.region_ids()[0];
+        let mut max_region = artifact.region_ids()[0].clone();
 
         for region_id in artifact.region_ids() {
-            let view = artifact.read_region(region_id)?;
+            let view = artifact.read_region(region_id.clone())?;
             let pressure = self.measure_region_pressure(&view, sensor)?;
             if pressure > max_pressure {
                 max_pressure = pressure;
-                max_region = region_id;
+                max_region = region_id.clone();
             }
         }
 
@@ -709,16 +710,16 @@ impl ExperimentRunner {
     fn select_most_incomplete_region(
         &self,
         artifact: &LatinSquareArtifact,
-    ) -> Result<uuid::Uuid> {
+    ) -> Result<RegionId> {
         let mut max_empty = 0;
-        let mut max_region = artifact.region_ids()[0];
+        let mut max_region = artifact.region_ids()[0].clone();
 
         for region_id in artifact.region_ids() {
-            let view = artifact.read_region(region_id)?;
+            let view = artifact.read_region(region_id.clone())?;
             let empty_count = view.content.matches('_').count();
             if empty_count > max_empty {
                 max_empty = empty_count;
-                max_region = region_id;
+                max_region = region_id.clone();
             }
         }
 
@@ -734,13 +735,13 @@ impl ExperimentRunner {
     async fn generate_concurrent_patches(
         &self,
         artifact: &LatinSquareArtifact,
-        region_id: uuid::Uuid,
+        region_id: RegionId,
         examples: &[Example],
         current_model: &str,
         model_idx: usize,
     ) -> Result<Vec<(String, u32, u32)>> {
         let n = artifact.size();
-        let row_idx = artifact.row_index(region_id).unwrap_or(0);
+        let row_idx = artifact.row_index(region_id.clone()).unwrap_or(0);
         let availability = artifact.column_availability(row_idx);
         let view = artifact.read_region(region_id)?;
 
@@ -1030,38 +1031,38 @@ What number goes in position {target_pos}? Return just the number."#,
             tick_results.push(result);
 
             // Check for escalation
-            if ticks_without_progress >= self.config.escalation_threshold {
-                if current_model_idx + 1 < self.config.model_chain.len() {
-                    let old_model = current_model.clone();
-                    current_model_idx += 1;
-                    current_model = self.config.model_chain[current_model_idx].clone();
-                    let new_host = self.config.get_vllm_host(current_model_idx).to_string();
+            if ticks_without_progress >= self.config.escalation_threshold
+                && current_model_idx + 1 < self.config.model_chain.len()
+            {
+                let old_model = current_model.clone();
+                current_model_idx += 1;
+                current_model = self.config.model_chain[current_model_idx].clone();
+                let new_host = self.config.get_vllm_host(current_model_idx).to_string();
 
-                    info!(
-                        tick = current_tick,
-                        from_model = %old_model,
-                        to_model = %current_model,
-                        new_host = %new_host,
-                        "Escalating model due to stall"
-                    );
+                info!(
+                    tick = current_tick,
+                    from_model = %old_model,
+                    to_model = %current_model,
+                    new_host = %new_host,
+                    "Escalating model due to stall"
+                );
 
-                    // Broadcast UpdateModel to all LLM actors
-                    runtime
-                        .broker()
-                        .broadcast(UpdateModel {
-                            model: current_model.clone(),
-                            host: new_host.clone(),
-                        })
-                        .await;
+                // Broadcast UpdateModel to all LLM actors
+                runtime
+                    .broker()
+                    .broadcast(UpdateModel {
+                        model: current_model.clone(),
+                        host: new_host.clone(),
+                    })
+                    .await;
 
-                    escalation_events.push(EscalationEvent {
-                        tick: current_tick,
-                        from_model: old_model,
-                        to_model: current_model.clone(),
-                    });
+                escalation_events.push(EscalationEvent {
+                    tick: current_tick,
+                    from_model: old_model,
+                    to_model: current_model.clone(),
+                });
 
-                    ticks_without_progress = 0;
-                }
+                ticks_without_progress = 0;
             }
 
             // Check termination conditions
@@ -1116,7 +1117,7 @@ What number goes in position {target_pos}? Return just the number."#,
                 let model_at_tick = escalation_events
                     .iter()
                     .filter(|e| e.tick <= tick)
-                    .last()
+                    .next_back()
                     .map(|e| e.to_model.clone())
                     .unwrap_or_else(|| {
                         if self.config.model_chain.is_empty() {
@@ -1391,7 +1392,7 @@ mod tests {
     #[test]
     fn test_model_chain_index_bounds() {
         // Simulate the escalation index clamping logic from run()
-        let model_chain = vec![
+        let model_chain = [
             "Qwen/Qwen2.5-0.5B".to_string(),
             "Qwen/Qwen2.5-1.5B".to_string(),
             "Qwen/Qwen2.5-3B".to_string(),
@@ -1611,7 +1612,7 @@ mod tests {
 
         // Model chain should be ordered from smallest to largest
         // (escalation moves to larger models)
-        let sizes_order = vec!["0.5B", "1.5B", "3B", "7B", "14B"];
+        let sizes_order = ["0.5B", "1.5B", "3B", "7B", "14B"];
 
         for (i, expected_size) in sizes_order.iter().enumerate() {
             assert!(

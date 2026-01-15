@@ -150,8 +150,17 @@ pub fn update_shared_grid(grid: &SharedGrid, new_state: &[Vec<Option<u8>>]) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mti::prelude::*;
     use survival_kernel::artifact::Artifact;
+    use survival_kernel::region::RegionId;
     use uuid::Uuid;
+
+    fn test_region_id() -> RegionId {
+        let v5_uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"test-region");
+        let prefix = TypeIdPrefix::try_from("test").expect("test is valid prefix");
+        let suffix = TypeIdSuffix::from(v5_uuid);
+        MagicTypeId::new(prefix, suffix)
+    }
 
     fn create_test_grid() -> SharedGrid {
         Arc::new(RwLock::new(vec![
@@ -168,7 +177,7 @@ mod tests {
         let sensor = LatinSquareSensor::new(4, grid);
 
         let view = RegionView {
-            id: Uuid::nil(),
+            id: test_region_id(),
             kind: "row".to_string(),
             content: "1 _ 3 _".to_string(),
             metadata: {
@@ -188,7 +197,7 @@ mod tests {
         let sensor = LatinSquareSensor::new(4, grid);
 
         let view = RegionView {
-            id: Uuid::nil(),
+            id: test_region_id(),
             kind: "row".to_string(),
             content: "1 1 3 3".to_string(),
             metadata: {
@@ -210,7 +219,7 @@ mod tests {
         // Row 0 has value 1 in column 0
         // Row 2 also has value 3 in column 2, matching row 0
         let view = RegionView {
-            id: Uuid::nil(),
+            id: test_region_id(),
             kind: "row".to_string(),
             content: "1 _ 3 _".to_string(),
             metadata: {
@@ -239,7 +248,7 @@ mod tests {
         let sensor = LatinSquareSensor::new(4, grid);
 
         let view = RegionView {
-            id: Uuid::nil(),
+            id: test_region_id(),
             kind: "row".to_string(),
             content: "1 2 3 4".to_string(),
             metadata: {
@@ -274,7 +283,7 @@ mod tests {
 
         // If row 1 also puts 2 in column 1, we have a column conflict
         let view_row1_with_conflict = RegionView {
-            id: Uuid::nil(),
+            id: test_region_id(),
             kind: "row".to_string(),
             content: "3 2 _ _".to_string(), // 2 in column 1 conflicts with row 0
             metadata: {
@@ -320,7 +329,7 @@ mod tests {
 
         // Row 1 proposes 2,1,4,3 - this should be valid (no conflicts)
         let view_row1 = RegionView {
-            id: Uuid::nil(),
+            id: test_region_id(),
             kind: "row".to_string(),
             content: "2 1 4 3".to_string(),
             metadata: {
@@ -340,7 +349,7 @@ mod tests {
         // If row 1 now proposes 1,2,4,3, sensor incorrectly sees no conflict
         // because it checks against stale 1,2,3,4 instead of actual 2,1,3,4
         let view_row1_bug = RegionView {
-            id: Uuid::nil(),
+            id: test_region_id(),
             kind: "row".to_string(),
             content: "1 2 4 3".to_string(), // Should conflict with actual row 0: 2,1,3,4
             metadata: {
@@ -402,7 +411,7 @@ mod tests {
 
         // Row 1 proposes "3 2 1 4" - check conflicts against INITIAL state
         let view_row1 = RegionView {
-            id: regions[1],
+            id: regions[1].clone(),
             kind: "row".to_string(),
             content: "3 2 1 4".to_string(),
             metadata: {
@@ -421,7 +430,7 @@ mod tests {
 
         // Now apply a patch to row 0 via the artifact
         let patch = Patch {
-            region: regions[0],
+            region: regions[0].clone(),
             op: PatchOp::Replace("1 4 3 2".to_string()), // Changed col 1 from _ to 4, col 3 from _ to 2
             rationale: "Fill row 0".to_string(),
             expected_delta: HashMap::new(),
@@ -463,7 +472,7 @@ mod tests {
 
         // Tick 1: Patch row 0 to "1 2 3 4"
         let patch0 = Patch {
-            region: regions[0],
+            region: regions[0].clone(),
             op: PatchOp::Replace("1 2 3 4".to_string()),
             rationale: "".to_string(),
             expected_delta: HashMap::new(),
@@ -473,7 +482,7 @@ mod tests {
 
         // Verify row 1 sees row 0's values when checking conflicts
         let view_row1_attempt1 = RegionView {
-            id: regions[1],
+            id: regions[1].clone(),
             kind: "row".to_string(),
             content: "1 2 3 4".to_string(), // Same as row 0 - should have 4 conflicts!
             metadata: {
@@ -487,7 +496,7 @@ mod tests {
 
         // Tick 2: Patch row 1 to "2 1 4 3" (valid, no conflicts)
         let patch1 = Patch {
-            region: regions[1],
+            region: regions[1].clone(),
             op: PatchOp::Replace("2 1 4 3".to_string()),
             rationale: "".to_string(),
             expected_delta: HashMap::new(),
@@ -497,7 +506,7 @@ mod tests {
 
         // Verify row 2 sees both row 0 and row 1
         let view_row2_attempt = RegionView {
-            id: regions[2],
+            id: regions[2].clone(),
             kind: "row".to_string(),
             content: "1 2 3 4".to_string(), // Duplicates row 0 entirely
             metadata: {
@@ -511,7 +520,7 @@ mod tests {
 
         // A valid row 2 proposal
         let view_row2_valid = RegionView {
-            id: regions[2],
+            id: regions[2].clone(),
             kind: "row".to_string(),
             content: "3 4 1 2".to_string(),
             metadata: {
@@ -549,7 +558,7 @@ mod tests {
 
         // Apply patch to row 0
         let patch0 = Patch {
-            region: regions[0],
+            region: regions[0].clone(),
             op: PatchOp::Replace("1 2 3 4".to_string()),
             rationale: "".to_string(),
             expected_delta: HashMap::new(),
@@ -562,7 +571,7 @@ mod tests {
 
         // Now propose row 1 = "1 2 3 4" (same as row 0 - should be rejected)
         let view_row1 = RegionView {
-            id: regions[1],
+            id: regions[1].clone(),
             kind: "row".to_string(),
             content: "1 2 3 4".to_string(),
             metadata: {
@@ -612,15 +621,15 @@ mod tests {
 
         // Simulate 3 ticks, each applying one patch
         let patches = vec![
-            (regions[0], "1 2 3 4"),
-            (regions[1], "3 2 4 1"),
-            (regions[2], "4 1 3 2"),
+            (regions[0].clone(), "1 2 3 4"),
+            (regions[1].clone(), "3 2 4 1"),
+            (regions[2].clone(), "4 1 3 2"),
         ];
 
         for (tick, (region, content)) in patches.iter().enumerate() {
             // Simulate TickResult.applied containing one patch
             let patch = Patch {
-                region: *region,
+                region: region.clone(),
                 op: PatchOp::Replace(content.to_string()),
                 rationale: format!("Tick {}", tick),
                 expected_delta: HashMap::new(),
@@ -634,7 +643,7 @@ mod tests {
 
             // Verify sensor sees current state by checking row 3
             let view_row3 = RegionView {
-                id: regions[3],
+                id: regions[3].clone(),
                 kind: "row".to_string(),
                 content: "2 4 1 4".to_string(), // Some test content
                 metadata: {
@@ -654,7 +663,7 @@ mod tests {
 
         // Final check: row 3 proposing "2 4 1 3" should have 0 conflicts
         let view_row3_valid = RegionView {
-            id: regions[3],
+            id: regions[3].clone(),
             kind: "row".to_string(),
             content: "2 4 1 3".to_string(),
             metadata: {

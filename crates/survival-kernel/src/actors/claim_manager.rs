@@ -142,6 +142,7 @@ impl ClaimManager {
         // Handle ClaimBatch - atomically claim all (col, value) pairs or deny all
         actor.mutate_on::<ClaimBatch>(|actor, context| {
             let msg = context.message().clone();
+            let region_id = msg.region_id.clone(); // Clone for multiple uses
 
             // Use reply_envelope for proper acton-reactive request-response pattern
             let reply_envelope = context.reply_envelope();
@@ -160,7 +161,7 @@ impl ClaimManager {
                         tracing::debug!(
                             col = col,
                             value = value,
-                            requester = %msg.region_id,
+                            requester = %region_id,
                             holder = %holder,
                             "ClaimManager: Claim DENIED (already held)"
                         );
@@ -169,12 +170,12 @@ impl ClaimManager {
                     }
                     dashmap::mapref::entry::Entry::Vacant(vacant) => {
                         // Tentatively grant - will rollback if any fails
-                        vacant.insert(msg.region_id);
+                        vacant.insert(region_id.clone());
                         granted_claims.push(key);
                         tracing::trace!(
                             col = col,
                             value = value,
-                            requester = %msg.region_id,
+                            requester = %region_id,
                             "ClaimManager: Claim tentatively granted"
                         );
                     }
@@ -189,7 +190,7 @@ impl ClaimManager {
                 actor.model.batches_denied += 1;
                 // Log at info level - this shows stigmergic coordination working!
                 tracing::info!(
-                    region_id = %msg.region_id,
+                    region_id = %region_id,
                     actor = %msg.actor_name,
                     claims = ?msg.claims,
                     "CLAIM DENIED - stigmergy prevented duplicate proposal"
@@ -227,13 +228,16 @@ mod tests {
     use super::*;
     use crate::region::{Patch, PatchOp};
     use acton_reactive::prelude::ActonApp;
+    use mti::prelude::*;
     use std::collections::HashMap;
     use uuid::Uuid;
 
     fn test_region_id(name: &str) -> RegionId {
-        // Use a deterministic UUID for testing
-        // RegionId is a type alias for Uuid
-        Uuid::new_v5(&Uuid::NAMESPACE_DNS, name.as_bytes())
+        // Use a deterministic MagicTypeId for testing
+        let v5_uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, name.as_bytes());
+        let prefix = TypeIdPrefix::try_from("test").expect("test is valid prefix");
+        let suffix = TypeIdSuffix::from(v5_uuid);
+        MagicTypeId::new(prefix, suffix)
     }
 
     fn test_patch(region_id: RegionId) -> Patch {
@@ -261,9 +265,9 @@ mod tests {
             .send(ClaimBatch {
                 correlation_id: correlation_id.clone(),
                 claims: vec![(0, 5), (1, 3)],
-                region_id: region_a,
+                region_id: region_a.clone(),
                 actor_name: "test-actor".to_string(),
-                patch: test_patch(region_a),
+                patch: test_patch(region_a.clone()),
                 prompt_tokens: 10,
                 completion_tokens: 5,
             })

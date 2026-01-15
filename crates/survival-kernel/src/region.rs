@@ -5,12 +5,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use mti::prelude::MagicTypeId;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// Unique identifier for a region within an artifact.
-pub type RegionId = Uuid;
+///
+/// Uses MTI (Magic Type ID) for human-readable, type-safe identifiers like
+/// `region_01h455vb4pex5vsknk084sn02q`. The type prefix provides debuggability
+/// while the suffix ensures uniqueness (v5 for deterministic, v7 for time-ordered).
+pub type RegionId = MagicTypeId;
 
 /// A view into a region for measurement and action proposal.
 ///

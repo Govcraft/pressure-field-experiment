@@ -256,10 +256,10 @@ mod tests {
         let grid = artifact.grid();
 
         for (row_idx, row) in grid.iter().enumerate() {
-            let mut seen = vec![false; 5];
+            let mut seen = [false; 5];
             for cell in row {
                 let val = cell.expect("No empty cells") as usize;
-                assert!(val >= 1 && val <= 5, "Row {} has out of range value {}", row_idx, val);
+                assert!((1..=5).contains(&val), "Row {} has out of range value {}", row_idx, val);
                 assert!(!seen[val - 1], "Row {} has duplicate value {}", row_idx, val);
                 seen[val - 1] = true;
             }
@@ -280,10 +280,10 @@ mod tests {
         let grid = artifact.grid();
 
         for col_idx in 0..5 {
-            let mut seen = vec![false; 5];
+            let mut seen = [false; 5];
             for row in grid.iter() {
                 let val = row[col_idx].expect("No empty cells") as usize;
-                assert!(val >= 1 && val <= 5, "Column {} has out of range value {}", col_idx, val);
+                assert!((1..=5).contains(&val), "Column {} has out of range value {}", col_idx, val);
                 assert!(!seen[val - 1], "Column {} has duplicate value {}", col_idx, val);
                 seen[val - 1] = true;
             }
