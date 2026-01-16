@@ -529,7 +529,7 @@ impl ExperimentRunner {
                 break;
             }
             if max_ticks > 0 && current_tick >= max_ticks {
-                info!(tick = current_tick, "Max ticks reached");
+                info!(tick = current_tick, "Schedule unsolved! Max ticks reached");
                 break;
             }
             // Stop if fully escalated (max band + max model) and still stuck
@@ -541,7 +541,7 @@ impl ExperimentRunner {
                     tick = current_tick,
                     model = %current_model,
                     band_level = current_band_level,
-                    "Converged at largest model and highest band with no progress"
+                    "Schedule unsolved! Converged at largest model and highest band"
                 );
                 break;
             }
@@ -826,7 +826,7 @@ impl ExperimentRunner {
             if current_model_idx == self.config.model_chain.len().saturating_sub(1)
                 && zero_velocity_ticks >= self.config.escalation_threshold
             {
-                info!(tick = tick, "Converged at largest model with no progress");
+                info!(tick = tick, "Schedule unsolved! Converged at largest model");
                 break;
             }
         }

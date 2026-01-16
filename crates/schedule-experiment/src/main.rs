@@ -29,6 +29,10 @@ struct Cli {
     /// Enable verbose output
     #[arg(long, short)]
     verbose: bool,
+
+    /// Model escalation chain (comma-separated, e.g., "qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b")
+    #[arg(long, default_value = "qwen2.5:1.5b,qwen2.5:7b,qwen2.5:14b")]
+    model_chain: String,
 }
 
 #[derive(Subcommand)]
@@ -169,8 +173,15 @@ async fn main() -> Result<()> {
 
             let generator_config = parse_difficulty(&difficulty);
 
+            let model_chain: Vec<String> = cli.model_chain
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+
             let config = ExperimentRunnerConfig {
                 vllm_host: cli.host.clone(),
+                model: model_chain.first().cloned().unwrap_or_else(|| "qwen2.5:1.5b".to_string()),
+                model_chain,
                 generator_config,
                 max_ticks,
                 ..Default::default()
@@ -240,10 +251,16 @@ async fn main() -> Result<()> {
                 .map(|s| s.trim())
                 .collect();
 
+            let model_chain: Vec<String> = cli.model_chain
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+
             info!(
                 strategies = ?strategies.iter().map(|s| s.name()).collect::<Vec<_>>(),
                 agent_counts = ?agent_counts,
                 difficulties = ?difficulty_names,
+                model_chain = ?model_chain,
                 trials,
                 "Starting grid experiment"
             );
@@ -255,6 +272,8 @@ async fn main() -> Result<()> {
 
                 let config = ExperimentRunnerConfig {
                     vllm_host: cli.host.clone(),
+                    model: model_chain.first().cloned().unwrap_or_else(|| "qwen2.5:1.5b".to_string()),
+                    model_chain: model_chain.clone(),
                     generator_config,
                     max_ticks,
                     ..Default::default()
@@ -328,6 +347,11 @@ async fn main() -> Result<()> {
         } => {
             let generator_config = parse_difficulty(&difficulty);
 
+            let model_chain: Vec<String> = cli.model_chain
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+
             // Ablation configurations: (decay, inhibition, examples)
             let ablation_configs = vec![
                 (true, true, true, "full"),
@@ -344,6 +368,7 @@ async fn main() -> Result<()> {
                 configs = ablation_configs.len(),
                 trials,
                 agents,
+                model_chain = ?model_chain,
                 "Starting ablation study"
             );
 
@@ -360,6 +385,8 @@ async fn main() -> Result<()> {
 
                 let config = ExperimentRunnerConfig {
                     vllm_host: cli.host.clone(),
+                    model: model_chain.first().cloned().unwrap_or_else(|| "qwen2.5:1.5b".to_string()),
+                    model_chain: model_chain.clone(),
                     generator_config: generator_config.clone(),
                     max_ticks,
                     decay_enabled: *decay,
