@@ -16,6 +16,7 @@
 //! 3. **Parallel benefit**: Agents can optimize different time blocks simultaneously
 
 pub mod artifact;
+pub mod conversation;
 pub mod example_bank;
 pub mod experiment;
 pub mod generator;

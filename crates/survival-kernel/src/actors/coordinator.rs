@@ -1045,29 +1045,30 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         // RE-EVALUATE against current artifact state BEFORE storing result.
         // This prevents concurrent patch conflicts where multiple patches pass
         // initial evaluation but conflict when applied sequentially.
-        if result.success && result.new_content.is_some() {
-            if let Some(artifact) = actor.model.artifact.as_ref() {
-                let patch = Patch {
-                    region: result.region_id.clone(),
-                    op: crate::region::PatchOp::Replace(
-                        result.new_content.clone().unwrap_or_default(),
-                    ),
-                    rationale: String::new(),
-                    expected_delta: HashMap::new(),
-                };
+        if result.success
+            && result.new_content.is_some()
+            && let Some(artifact) = actor.model.artifact.as_ref()
+        {
+            let patch = Patch {
+                region: result.region_id.clone(),
+                op: crate::region::PatchOp::Replace(
+                    result.new_content.clone().unwrap_or_default(),
+                ),
+                rationale: String::new(),
+                expected_delta: HashMap::new(),
+            };
 
-                let (still_valid, actual_delta) = artifact.evaluate_patch(&patch);
+            let (still_valid, actual_delta) = artifact.evaluate_patch(&patch);
 
-                if !still_valid {
-                    debug!(
-                        region = %result.region_id,
-                        original_delta = result.pressure_delta,
-                        actual_delta = actual_delta,
-                        "Patch rejected on re-evaluation - conflict with prior patch"
-                    );
-                    result.success = false;
-                    result.pressure_delta = actual_delta;
-                }
+            if !still_valid {
+                debug!(
+                    region = %result.region_id,
+                    original_delta = result.pressure_delta,
+                    actual_delta = actual_delta,
+                    "Patch rejected on re-evaluation - conflict with prior patch"
+                );
+                result.success = false;
+                result.pressure_delta = actual_delta;
             }
         }
 
@@ -1154,7 +1155,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .artifact
             .as_ref()
             .and_then(|a| a.total_pressure())
-            .unwrap_or_else(|| pending.last_total_pressure - total_delta);
+            .unwrap_or(pending.last_total_pressure - total_delta);
 
         // Get previous tick's final pressure for display (before updating history)
         // This matches the comparison used for velocity calculation

@@ -28,10 +28,11 @@ use survival_kernel::{
 };
 
 use crate::artifact::{ScheduleArtifact, SharedSchedule};
+use crate::conversation::ConversationRunner;
 use crate::example_bank::{ExampleBank, ExampleBankConfig};
 use crate::generator::{ScheduleGenerator, ScheduleGeneratorConfig};
 use crate::llm_actor::{LlmActor, LlmActorConfig, SamplingBand, SamplingConfig, UpdateBand, UpdateModel};
-use crate::results::{BandEscalationEvent, EscalationEvent, ExperimentConfig, ExperimentResult, PatchRejection, TickMetrics};
+use crate::results::{BandEscalationEvent, ConversationStats, EscalationEvent, ExperimentConfig, ExperimentResult, PatchRejection, TickMetrics};
 use crate::sensors::CombinedScheduleSensor;
 use crate::vllm_client::VllmClient;
 
@@ -118,6 +119,8 @@ impl ExperimentRunnerConfig {
 pub enum Strategy {
     /// Pressure-field coordination (the novel approach)
     PressureField,
+    /// Conversation-based coordination (AutoGen-style baseline)
+    Conversation,
     /// Sequential round-robin
     Sequential,
     /// Random selection
@@ -131,6 +134,7 @@ impl Strategy {
     pub fn all() -> Vec<Self> {
         vec![
             Self::PressureField,
+            Self::Conversation,
             Self::Sequential,
             Self::Random,
             Self::Hierarchical,
@@ -141,6 +145,7 @@ impl Strategy {
     pub fn name(&self) -> &'static str {
         match self {
             Self::PressureField => "pressure_field",
+            Self::Conversation => "conversation",
             Self::Sequential => "sequential",
             Self::Random => "random",
             Self::Hierarchical => "hierarchical",
@@ -232,6 +237,23 @@ impl ExperimentRunner {
                     ctx,
                 )
                 .await;
+        }
+
+        // For Conversation strategy, use multi-agent dialogue
+        if strategy == Strategy::Conversation {
+            let baseline_ctx = BaselineRunContext {
+                artifact,
+                example_bank,
+                sensor,
+                shared_schedule,
+            };
+            let ctx = RunContext {
+                agent_count,
+                trial,
+                seed,
+                started_at,
+            };
+            return self.run_conversation_strategy(ctx, baseline_ctx).await;
         }
 
         // For baseline strategies, run simple tick loop
@@ -687,6 +709,7 @@ impl ExperimentRunner {
             // Select region based on strategy
             let region_id = match strategy {
                 Strategy::PressureField => unreachable!("PressureField handled separately"),
+                Strategy::Conversation => unreachable!("Conversation handled separately"),
                 Strategy::Sequential => {
                     let regions = ctx.artifact.region_ids();
                     regions[tick % regions.len()].clone()
@@ -870,6 +893,234 @@ impl ExperimentRunner {
             total_completion_tokens,
             total_patch_rejections,
             conversation_stats: None,
+        })
+    }
+
+    /// Run the Conversation strategy (AutoGen-style multi-agent dialogue).
+    ///
+    /// This is the key comparison baseline for pressure-field coordination:
+    /// - Uses explicit message-passing between roles (Coordinator, Proposer, Validator)
+    /// - Sequential by design - cannot parallelize
+    /// - 3-5 LLM calls per tick (vs N for pressure_field, 1 for other baselines)
+    /// - Validates proposals before applying (like pressure_field)
+    async fn run_conversation_strategy(
+        &self,
+        ctx: RunContext,
+        mut baseline_ctx: BaselineRunContext,
+    ) -> Result<ExperimentResult> {
+        let num_meetings = baseline_ctx.artifact.meetings().len();
+        let initial_unscheduled = baseline_ctx.artifact.schedule().count_unscheduled();
+
+        // Create conversation runner
+        let initial_model = if self.config.model_chain.is_empty() {
+            self.config.model.clone()
+        } else {
+            self.config.model_chain[0].clone()
+        };
+        let mut runner = ConversationRunner::new(
+            self.config.get_vllm_host(0),
+            &initial_model,
+            5, // max_turns per tick
+        )?;
+
+        // Tracking
+        let mut pressure_history = Vec::new();
+        let mut patches_per_tick = Vec::new();
+        let mut tick_metrics = Vec::new();
+        let mut escalation_events: Vec<EscalationEvent> = Vec::new();
+        let mut total_messages: usize = 0;
+        let mut consensus_ticks: usize = 0;
+        let mut total_turns_to_consensus: usize = 0;
+
+        // Initial measurement
+        let initial_pressure = self.measure_total_pressure(&baseline_ctx.artifact, &baseline_ctx.sensor)?;
+        pressure_history.push(initial_pressure);
+
+        // Model escalation state
+        let mut current_model_idx: usize = 0;
+        let mut current_model = initial_model;
+        let mut zero_velocity_ticks: usize = 0;
+
+        // Run tick loop
+        let mut tick_count = 0usize;
+        for tick in 0..self.config.max_ticks {
+            tick_count = tick + 1;
+            let tick_start = Instant::now();
+
+            // Run conversation for this tick
+            let (final_patch, state) = runner
+                .run_tick(&baseline_ctx.artifact, &baseline_ctx.shared_schedule)
+                .await?;
+
+            let messages_this_tick = state.total_messages();
+            total_messages += messages_this_tick;
+
+            if state.final_patch.is_some() {
+                consensus_ticks += 1;
+                total_turns_to_consensus += state.current_turn;
+            }
+
+            // Apply validated patch
+            let mut patches_applied = 0;
+            if let Some(patch_content) = final_patch {
+                // Get target region
+                if let Some(region_id) = state.target_region {
+                    let patch = survival_kernel::region::Patch {
+                        region: region_id.clone(),
+                        op: survival_kernel::region::PatchOp::Replace(patch_content.clone()),
+                        rationale: "conversation consensus patch".to_string(),
+                        expected_delta: HashMap::new(),
+                    };
+
+                    // Evaluate patch before applying (like pressure_field)
+                    let (should_accept, _delta) = baseline_ctx.artifact.evaluate_patch(&patch);
+
+                    if should_accept && baseline_ctx.artifact.apply_patch(patch).is_ok() {
+                        // Update shared schedule
+                        if let Ok(mut schedule) = baseline_ctx.shared_schedule.write() {
+                            *schedule = baseline_ctx.artifact.schedule().clone();
+                        }
+                        patches_applied = 1;
+                    }
+                }
+            }
+
+            // Track tick results
+            let current_pressure = self.measure_total_pressure(&baseline_ctx.artifact, &baseline_ctx.sensor)?;
+            pressure_history.push(current_pressure);
+            patches_per_tick.push(patches_applied);
+
+            // Track velocity for escalation
+            if patches_applied == 0 {
+                zero_velocity_ticks += 1;
+            } else {
+                zero_velocity_ticks = 0;
+            }
+
+            // Check for model escalation
+            if zero_velocity_ticks >= self.config.escalation_threshold
+                && current_model_idx + 1 < self.config.model_chain.len()
+            {
+                let old_model = current_model.clone();
+                current_model_idx += 1;
+                current_model = self.config.model_chain[current_model_idx].clone();
+                let new_host = self.config.get_vllm_host(current_model_idx);
+
+                info!(
+                    tick = tick,
+                    from_model = %old_model,
+                    to_model = %current_model,
+                    "Escalating model due to stall"
+                );
+
+                // Update runner with new model
+                runner.set_model(&current_model);
+                runner.set_host(new_host);
+
+                escalation_events.push(EscalationEvent {
+                    tick,
+                    from_model: old_model,
+                    to_model: current_model.clone(),
+                });
+
+                zero_velocity_ticks = 0;
+            }
+
+            let tick_duration = tick_start.elapsed();
+
+            tick_metrics.push(TickMetrics {
+                tick,
+                pressure_before: pressure_history.get(tick).copied().unwrap_or(0.0),
+                pressure_after: current_pressure,
+                patches_proposed: 1, // Conversation proposes one patch per tick
+                patches_applied,
+                empty_cells: 0,
+                violations: 0,
+                llm_calls: messages_this_tick, // Each message = 1 LLM call
+                duration_ms: tick_duration.as_millis() as u64,
+                model_used: current_model.clone(),
+                prompt_tokens: 0, // Could track via runner if needed
+                completion_tokens: 0,
+                patch_rejections: HashMap::new(),
+                messages_per_tick: Some(messages_this_tick),
+            });
+
+            // Check completion
+            if baseline_ctx.artifact.is_solved() {
+                info!(trial = ctx.trial, tick = tick, "Schedule solved!");
+                break;
+            }
+
+            // Check fully escalated and stuck
+            if current_model_idx == self.config.model_chain.len().saturating_sub(1)
+                && zero_velocity_ticks >= self.config.escalation_threshold
+            {
+                info!(trial = ctx.trial, tick = tick, "Schedule unsolved! Converged at largest model");
+                break;
+            }
+        }
+
+        let ended_at = Utc::now();
+        let final_pressure = pressure_history.last().copied().unwrap_or(0.0);
+        let solved = baseline_ctx.artifact.is_solved();
+
+        let example_bank_stats = {
+            let bank = baseline_ctx.example_bank.read().await;
+            Some(bank.stats())
+        };
+
+        // Build conversation statistics
+        let avg_messages_per_tick = if tick_count > 0 {
+            total_messages as f64 / tick_count as f64
+        } else {
+            0.0
+        };
+        let consensus_rate = if tick_count > 0 {
+            consensus_ticks as f64 / tick_count as f64
+        } else {
+            0.0
+        };
+        let avg_turns_to_consensus = if consensus_ticks > 0 {
+            total_turns_to_consensus as f64 / consensus_ticks as f64
+        } else {
+            0.0
+        };
+
+        Ok(ExperimentResult {
+            config: ExperimentConfig {
+                strategy: "conversation".to_string(),
+                agent_count: ctx.agent_count,
+                n: num_meetings,
+                empty_cells: initial_unscheduled,
+                decay_enabled: self.config.decay_enabled,
+                inhibition_enabled: self.config.inhibition_enabled,
+                examples_enabled: self.config.examples_enabled,
+                trial: ctx.trial,
+                seed: ctx.seed,
+            },
+            started_at: ctx.started_at,
+            ended_at,
+            total_ticks: tick_metrics.len(),
+            solved,
+            final_pressure,
+            pressure_history,
+            patches_per_tick,
+            empty_cells_history: Vec::new(),
+            example_bank_stats,
+            tick_metrics,
+            escalation_events,
+            band_escalation_events: Vec::new(), // Conversation doesn't use band escalation
+            final_model: current_model,
+            total_prompt_tokens: 0, // Could track if needed
+            total_completion_tokens: 0,
+            total_patch_rejections: HashMap::new(),
+            conversation_stats: Some(ConversationStats {
+                total_messages,
+                avg_messages_per_tick,
+                total_llm_calls: total_messages,
+                consensus_rate,
+                avg_turns_to_consensus,
+            }),
         })
     }
 
@@ -1190,6 +1441,7 @@ mod tests {
     #[test]
     fn test_strategy_names() {
         assert_eq!(Strategy::PressureField.name(), "pressure_field");
+        assert_eq!(Strategy::Conversation.name(), "conversation");
         assert_eq!(Strategy::Sequential.name(), "sequential");
         assert_eq!(Strategy::Random.name(), "random");
         assert_eq!(Strategy::Hierarchical.name(), "hierarchical");
@@ -1198,7 +1450,7 @@ mod tests {
     #[test]
     fn test_strategy_all() {
         let all = Strategy::all();
-        assert_eq!(all.len(), 4);
+        assert_eq!(all.len(), 5);
     }
 
     #[test]

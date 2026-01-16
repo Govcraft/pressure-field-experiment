@@ -75,7 +75,7 @@ enum Commands {
         #[arg(short, long, default_value = "30")]
         trials: usize,
         /// Strategies (comma-separated)
-        #[arg(short, long, default_value = "pressure_field,sequential,random,hierarchical")]
+        #[arg(short, long, default_value = "pressure_field,conversation,sequential,random,hierarchical")]
         strategies: String,
         /// Agent counts (comma-separated)
         #[arg(short, long, default_value = "1,2,4")]
@@ -114,6 +114,7 @@ enum Commands {
 fn parse_strategy(s: &str) -> Option<Strategy> {
     match s.to_lowercase().as_str() {
         "pressure_field" | "pressurefield" => Some(Strategy::PressureField),
+        "conversation" => Some(Strategy::Conversation),
         "sequential" => Some(Strategy::Sequential),
         "random" => Some(Strategy::Random),
         "hierarchical" => Some(Strategy::Hierarchical),
@@ -218,6 +219,14 @@ async fn main() -> Result<()> {
                 for event in &result.escalation_events {
                     println!("  Tick {}: {} -> {}", event.tick, event.from_model, event.to_model);
                 }
+            }
+
+            if let Some(ref stats) = result.conversation_stats {
+                println!("\nConversation statistics:");
+                println!("  Total messages: {}", stats.total_messages);
+                println!("  Avg messages/tick: {:.2}", stats.avg_messages_per_tick);
+                println!("  Consensus rate: {:.1}%", stats.consensus_rate * 100.0);
+                println!("  Avg turns to consensus: {:.2}", stats.avg_turns_to_consensus);
             }
 
             if let Some(output) = output {
