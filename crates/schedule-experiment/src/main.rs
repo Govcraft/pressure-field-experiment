@@ -288,7 +288,7 @@ async fn main() -> Result<()> {
                                 difficulty = %difficulty,
                                 strategy = strategy.name(),
                                 agents = agent_count,
-                                trial,
+                                trial = format!("{}/{}", trial + 1, trials),
                                 "Running experiment"
                             );
 

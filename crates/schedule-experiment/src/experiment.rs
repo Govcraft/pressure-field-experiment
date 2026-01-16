@@ -525,11 +525,11 @@ impl ExperimentRunner {
             // Check termination conditions
             if is_complete {
                 solved = true;
-                info!(tick = current_tick, "Schedule solved!");
+                info!(trial = ctx.trial, tick = current_tick, "Schedule solved!");
                 break;
             }
             if max_ticks > 0 && current_tick >= max_ticks {
-                info!(tick = current_tick, "Schedule unsolved! Max ticks reached");
+                info!(trial = ctx.trial, tick = current_tick, "Schedule unsolved! Max ticks reached");
                 break;
             }
             // Stop if fully escalated (max band + max model) and still stuck
@@ -538,6 +538,7 @@ impl ExperimentRunner {
                 && ticks_without_progress >= self.config.band_escalation_interval
             {
                 info!(
+                    trial = ctx.trial,
                     tick = current_tick,
                     model = %current_model,
                     band_level = current_band_level,
@@ -818,7 +819,7 @@ impl ExperimentRunner {
 
             // Check completion
             if ctx.artifact.is_solved() {
-                info!(tick = tick, "Schedule solved!");
+                info!(trial = run_ctx.trial, tick = tick, "Schedule solved!");
                 break;
             }
 
@@ -826,7 +827,7 @@ impl ExperimentRunner {
             if current_model_idx == self.config.model_chain.len().saturating_sub(1)
                 && zero_velocity_ticks >= self.config.escalation_threshold
             {
-                info!(tick = tick, "Schedule unsolved! Converged at largest model");
+                info!(trial = run_ctx.trial, tick = tick, "Schedule unsolved! Converged at largest model");
                 break;
             }
         }
