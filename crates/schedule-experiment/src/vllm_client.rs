@@ -109,10 +109,10 @@ impl VllmClient {
     /// # Arguments
     /// * `base_url` - The base URL of the vLLM server (e.g., "http://localhost:8000")
     pub fn new(base_url: &str) -> Self {
-        // Use short timeouts to fail fast if server is unavailable
+        // Use longer timeout for model loading (14b model can take 60+ seconds to load)
         let client = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(120))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
