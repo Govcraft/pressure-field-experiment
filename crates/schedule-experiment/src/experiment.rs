@@ -284,6 +284,9 @@ impl ExperimentRunner {
         };
         let initial_host = self.config.get_vllm_host(initial_model_idx).to_string();
 
+        // Create shared artifact for LLM actors (shares rejected_patches via Arc)
+        let shared_artifact = Arc::new(artifact.clone());
+
         // Spawn LLM actors - they self-register via PatchActorReady broadcast
         for i in 0..agent_count {
             let band = match i % 3 {
@@ -307,6 +310,7 @@ impl ExperimentRunner {
                 llm_config,
                 semaphore.clone(),
                 example_bank.clone(),
+                shared_artifact.clone(),
             )
             .await;
         }
@@ -423,6 +427,20 @@ impl ExperimentRunner {
                 if let Ok(mut schedule) = shared_schedule.write() {
                     *schedule = artifact.schedule().clone();
                 }
+            }
+
+            // Apply rejection decay each tick (negative pheromone evaporation)
+            shared_artifact.apply_rejection_decay(0.95, 0.1);
+
+            // Log rejection stats periodically
+            let (rejection_count, total_weight) = shared_artifact.rejection_stats();
+            if rejection_count > 0 {
+                debug!(
+                    tick = current_tick,
+                    rejection_count,
+                    total_weight = format!("{:.2}", total_weight),
+                    "Negative pheromone stats"
+                );
             }
 
             let is_complete = result.is_complete;

@@ -39,6 +39,7 @@ pub struct UpdateBand {
     pub band: SamplingBand,
 }
 
+use crate::artifact::ScheduleArtifact;
 use crate::example_bank::ExampleBank;
 use crate::vllm_client::VllmClient;
 
@@ -156,6 +157,8 @@ pub struct LlmActorState {
     pub semaphore: Option<Arc<Semaphore>>,
     /// Example bank for few-shot learning
     pub example_bank: Option<Arc<RwLock<ExampleBank>>>,
+    /// Shared artifact for negative pheromone queries
+    pub artifact: Option<Arc<ScheduleArtifact>>,
 }
 
 impl std::fmt::Debug for LlmActorState {
@@ -178,6 +181,7 @@ impl LlmActor {
         config: LlmActorConfig,
         semaphore: Arc<Semaphore>,
         example_bank: Arc<RwLock<ExampleBank>>,
+        artifact: Arc<ScheduleArtifact>,
     ) -> ActorHandle {
         let mut actor = runtime.new_actor_with_name::<LlmActorState>(name.clone());
 
@@ -185,6 +189,7 @@ impl LlmActor {
         actor.model.config = Some(Arc::new(RwLock::new(config)));
         actor.model.semaphore = Some(semaphore);
         actor.model.example_bank = Some(example_bank);
+        actor.model.artifact = Some(artifact);
 
         // Subscribe to messages before starting
         actor.handle().subscribe::<ProposeForRegion>().await;
@@ -254,6 +259,7 @@ impl LlmActor {
             let config = actor.model.config.clone();
             let semaphore = actor.model.semaphore.clone();
             let example_bank = actor.model.example_bank.clone();
+            let artifact = actor.model.artifact.clone();
             let actor_name = actor.model.name.clone();
 
             Reply::pending(async move {
@@ -271,9 +277,16 @@ impl LlmActor {
                     vec![]
                 };
 
+                // Get rejected patches for this region (negative pheromones)
+                let rejected = if let Some(ref art) = artifact {
+                    art.get_rejected_for_region(&msg.region_id, 3)
+                } else {
+                    vec![]
+                };
+
                 // Generate patch
                 let config_guard = config.as_ref().unwrap().read().await;
-                let result = generate_schedule_patch(&config_guard, &msg, &examples).await;
+                let result = generate_schedule_patch(&config_guard, &msg, &examples, &rejected).await;
 
                 drop(config_guard);
 
@@ -318,6 +331,7 @@ async fn generate_schedule_patch(
     config: &LlmActorConfig,
     msg: &ProposeForRegion,
     examples: &[crate::example_bank::Example],
+    rejected: &[crate::artifact::RejectedPatch],
 ) -> Result<(Option<Patch>, u32, u32)> {
     // Extract time block info from region metadata
     let time_range = msg
@@ -390,6 +404,17 @@ async fn generate_schedule_patch(
         )
     };
 
+    // Format rejected patches (negative pheromones) - patterns to avoid
+    let rejected_text = if rejected.is_empty() {
+        String::new()
+    } else {
+        let formatted: Vec<String> = rejected.iter().map(|r| r.format_for_prompt()).collect();
+        format!(
+            "\nAVOID THESE PATTERNS (they increase pressure):\n{}\n",
+            formatted.join("\n")
+        )
+    };
+
     let prompt = format!(
         r#"Meeting Room Schedule Optimization.
 Goal: Schedule meetings to minimize gaps and avoid conflicts.
@@ -408,7 +433,7 @@ Unscheduled meetings that could fit in this block:
 Constraints:
 - No attendee can be in multiple meetings at the same time
 - Room capacity must fit attendees
-{examples_text}
+{examples_text}{rejected_text}
 Output the schedule for this time block. For each room, list the meeting IDs and times:
 Room A: meeting_id (start-end), ...
 Room B: meeting_id (start-end), ...
@@ -419,6 +444,7 @@ Answer:"#,
         current_schedule = msg.region_view.content,
         unscheduled_text = unscheduled_text,
         examples_text = examples_text,
+        rejected_text = rejected_text,
     );
 
     info!(

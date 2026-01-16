@@ -126,6 +126,37 @@ pub struct Room {
 /// Shared grid for sensor synchronization.
 pub type SharedSchedule = Arc<RwLock<ScheduleGrid>>;
 
+/// A rejected patch that should be avoided in future attempts (negative pheromone).
+///
+/// These are tracked when patches fail evaluation and can be included in prompts
+/// to help LLMs avoid repeating ineffective patterns.
+#[derive(Debug, Clone)]
+pub struct RejectedPatch {
+    /// The region this patch targeted.
+    pub region_id: RegionId,
+    /// The proposed content that was rejected.
+    pub proposed_content: String,
+    /// The pressure delta (negative = harmful).
+    pub pressure_delta: f64,
+    /// The tick when this rejection occurred.
+    pub tick: usize,
+    /// Pheromone weight (starts at 1.0, decays over time).
+    pub weight: f64,
+}
+
+impl RejectedPatch {
+    /// Format for inclusion in an LLM prompt.
+    pub fn format_for_prompt(&self) -> String {
+        // Take first line only to keep prompts concise
+        let first_line = self.proposed_content.lines().next().unwrap_or("");
+        format!(
+            "AVOID: \"{}\" (worsened by {:.1})",
+            first_line,
+            -self.pressure_delta
+        )
+    }
+}
+
 /// Grid representation of the schedule for sensor access.
 #[derive(Debug, Clone, Default)]
 pub struct ScheduleGrid {
@@ -250,6 +281,10 @@ pub struct ScheduleArtifact {
     _slots_per_block: u8,
     /// Optional shared schedule for sensor synchronization.
     shared_schedule: Option<SharedSchedule>,
+    /// Rejected patches with decay weights (negative pheromones).
+    rejected_patches: Arc<RwLock<Vec<RejectedPatch>>>,
+    /// Current tick (for decay calculations).
+    current_tick: Arc<RwLock<usize>>,
 }
 
 impl ScheduleArtifact {
@@ -317,6 +352,8 @@ impl ScheduleArtifact {
             schedule_id,
             _slots_per_block: slots_per_block,
             shared_schedule: None,
+            rejected_patches: Arc::new(RwLock::new(Vec::new())),
+            current_tick: Arc::new(RwLock::new(0)),
         })
     }
 
@@ -373,6 +410,7 @@ impl ScheduleArtifact {
     /// - pressure_delta: old_pressure - new_pressure (positive = improvement)
     ///
     /// This maintains Nash equilibrium by only accepting moves that improve state.
+    /// Rejected patches are tracked as negative pheromones for future prompt guidance.
     pub fn evaluate_patch(&self, patch: &Patch) -> (bool, f64) {
         // Get region metadata
         let Some((day, start_slot, end_slot)) = self.region_metadata(&patch.region) else {
@@ -382,8 +420,15 @@ impl ScheduleArtifact {
         // Clone the schedule grid
         let mut test_schedule = self.schedule.clone();
 
+        // Extract content for potential rejection tracking
+        let content = if let PatchOp::Replace(c) = &patch.op {
+            Some(c.clone())
+        } else {
+            None
+        };
+
         // Apply patch to the clone
-        if let PatchOp::Replace(new_content) = &patch.op {
+        if let Some(ref new_content) = content {
             if let Ok(assignments) = self.parse_block_schedule(new_content, day, start_slot, end_slot)
             {
                 apply_block_schedule_to_grid(
@@ -407,8 +452,81 @@ impl ScheduleArtifact {
         let new_pressure = compute_pressure_from_grid(&test_schedule);
 
         let delta = old_pressure - new_pressure;
-        // Accept only if strict improvement (delta > 0)
-        (delta > 0.0, delta)
+        let should_accept = delta > 0.0;
+
+        // Track rejected patches as negative pheromones (only if harmful)
+        if !should_accept
+            && delta < 0.0
+            && let Some(proposed_content) = content
+            && let Ok(tick) = self.current_tick.read()
+            && let Ok(mut rejected) = self.rejected_patches.write()
+        {
+            rejected.push(RejectedPatch {
+                region_id: patch.region.clone(),
+                proposed_content,
+                pressure_delta: delta,
+                tick: *tick,
+                weight: 1.0,
+            });
+        }
+
+        (should_accept, delta)
+    }
+
+    /// Get rejected patches for a specific region (for prompt injection).
+    ///
+    /// Returns up to `max` patches, sorted by weight (highest first).
+    pub fn get_rejected_for_region(&self, region_id: &RegionId, max: usize) -> Vec<RejectedPatch> {
+        let Ok(rejected) = self.rejected_patches.read() else {
+            return Vec::new();
+        };
+
+        let mut matches: Vec<_> = rejected
+            .iter()
+            .filter(|r| &r.region_id == region_id)
+            .cloned()
+            .collect();
+
+        // Sort by weight (highest first)
+        matches.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+        matches.truncate(max);
+        matches
+    }
+
+    /// Get all rejected patches (for debugging/stats).
+    pub fn get_all_rejected(&self) -> Vec<RejectedPatch> {
+        self.rejected_patches
+            .read()
+            .map(|r| r.clone())
+            .unwrap_or_default()
+    }
+
+    /// Apply decay to all rejected patches (call each tick).
+    ///
+    /// Default decay_factor: 0.95 (5% decay per tick)
+    /// Default eviction_threshold: 0.1
+    pub fn apply_rejection_decay(&self, decay_factor: f64, eviction_threshold: f64) {
+        if let Ok(mut rejected) = self.rejected_patches.write() {
+            for r in rejected.iter_mut() {
+                r.weight *= decay_factor;
+            }
+            rejected.retain(|r| r.weight >= eviction_threshold);
+        }
+
+        if let Ok(mut tick) = self.current_tick.write() {
+            *tick += 1;
+        }
+    }
+
+    /// Get current rejection stats.
+    pub fn rejection_stats(&self) -> (usize, f64) {
+        let rejected = self.rejected_patches.read().ok();
+        let count = rejected.as_ref().map(|r| r.len()).unwrap_or(0);
+        let total_weight = rejected
+            .as_ref()
+            .map(|r| r.iter().map(|p| p.weight).sum())
+            .unwrap_or(0.0);
+        (count, total_weight)
     }
 
     /// Sync the shared schedule after a patch.
@@ -1025,5 +1143,138 @@ mod tests {
         assert_eq!(extract_start_slot("(10:00-11:00)"), Some(4)); // 10:00 = slot 4
         assert_eq!(extract_start_slot("(08:30-09:00)"), Some(1)); // 8:30 = slot 1
         assert_eq!(extract_start_slot("(12:00-13:00)"), Some(8)); // 12:00 = slot 8
+    }
+
+    #[test]
+    fn test_rejected_patch_format_for_prompt() {
+        // Use a real region ID from the test artifact
+        let region_id = create_region_mti("test_schedule", 0, 0);
+
+        let rejected = RejectedPatch {
+            region_id,
+            proposed_content: "Room A: 5 (10:00-11:00)\nRoom B: [empty]".to_string(),
+            pressure_delta: -3.0, // Made things worse
+            tick: 5,
+            weight: 1.0,
+        };
+
+        let formatted = rejected.format_for_prompt();
+        // Should only show first line
+        assert!(formatted.contains("Room A: 5"));
+        assert!(!formatted.contains("Room B"));
+        // Should show the worsening amount
+        assert!(formatted.contains("worsened by 3.0"));
+    }
+
+    #[test]
+    fn test_negative_pheromone_tracking_and_decay() {
+        let artifact = sample_artifact();
+
+        // Create test region IDs
+        let region1_id = create_region_mti("test_schedule", 0, 0);
+        let region2_id = create_region_mti("test_schedule", 0, 1);
+
+        // Initially no rejections
+        let (count, weight) = artifact.rejection_stats();
+        assert_eq!(count, 0);
+        assert_eq!(weight, 0.0);
+
+        // Add some rejections manually (simulating evaluate_patch behavior)
+        {
+            let mut rejected = artifact.rejected_patches.write().unwrap();
+            rejected.push(RejectedPatch {
+                region_id: region1_id.clone(),
+                proposed_content: "Bad schedule 1".to_string(),
+                pressure_delta: -2.0,
+                tick: 1,
+                weight: 1.0,
+            });
+            rejected.push(RejectedPatch {
+                region_id: region1_id.clone(),
+                proposed_content: "Bad schedule 2".to_string(),
+                pressure_delta: -1.0,
+                tick: 2,
+                weight: 1.0,
+            });
+            rejected.push(RejectedPatch {
+                region_id: region2_id.clone(),
+                proposed_content: "Bad schedule 3".to_string(),
+                pressure_delta: -5.0,
+                tick: 3,
+                weight: 1.0,
+            });
+        }
+
+        // Should have 3 rejections
+        let (count, weight) = artifact.rejection_stats();
+        assert_eq!(count, 3);
+        assert!((weight - 3.0).abs() < 0.01);
+
+        // Query for region1 should return 2
+        let region1_rejections = artifact.get_rejected_for_region(&region1_id, 10);
+        assert_eq!(region1_rejections.len(), 2);
+
+        // Query for region2 should return 1
+        let region2_rejections = artifact.get_rejected_for_region(&region2_id, 10);
+        assert_eq!(region2_rejections.len(), 1);
+
+        // Apply decay
+        artifact.apply_rejection_decay(0.5, 0.1);
+
+        // Weights should be halved
+        let (count, weight) = artifact.rejection_stats();
+        assert_eq!(count, 3);
+        assert!((weight - 1.5).abs() < 0.01);
+
+        // Apply more decay to trigger eviction
+        artifact.apply_rejection_decay(0.1, 0.1);
+
+        // All rejections should be evicted (weights below 0.1)
+        let (count, _) = artifact.rejection_stats();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_rejected_patches_shared_across_clones() {
+        let artifact1 = sample_artifact();
+
+        // Create test region IDs
+        let region1_id = create_region_mti("test_schedule", 0, 0);
+        let region2_id = create_region_mti("test_schedule", 0, 1);
+
+        // Add a rejection through artifact1
+        {
+            let mut rejected = artifact1.rejected_patches.write().unwrap();
+            rejected.push(RejectedPatch {
+                region_id: region1_id,
+                proposed_content: "Bad schedule".to_string(),
+                pressure_delta: -2.0,
+                tick: 1,
+                weight: 1.0,
+            });
+        }
+
+        // Clone artifact1
+        let artifact2 = artifact1.clone();
+
+        // Both should see the same rejection (Arc sharing)
+        assert_eq!(artifact1.rejection_stats().0, 1);
+        assert_eq!(artifact2.rejection_stats().0, 1);
+
+        // Adding through artifact2 should be visible in artifact1
+        {
+            let mut rejected = artifact2.rejected_patches.write().unwrap();
+            rejected.push(RejectedPatch {
+                region_id: region2_id,
+                proposed_content: "Another bad schedule".to_string(),
+                pressure_delta: -3.0,
+                tick: 2,
+                weight: 1.0,
+            });
+        }
+
+        // Both should see 2 rejections now
+        assert_eq!(artifact1.rejection_stats().0, 2);
+        assert_eq!(artifact2.rejection_stats().0, 2);
     }
 }
