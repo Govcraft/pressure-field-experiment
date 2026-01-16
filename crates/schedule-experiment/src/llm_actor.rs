@@ -279,7 +279,15 @@ impl LlmActor {
 
                 // Get rejected patches for this region (negative pheromones)
                 let rejected = if let Some(ref art) = artifact {
-                    art.get_rejected_for_region(&msg.region_id, 3)
+                    let r = art.get_rejected_for_region(&msg.region_id, 3);
+                    if !r.is_empty() {
+                        debug!(
+                            region = %msg.region_id,
+                            rejected_count = r.len(),
+                            "Found rejected patches for region"
+                        );
+                    }
+                    r
                 } else {
                     vec![]
                 };
@@ -404,15 +412,17 @@ async fn generate_schedule_patch(
         )
     };
 
-    // Format rejected patches (negative pheromones) - patterns to avoid
+    // Format rejected patches as positive guidance (what to try instead)
     let rejected_text = if rejected.is_empty() {
         String::new()
     } else {
         let formatted: Vec<String> = rejected.iter().map(|r| r.format_for_prompt()).collect();
-        format!(
-            "\nAVOID THESE PATTERNS (they increase pressure):\n{}\n",
+        let text = format!(
+            "\nHints for better scheduling:\n{}\n",
             formatted.join("\n")
-        )
+        );
+        debug!(hints = %text, "Including positive guidance hints in prompt");
+        text
     };
 
     let prompt = format!(

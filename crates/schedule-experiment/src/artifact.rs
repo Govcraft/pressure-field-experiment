@@ -145,15 +145,40 @@ pub struct RejectedPatch {
 }
 
 impl RejectedPatch {
-    /// Format for inclusion in an LLM prompt.
+    /// Format for inclusion in an LLM prompt using positive language.
+    ///
+    /// Instead of "AVOID X", we use "TRY Y" to give constructive guidance.
     pub fn format_for_prompt(&self) -> String {
-        // Take first line only to keep prompts concise
         let first_line = self.proposed_content.lines().next().unwrap_or("");
-        format!(
-            "AVOID: \"{}\" (worsened by {:.1})",
-            first_line,
-            -self.pressure_delta
-        )
+        let pressure_benefit = -self.pressure_delta;
+
+        // Extract room name if present (e.g., "Room A: [empty]" -> "Room A")
+        let room_name = first_line
+            .split(':')
+            .next()
+            .map(|s| s.trim())
+            .filter(|s| s.starts_with("Room"))
+            .unwrap_or("");
+
+        if first_line.contains("[empty]") && !room_name.is_empty() {
+            // Empty room was bad -> suggest filling it
+            format!(
+                "TIP: Schedule meetings in {} (improves by {:.0})",
+                room_name, pressure_benefit
+            )
+        } else if !room_name.is_empty() {
+            // Some arrangement was bad -> suggest trying different placement
+            format!(
+                "TIP: Try different meeting arrangement in {} (potential gain: {:.0})",
+                room_name, pressure_benefit
+            )
+        } else {
+            // Generic case
+            format!(
+                "TIP: Try a different schedule arrangement (potential gain: {:.0})",
+                pressure_benefit
+            )
+        }
     }
 }
 
@@ -1150,20 +1175,33 @@ mod tests {
         // Use a real region ID from the test artifact
         let region_id = create_region_mti("test_schedule", 0, 0);
 
-        let rejected = RejectedPatch {
-            region_id,
-            proposed_content: "Room A: 5 (10:00-11:00)\nRoom B: [empty]".to_string(),
-            pressure_delta: -3.0, // Made things worse
+        // Test case 1: Empty room pattern -> positive suggestion to fill it
+        let rejected_empty = RejectedPatch {
+            region_id: region_id.clone(),
+            proposed_content: "Room A: [empty]\nRoom B: 5".to_string(),
+            pressure_delta: -3.0,
             tick: 5,
             weight: 1.0,
         };
+        let formatted = rejected_empty.format_for_prompt();
+        assert!(formatted.contains("TIP"));
+        assert!(formatted.contains("Room A"));
+        assert!(formatted.contains("Schedule meetings"));
+        assert!(formatted.contains("improves by 3"));
 
-        let formatted = rejected.format_for_prompt();
-        // Should only show first line
-        assert!(formatted.contains("Room A: 5"));
-        assert!(!formatted.contains("Room B"));
-        // Should show the worsening amount
-        assert!(formatted.contains("worsened by 3.0"));
+        // Test case 2: Non-empty room pattern -> suggest different arrangement
+        let rejected_arrangement = RejectedPatch {
+            region_id,
+            proposed_content: "Room B: 5 (10:00-11:00)\nRoom C: [empty]".to_string(),
+            pressure_delta: -5.0,
+            tick: 6,
+            weight: 1.0,
+        };
+        let formatted = rejected_arrangement.format_for_prompt();
+        assert!(formatted.contains("TIP"));
+        assert!(formatted.contains("Room B"));
+        assert!(formatted.contains("different"));
+        assert!(formatted.contains("gain: 5"));
     }
 
     #[test]
