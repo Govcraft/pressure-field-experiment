@@ -1302,6 +1302,33 @@ impl ExperimentRunner {
             String::new()
         };
 
+        // Extract unscheduled meetings from metadata (matching pressure_field prompt)
+        let unscheduled = region_view
+            .metadata
+            .get("unscheduled_meetings")
+            .cloned()
+            .unwrap_or(serde_json::json!([]));
+
+        let unscheduled_text = if let Some(meetings) = unscheduled.as_array() {
+            if meetings.is_empty() {
+                "  None".to_string()
+            } else {
+                meetings
+                    .iter()
+                    .map(|m| {
+                        let id = m.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let duration = m.get("duration_slots").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let attendees = m.get("attendees").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let duration_min = duration * 30;
+                        format!("  Meeting {}: {}min, {} attendees", id, duration_min, attendees)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        } else {
+            "  None".to_string()
+        };
+
         let examples_text = if examples.is_empty() {
             String::new()
         } else {
@@ -1313,7 +1340,9 @@ impl ExperimentRunner {
         };
 
         format!(
-            r#"Meeting Room Schedule Optimization.
+            r#"You are a meeting room scheduler. Output schedules in the exact format requested. No explanations, just the schedule.
+
+Meeting Room Schedule Optimization.
 Goal: Schedule meetings to minimize gaps and avoid conflicts.
 
 Time Block: {time_range}
@@ -1323,8 +1352,15 @@ Rooms:
 
 Current assignments:
 {current_schedule}
+
+Unscheduled meetings that could fit in this block:
+{unscheduled_text}
+
+Constraints:
+- No attendee can be in multiple meetings at the same time
+- Room capacity must fit attendees
 {examples_text}
-Output the schedule for this time block:
+Output the schedule for this time block. For each room, list the meeting IDs and times:
 Room A: meeting_id (start-end), ...
 Room B: meeting_id (start-end), ...
 
@@ -1332,6 +1368,7 @@ Answer:"#,
             time_range = time_range,
             rooms_text = rooms_text,
             current_schedule = region_view.content,
+            unscheduled_text = unscheduled_text,
             examples_text = examples_text,
         )
     }
