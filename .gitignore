@@ -9,7 +9,8 @@ Cargo.lock
 improved
 messy_code
 messy_code_*
-results/
+results/*
+!results/*.R
 
 # Typst
 *.pdf
