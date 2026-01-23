@@ -117,7 +117,18 @@ df_fig1 <- df_grid %>%
     ci_high = purrr::map_dbl(ci, "upper")
   )
 
-fig1 <- ggplot(df_fig1, aes(x = strategy, y = rate, color = strategy)) +
+# Abbreviate strategy names for cleaner x-axis
+df_fig1 <- df_fig1 %>%
+  mutate(strategy_abbrev = factor(case_when(
+    strategy == "Pressure Field" ~ "P-Field",
+    strategy == "Conversation" ~ "Conv",
+    strategy == "Hierarchical" ~ "Hier",
+    strategy == "Sequential" ~ "Seq",
+    strategy == "Random" ~ "Rand",
+    TRUE ~ as.character(strategy)
+  ), levels = c("P-Field", "Conv", "Hier", "Seq", "Rand")))
+
+fig1 <- ggplot(df_fig1, aes(x = strategy_abbrev, y = rate, color = strategy)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.3, linewidth = 0.6) +
   facet_wrap(~difficulty, ncol = 3) +
@@ -132,14 +143,14 @@ fig1 <- ggplot(df_fig1, aes(x = strategy, y = rate, color = strategy)) +
   theme(
     legend.position = "none",
     strip.text = element_text(face = "bold", size = 11),
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
     panel.grid.minor = element_blank(),
-    panel.spacing = unit(1.2, "lines"),
-    plot.margin = margin(10, 10, 10, 10)
+    panel.spacing = unit(1.5, "lines"),
+    plot.margin = margin(10, 15, 10, 10)
   )
 
-ggsave("fig1_strategy_comparison.pdf", fig1, width = 8, height = 4)
-ggsave("fig1_strategy_comparison.png", fig1, width = 8, height = 4, dpi = 300)
+ggsave("fig1_strategy_comparison.pdf", fig1, width = 9, height = 4)
+ggsave("fig1_strategy_comparison.png", fig1, width = 9, height = 4, dpi = 300)
 
 cat("  Saved: fig1_strategy_comparison.pdf\n")
 
@@ -344,7 +355,7 @@ df_ticks <- df_grid %>%
     se = sd_ticks / sqrt(n),
     .groups = "drop"
   ) %>%
-  filter(n >= 5)  # Only include strategies with enough solved trials
+  filter(n >= 4)  # Include strategies with at least 4 solved trials (includes Hierarchical)
 
 fig4 <- ggplot(df_ticks, aes(x = reorder(strategy, mean_ticks), y = mean_ticks, fill = strategy)) +
   geom_col(width = 0.7, alpha = 0.85) +

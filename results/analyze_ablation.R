@@ -14,28 +14,32 @@ data <- fromJSON("schedule-ablation.json")
 results <- data$results
 
 # Extract key fields into a data frame
-df <- data.frame(
-  config = sapply(results$config, function(x) {
-    # Reconstruct config name from flags
-    decay <- x$decay_enabled
-    inhibition <- x$inhibition_enabled
-    examples <- x$examples_enabled
+# jsonlite flattens nested objects, so config fields are in results$config as a data frame
+config_df <- results$config
 
-    if (decay && inhibition && examples) return("full")
-    if (!decay && inhibition && examples) return("no_decay")
-    if (decay && !inhibition && examples) return("no_inhibition")
-    if (decay && inhibition && !examples) return("no_examples")
-    if (!decay && !inhibition && examples) return("no_decay_no_inhibition")
-    if (!decay && inhibition && !examples) return("no_decay_no_examples")
-    if (decay && !inhibition && !examples) return("no_inhibition_no_examples")
-    if (!decay && !inhibition && !examples) return("baseline")
-    return("unknown")
-  }),
-  decay_enabled = results$config$decay_enabled,
-  inhibition_enabled = results$config$inhibition_enabled,
-  examples_enabled = results$config$examples_enabled,
-  trial = results$config$trial,
-  seed = results$config$seed,
+# Build config names from flags
+get_config_name <- function(decay, inhibition, examples) {
+  if (decay && inhibition && examples) return("full")
+  if (!decay && inhibition && examples) return("no_decay")
+  if (decay && !inhibition && examples) return("no_inhibition")
+  if (decay && inhibition && !examples) return("no_examples")
+  if (!decay && !inhibition && examples) return("no_decay_no_inhibition")
+  if (!decay && inhibition && !examples) return("no_decay_no_examples")
+  if (decay && !inhibition && !examples) return("no_inhibition_no_examples")
+  if (!decay && !inhibition && !examples) return("baseline")
+  return("unknown")
+}
+
+df <- data.frame(
+  config = mapply(get_config_name,
+                  config_df$decay_enabled,
+                  config_df$inhibition_enabled,
+                  config_df$examples_enabled),
+  decay_enabled = config_df$decay_enabled,
+  inhibition_enabled = config_df$inhibition_enabled,
+  examples_enabled = config_df$examples_enabled,
+  trial = config_df$trial,
+  seed = config_df$seed,
   solved = results$solved,
   total_ticks = results$total_ticks,
   final_pressure = results$final_pressure

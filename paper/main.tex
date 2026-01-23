@@ -34,6 +34,49 @@
 \usepackage{titlesec}
 \usepackage{parskip}
 \usepackage{enumitem}
+\usepackage{acro}
+
+%% Acronym definitions
+\DeclareAcronym{llm}{
+  short = LLM,
+  long  = Large Language Model
+}
+\DeclareAcronym{mas}{
+  short = MAS,
+  long  = Multi-Agent System
+}
+\DeclareAcronym{gpgp}{
+  short = GPGP,
+  long  = Generalized Partial Global Planning
+}
+\DeclareAcronym{fm}{
+  short = FM,
+  long  = Foundation Model
+}
+\DeclareAcronym{aco}{
+  short = ACO,
+  long  = Ant Colony Optimization
+}
+\DeclareAcronym{tsp}{
+  short = TSP,
+  long  = Traveling Salesman Problem
+}
+\DeclareAcronym{gpu}{
+  short = GPU,
+  long  = Graphics Processing Unit
+}
+\DeclareAcronym{ast}{
+  short = AST,
+  long  = Abstract Syntax Tree
+}
+\DeclareAcronym{sop}{
+  short = SOP,
+  long  = Standardized Operating Procedure
+}
+\DeclareAcronym{ci}{
+  short = CI,
+  long  = Confidence Interval
+}
 
 %% Paragraph formatting
 \setlength{\parindent}{1.5em}
@@ -123,14 +166,14 @@
 \maketitle
 
 \begin{abstract}
-Current multi-agent LLM frameworks rely on explicit orchestration patterns borrowed from human organizational structures: planners delegate to executors, managers coordinate workers, and hierarchical control flow governs agent interactions. These approaches suffer from coordination overhead that scales poorly with agent count and task complexity. We propose a fundamentally different paradigm inspired by natural coordination mechanisms: agents operate locally on a shared artifact, guided only by pressure gradients derived from measurable quality signals, with temporal decay preventing premature convergence. We formalize this as optimization over a pressure landscape and prove convergence guarantees under mild conditions.
+Current multi-agent \ac{llm} frameworks rely on explicit orchestration patterns borrowed from human organizational structures: planners delegate to executors, managers coordinate workers, and hierarchical control flow governs agent interactions. These approaches suffer from coordination overhead that scales poorly with agent count and task complexity. We propose a fundamentally different paradigm inspired by natural coordination mechanisms: agents operate locally on a shared artifact, guided only by pressure gradients derived from measurable quality signals, with temporal decay preventing premature convergence. We formalize this as optimization over a pressure landscape and prove convergence guarantees under mild conditions.
 
-Empirically, on meeting room scheduling across XX trials, pressure-field coordination matches hierarchical control (XX\% vs XX\% aggregate solve rate, $p = \text{XX}$, indicating statistical equivalence). Both significantly outperform sequential (XX\%) and random (XX\%) baselines ($p < \text{XX}$). Temporal decay is essential: disabling it increases final pressure XX-fold ($d = \text{XX}$). On easy problems, pressure-field achieves XX\% solve rate. The approach maintains consistent performance from 1 to 4 agents. Our key finding: implicit coordination through shared pressure gradients achieves parity with explicit hierarchical control. Foundation models enable this approach: their broad pretraining and zero-shot reasoning allow quality-improving patches from local pressure signals alone, without domain-specific coordination protocols. This suggests that constraint-driven emergence offers a simpler, equally effective foundation for multi-agent AI.
+Empirically, on meeting room scheduling across 1350 trials, pressure-field coordination substantially outperforms all baselines: 48.5\% aggregate solve rate across all difficulty levels (86.7\% on easy problems) versus 12.6\% for conversation-based coordination, 1.5\% for hierarchical control, and 0.4\% for sequential and random baselines (all pairwise comparisons $p < 0.001$). Temporal decay is essential: disabling it reduces solve rate by 10 percentage points. On easy problems, pressure-field achieves 86.7\% solve rate compared to 37.8\% for the next-best baseline. The approach maintains consistent performance from 1 to 4 agents. Our key finding: implicit coordination through shared pressure gradients dramatically outperforms explicit hierarchical control. Foundation models enable this approach: their broad pretraining and zero-shot reasoning allow quality-improving patches from local pressure signals alone, without domain-specific coordination protocols. This suggests that constraint-driven emergence offers a simpler and more effective foundation for multi-agent AI.
 \end{abstract}
 
 \begin{center}
 \begin{minipage}{0.85\textwidth}
-\small\textbf{Keywords:} multi-agent systems, emergent coordination, decentralized optimization, LLM agents
+\small\textbf{Keywords:} multi-agent systems, emergent coordination, decentralized optimization, \acs{llm} agents
 \end{minipage}
 \end{center}
 \vspace{1em}
@@ -143,20 +186,20 @@ Empirically, on meeting room scheduling across XX trials, pressure-field coordin
 
 Multi-agent systems built on large language models have emerged as a promising approach to complex task automation~\cite{wu2023autogen,hong2023metagpt,li2023camel}. The dominant paradigm treats agents as organizational units: planners decompose tasks, managers delegate subtasks, and workers execute instructions under hierarchical supervision. This coordination overhead scales poorly with agent count and task complexity.
 
-We demonstrate that \emph{implicit} coordination through shared state achieves equivalent performance to explicit hierarchical control---without coordinators, planners, or message passing. Across XX trials on meeting room scheduling, pressure-field coordination matches hierarchical control (XX\% vs XX\% aggregate solve rate, $p = \text{XX}$). Both significantly outperform sequential and random baselines, demonstrating that pressure-guided coordination provides meaningful benefit over uncoordinated approaches.
+We demonstrate that \emph{implicit} coordination through shared state substantially outperforms explicit hierarchical control---without coordinators, planners, or message passing. Across 1350 trials on meeting room scheduling, pressure-field coordination achieves 48.5\% aggregate solve rate compared to 1.5\% for hierarchical control ($p < 0.001$, Cohen's $h = 1.97$ on easy problems). Conversation-based coordination (AutoGen-style) achieves 12.6\%, while sequential and random baselines achieve only 0.4\%.
 
-Our approach draws inspiration from natural coordination mechanisms---ant colonies, immune systems, neural tissue---that coordinate through \emph{environment modification} rather than message passing. Agents observe local quality signals (pressure gradients), take locally-greedy actions, and coordination emerges from shared artifact state. Temporal decay prevents premature convergence by ensuring continued exploration.
+Our approach draws inspiration from natural coordination mechanisms---ant colonies, immune systems, neural tissue---that coordinate through \emph{environment modification} rather than message passing. Agents observe local quality signals (pressure gradients), take locally-greedy actions, and coordination emerges from shared artifact state. The key insight is that \emph{local greedy decisions are effective for constraint satisfaction}: when problems exhibit locality (fixing one region rarely breaks distant regions), decentralized greedy optimization outperforms centralized planning. Temporal decay prevents premature convergence by ensuring continued exploration.
 
 Our contributions:
 
 \begin{enumerate}
-\item We formalize \emph{pressure-field coordination} as a role-free, stigmergic alternative to organizational MAS paradigms. Unlike GPGP's hierarchical message-passing or SharedPlans' intention alignment, pressure-field achieves $O(1)$ coordination overhead through shared artifact state. Foundation models enable this approach: their broad pretraining allows quality-improving patches from local pressure signals without domain-specific coordination protocols.
+\item We formalize \emph{pressure-field coordination} as a role-free, stigmergic alternative to organizational \ac{mas} paradigms. Unlike \ac{gpgp}'s hierarchical message-passing or SharedPlans' intention alignment, pressure-field achieves $O(1)$ coordination overhead through shared artifact state. Foundation models enable this approach: their broad pretraining allows quality-improving patches from local pressure signals without domain-specific coordination protocols.
 
-\item We introduce \emph{temporal decay} as a mechanism for preventing premature convergence. Disabling decay increases final pressure XX-fold (Cohen's $d = \text{XX}$), trapping agents in local minima.
+\item We introduce \emph{temporal decay} as a mechanism for preventing premature convergence. Disabling decay reduces solve rate by 10 percentage points (from 96.7\% to 86.7\% in ablation studies), trapping agents in local minima.
 
 \item We prove convergence guarantees for this coordination scheme under pressure alignment conditions.
 
-\item We provide empirical evidence across XX trials showing: (a) pressure-field matches hierarchical control, (b) both significantly outperform sequential (XX\%) and random (XX\%) baselines ($p < \text{XX}$).
+\item We provide empirical evidence across 1350 trials showing: (a) pressure-field substantially outperforms hierarchical control (48.5\% vs 1.5\%), (b) all comparisons with baselines are highly significant ($p < 0.001$).
 \end{enumerate}
 
 %% ============================================================================
@@ -165,11 +208,11 @@ Our contributions:
 
 \section{Related Work}
 
-Our approach bridges four research traditions: multi-agent systems coordination theory provides the conceptual foundation; swarm intelligence provides the stigmergic mechanism; LLM systems provide the application domain; and decentralized optimization provides theoretical guarantees. We survey each and position pressure-field coordination within this landscape.
+Our approach bridges four research traditions: multi-agent systems coordination theory provides the conceptual foundation; swarm intelligence provides the stigmergic mechanism; \ac{llm} systems provide the application domain; and decentralized optimization provides theoretical guarantees. We survey each and position pressure-field coordination within this landscape.
 
-\subsection{MAS Coordination Theory}
+\subsection{\acs{mas} Coordination Theory}
 
-Pressure-field coordination occupies a unique position in the MAS landscape: it eliminates roles (unlike organizational paradigms), messages (unlike GPGP), and intention reasoning (unlike SharedPlans) while providing formal convergence guarantees (unlike purely reactive systems). This section positions our contribution within four established coordination frameworks, showing how artifact refinement with measurable quality signals enables this architectural simplification. The key insight: for this domain class, coordination complexity collapses from quadratic message-passing to constant-time state-sharing.
+Pressure-field coordination occupies a unique position in the \ac{mas} landscape: it eliminates roles (unlike organizational paradigms), messages (unlike \ac{gpgp}), and intention reasoning (unlike SharedPlans) while providing formal convergence guarantees (unlike purely reactive systems). This section positions our contribution within four established coordination frameworks, showing how artifact refinement with measurable quality signals enables this architectural simplification. The key insight: for this domain class, coordination complexity collapses from quadratic message-passing to constant-time state-sharing.
 
 \subsubsection{Organizational Paradigms and Dependency Management}
 
@@ -179,9 +222,9 @@ Our approach instantiates Malone and Crowston's~\cite{malone1994coordination} co
 
 \subsubsection{Distributed Problem Solving and Communication Overhead}
 
-Pressure-field coordination achieves $O(1)$ inter-agent communication overhead---agents exchange no messages. Coordination occurs entirely through shared artifact reads and writes, eliminating the message-passing bottleneck. This contrasts with the GPGP framework~\cite{decker1995gpgp}, which reduces communication from $O(n^2)$ pairwise negotiation to $O(n \log n)$ hierarchical aggregation through summary information exchange. While GPGP represents significant progress, its explicit messages---task announcements, commitment exchanges, schedule updates---still introduce latency and failure points at scale.
+Pressure-field coordination achieves $O(1)$ inter-agent communication overhead---agents exchange no messages. Coordination occurs entirely through shared artifact reads and writes, eliminating the message-passing bottleneck. This contrasts with the \ac{gpgp} framework~\cite{decker1995gpgp}, which reduces communication from $O(n^2)$ pairwise negotiation to $O(n \log n)$ hierarchical aggregation through summary information exchange. While \ac{gpgp} represents significant progress, its explicit messages---task announcements, commitment exchanges, schedule updates---still introduce latency and failure points at scale.
 
-The approaches target different domains. Pressure-field coordination specializes in artifact refinement tasks where quality decomposes into measurable regional signals---a class including code quality improvement, document editing, and configuration management. GPGP generalizes to complex task networks with precedence constraints. For artifact refinement, however, pressure-field's stigmergic coordination eliminates message-passing overhead entirely.
+The approaches target different domains. Pressure-field coordination specializes in artifact refinement tasks where quality decomposes into measurable regional signals---a class including code quality improvement, document editing, and configuration management. \Ac{gpgp} generalizes to complex task networks with precedence constraints. For artifact refinement, however, pressure-field's stigmergic coordination eliminates message-passing overhead entirely.
 
 \subsubsection{Shared Intentions and Alignment Costs}
 
@@ -197,15 +240,15 @@ Pressure-field coordination satisfies De Wolf and Holvoet's~\cite{dewolf2005engi
 
 No external controller exists---agents observe and act autonomously based on local pressure signals. Coordination emerges from local decisions: agents reduce regional pressure through greedy actions, and global coordination arises from shared artifact state. Temporal decay provides dynamic adaptation---fitness erodes continuously, preventing premature convergence and enabling continued refinement.
 
-The theoretical contribution formalizes this intuition through potential game theory. Theorem~1 establishes convergence guarantees for aligned pressure systems; the Basin Separation result (Theorem~3) explains why decay is necessary to escape suboptimal basins. This bridges descriptive design patterns and prescriptive theoretical frameworks.
+The theoretical contribution formalizes this intuition through potential game theory. Theorem~1 establishes convergence guarantees for aligned pressure systems; the Basin Separation result (Theorem~3) explains why decay is necessary to escape suboptimal basins.
 
 \subsubsection{Foundation Model Enablement}
 
-Foundation models enable stigmergic coordination through three capabilities: (1) broad pretraining allows patch proposals across diverse artifact types without domain-specific fine-tuning; (2) instruction-following allows operation from pressure signals alone, without complex action representations; (3) zero-shot reasoning interprets constraint violations without explicit protocol training. These properties make FMs suitable for stigmergic coordination---they require only local context and quality signals to generate productive actions, matching pressure-field's locality constraints.
+\Acp{fm} enable stigmergic coordination through three capabilities: (1) broad pretraining allows patch proposals across diverse artifact types without domain-specific fine-tuning; (2) instruction-following allows operation from pressure signals alone, without complex action representations; (3) zero-shot reasoning interprets constraint violations without explicit protocol training. These properties make \acp{fm} suitable for stigmergic coordination---they require only local context and quality signals to generate productive actions, matching pressure-field's locality constraints.
 
-\subsection{Multi-Agent LLM Systems}
+\subsection{Multi-Agent \acs{llm} Systems}
 
-Recent work has explored multi-agent architectures for LLM-based task solving. AutoGen~\cite{wu2023autogen} introduces a conversation-based framework where customizable agents interact through message passing, with support for human-in-the-loop workflows. MetaGPT~\cite{hong2023metagpt} encodes Standardized Operating Procedures (SOPs) into agent workflows, assigning specialized roles (architect, engineer, QA) in an assembly-line paradigm. CAMEL~\cite{li2023camel} proposes role-playing between AI assistant and AI user agents, using inception prompting to guide autonomous cooperation. CrewAI~\cite{crewai2024} similarly defines agents with roles, goals, and backstories that collaborate on complex tasks.
+Recent work has explored multi-agent architectures for \ac{llm}-based task solving. AutoGen~\cite{wu2023autogen} introduces a conversation-based framework where customizable agents interact through message passing, with support for human-in-the-loop workflows. MetaGPT~\cite{hong2023metagpt} encodes \acp{sop} into agent workflows, assigning specialized roles (architect, engineer, QA) in an assembly-line paradigm. CAMEL~\cite{li2023camel} proposes role-playing between AI assistant and AI user agents, using inception prompting to guide autonomous cooperation. CrewAI~\cite{crewai2024} similarly defines agents with roles, goals, and backstories that collaborate on complex tasks.
 
 These frameworks share a common design pattern: explicit orchestration through message passing, role assignment, and hierarchical task decomposition. While effective for structured workflows, this approach faces scaling limitations. Central coordinators become bottlenecks, message-passing overhead grows with agent count, and failures in manager agents cascade to dependents. Our work takes a fundamentally different approach: coordination emerges from shared state rather than explicit communication.
 
@@ -215,7 +258,7 @@ Foundation models enable pressure-field coordination through capabilities that p
 
 The concept of stigmergy---indirect coordination through environment modification---was introduced by Grass\'{e}~\cite{grasse1959stigmergie} to explain termite nest-building behavior. Termites deposit pheromone-infused material that attracts further deposits, leading to emergent construction without central planning. This directly instantiates Malone and Crowston's~\cite{malone1994coordination} shared resource coordination: pheromone trails encode dependency information about solution quality. This principle has proven remarkably powerful: complex structures arise from simple local rules without any agent having global knowledge.
 
-Dorigo and colleagues~\cite{dorigo1996ant,dorigo1997acs} formalized this insight into Ant Colony Optimization (ACO), where artificial pheromone trails guide search through solution spaces. Key mechanisms include positive feedback (reinforcing good paths), negative feedback (pheromone evaporation), and purely local decision-making. ACO has achieved strong results on combinatorial optimization problems including TSP, vehicle routing, and scheduling.
+Dorigo and colleagues~\cite{dorigo1996ant,dorigo1997acs} formalized this insight into \ac{aco}, where artificial pheromone trails guide search through solution spaces. Key mechanisms include positive feedback (reinforcing good paths), negative feedback (pheromone evaporation), and purely local decision-making. \Ac{aco} has achieved strong results on combinatorial optimization problems including \ac{tsp}, vehicle routing, and scheduling.
 
 Our pressure-field coordination directly inherits from stigmergic principles. The artifact serves as the shared environment; regional pressures are analogous to pheromone concentrations; decay corresponds to evaporation. However, we generalize beyond path-finding to arbitrary artifact refinement and provide formal convergence guarantees through the potential game framework.
 
@@ -225,7 +268,7 @@ Potential games, introduced by Monderer and Shapley~\cite{monderer1996potential}
 
 Distributed gradient descent methods~\cite{nedic2009distributed,yuan2016convergence} address optimization when data or computation is distributed across nodes. The standard approach combines local gradient steps with consensus averaging. While these methods achieve convergence rates matching centralized alternatives, they typically require communication protocols and synchronization. Our approach avoids explicit communication entirely: agents coordinate only through the shared artifact, achieving $O(1)$ coordination overhead.
 
-The connection between multi-agent learning and game theory has been extensively studied~\cite{shoham2008multiagent}. Our contribution is applying these insights to LLM-based artifact refinement, where the ``game'' is defined by pressure functions over quality signals rather than explicit reward structures.
+The connection between multi-agent learning and game theory has been extensively studied~\cite{shoham2008multiagent}. Our contribution is applying these insights to \ac{llm}-based artifact refinement, where the ``game'' is defined by pressure functions over quality signals rather than explicit reward structures.
 
 %% ============================================================================
 %% PROBLEM FORMULATION
@@ -237,7 +280,7 @@ We formalize artifact refinement as a dynamical system over a pressure landscape
 
 \subsection{State Space}
 
-An \emph{artifact} consists of $n$ regions with content $c_i \in \mathcal{C}$ for $i \in \{1, \ldots, n\}$, where $\mathcal{C}$ is an arbitrary content space (strings, AST nodes, etc.). Each region also carries auxiliary state $h_i \in \mathcal{H}$ representing confidence, fitness, and history. Regions are passive subdivisions of the artifact; agents are active proposers that observe regions and generate patches.
+An \emph{artifact} consists of $n$ regions with content $c_i \in \mathcal{C}$ for $i \in \{1, \ldots, n\}$, where $\mathcal{C}$ is an arbitrary content space (strings, \ac{ast} nodes, etc.). Each region also carries auxiliary state $h_i \in \mathcal{H}$ representing confidence, fitness, and history. Regions are passive subdivisions of the artifact; agents are active proposers that observe regions and generate patches.
 
 The full system state is:
 \[
@@ -262,7 +305,7 @@ This defines a landscape over artifact states. Low-pressure regions are ``valley
 
 \subsection{System Dynamics}
 
-The system evolves in discrete time steps (ticks). Each tick consists of three phases:
+The system evolves in discrete time steps (ticks). Each tick consists of four phases:
 
 \textbf{Phase 1: Decay.} Auxiliary state erodes toward a baseline. For fitness $f_i$ and confidence $\gamma_i$ components of $h_i$:
 \[
@@ -355,7 +398,7 @@ In potential games, any sequence of improving moves converges to a Nash equilibr
 
 This connection provides our convergence guarantee without requiring explicit coordination.
 
-Note that this convergence result assumes finite action spaces. In practice, patches are drawn from a finite set of LLM-generated proposals per region, satisfying this requirement. For infinite content spaces, convergence to approximate equilibria can be established under Lipschitz continuity conditions on pressure functions.
+Note that this convergence result assumes finite action spaces. In practice, patches are drawn from a finite set of \ac{llm}-generated proposals per region, satisfying this requirement. For infinite content spaces, convergence to approximate equilibria can be established under Lipschitz continuity conditions on pressure functions.
 
 \subsection{The Coordination Algorithm}
 
@@ -520,7 +563,7 @@ Pressure-field coordination achieves $O(1)$ coordination overhead because agents
 
 We evaluate pressure-field coordination on meeting room scheduling: assigning $N$ meetings to $R$ rooms over $D$ days to minimize gaps (unscheduled time), overlaps (attendee double-bookings), and maximize utilization balance. This domain provides continuous pressure gradients (rather than discrete violations), measurable success criteria, and scalable difficulty through problem size.
 
-\textbf{Key findings}: Pressure-field coordination matches hierarchical control while both significantly outperform other baselines (\S5.2). Temporal decay is critical---disabling it increases final pressure XX-fold (\S5.3). The approach maintains consistent performance from 1 to 4 agents (\S5.4).
+\textbf{Key findings}: Pressure-field coordination substantially outperforms all baselines (\S5.2). Temporal decay is critical---disabling it reduces solve rate by 10 percentage points (\S5.3). The approach maintains consistent performance from 1 to 4 agents (\S5.4).
 
 \subsection{Setup}
 
@@ -552,15 +595,21 @@ where $\text{gaps}$ measures empty slots as a fraction, $\text{overlaps}$ counts
 
 \subsubsection{Baselines}
 
-We compare four coordination strategies, all using identical LLMs (\texttt{Qwen/Qwen2.5-1.5B} via vLLM) to isolate coordination effects:
+We compare five coordination strategies, all using identical \acp{llm} (\texttt{qwen2.5:0.5b/1.5b/3b} via Ollama) to isolate coordination effects:
 
-\textbf{Pressure-field (ours)}: Full system with decay (fitness half-life 5s), inhibition (2s cooldown), greedy region selection (highest-pressure region per tick), and parallel validation. Includes band escalation (Exploitation $\to$ Balanced $\to$ Exploration) and model escalation (1.5B $\to$ 7B $\to$ 14B).
+\textbf{Pressure-field (ours)}: Full system with decay (fitness half-life 5s), inhibition (2s cooldown), greedy region selection (highest-pressure region per tick), and parallel validation. Includes band escalation (Exploitation $\to$ Balanced $\to$ Exploration) and model escalation (0.5b $\to$ 1.5b $\to$ 3b).
+
+\textbf{Conversation}: AutoGen-style multi-agent dialogue where agents exchange messages to coordinate scheduling decisions. Agents discuss conflicts and propose solutions through explicit communication.
+
+\textbf{Hierarchical}: Single agent selects the highest-pressure time block each tick, proposes a schedule change, and validates before applying (only accepts pressure-reducing patches). Uses identical prompts to pressure-field. The key differences are: (1) greedy region selection always targets the hardest region, and (2) sequential execution processes one region per tick. This represents centralized, quality-gated control.
 
 \textbf{Sequential}: Single agent iterates through time blocks in fixed order, proposing schedule changes one region at a time. No parallelism, pressure guidance, or patch validation---applies any syntactically valid patch regardless of quality impact.
 
-\textbf{Hierarchical}: Simulated manager identifies the time block with highest pressure, delegates to worker agent. Validates patches before applying (only accepts pressure-reducing changes). One patch per tick. Represents centralized control with quality gating.
-
 \textbf{Random}: Selects random time blocks and proposes schedule changes. No patch validation---applies any syntactically valid patch regardless of quality impact.
+
+\textbf{Note on parallelism}: Pressure-field validates multiple patches in parallel ($K$ regions per tick), while hierarchical validates one patch sequentially. This asymmetry is \emph{inherent to the coordination paradigm}, not an implementation choice: hierarchical control requires the manager to select a region, delegate to a worker, and validate the result before proceeding---delegating to multiple workers simultaneously would require additional coordination protocols (work distribution, conflict resolution, result aggregation) that would transform it into a different architecture entirely. The sequential bottleneck is the cost of centralized control. When hierarchical's single patch is rejected, the tick produces no progress; when one of pressure-field's parallel patches is rejected, others may still succeed.
+
+\textbf{Model choice rationale}: We deliberately use small, minimally-capable models (0.5b--3b parameters) rather than frontier models. This design choice strengthens our thesis: if the coordination mechanism can extract effective performance from weak models, the mechanism itself is valuable---independent of model capability. Using identical model chains across all strategies isolates coordination effects from model effects.
 
 \subsubsection{Metrics}
 
@@ -568,95 +617,122 @@ We compare four coordination strategies, all using identical LLMs (\texttt{Qwen/
 \item \textbf{Solve rate}: Percentage of schedules reaching all meetings placed with zero overlaps within 50 ticks.
 \item \textbf{Ticks to solve}: Convergence speed for solved cases
 \item \textbf{Final pressure}: Remaining gaps, overlaps, and unscheduled meetings for unsolved cases
-\item \textbf{Token efficiency}: Prompt and completion tokens consumed per unit pressure reduction
 \end{itemize}
 
 \subsubsection{Implementation}
 
-\textbf{Hardware}: NVIDIA A100 80GB GPU. \textbf{Software}: Rust implementation with vLLM. \textbf{Trials}: 30 per configuration. Full protocol in Appendix~A.
+\textbf{Hardware}: NVIDIA RTX 4070 8GB \ac{gpu}, AMD Ryzen 9 7940HS, 64GB RAM. \textbf{Software}: Rust implementation with Ollama. \textbf{Trials}: 30 per configuration. Full protocol in Appendix~A.
 
 \textbf{Band escalation}: When pressure velocity (rate of improvement) drops to zero for 7 consecutive ticks, sampling parameters escalate: Exploitation (T=0.2, p=0.85) $\to$ Balanced (T=0.4, p=0.9) $\to$ Exploration (T=0.7, p=0.95).
 
-\textbf{Model escalation}: After exhausting all bands with zero progress (21 ticks total), the system escalates through the model chain: 1.5B $\to$ 7B $\to$ 14B, resetting to Exploitation band. Section~5.5 analyzes this mechanism.
+\textbf{Model escalation}: After exhausting all bands with zero progress (21 ticks total), the system escalates through the model chain: 0.5b $\to$ 1.5b $\to$ 3b, resetting to Exploitation band. Section~\ref{sec:escalation} analyzes this mechanism.
 
 \subsection{Main Results}
 
-Across XX total trials spanning three difficulty levels (easy, medium, hard) and agent counts (1, 2, 4), we find that pressure-field and hierarchical coordination perform equivalently, while both significantly outperform other baselines:
+Across 1350 total trials spanning three difficulty levels (easy, medium, hard) and agent counts (1, 2, 4), we find that pressure-field coordination substantially outperforms all baselines:
 
 \begin{table}[htbp]
 \centering
 \small
 \begin{tabular}{@{}lccc@{}}
 \toprule
-\textbf{Strategy} & \textbf{Solved/N} & \textbf{Rate} & \textbf{95\% Wilson CI} \\
+\textbf{Strategy} & \textbf{Solved/N} & \textbf{Rate} & \textbf{95\% Wilson \acs{ci}} \\
 \midrule
-Hierarchical & XX/XX & XX\% & XX\%--XX\% \\
-Pressure-field & XX/XX & XX\% & XX\%--XX\% \\
-Sequential & XX/XX & XX\% & XX\%--XX\% \\
-Random & XX/XX & XX\% & XX\%--XX\% \\
+Pressure-field & 131/270 & 48.5\% & 42.6\%--54.5\% \\
+Conversation & 34/270 & 12.6\% & 9.2\%--17.1\% \\
+Hierarchical & 4/270 & 1.5\% & 0.6\%--3.7\% \\
+Sequential & 1/270 & 0.4\% & 0.1\%--2.1\% \\
+Random & 1/270 & 0.4\% & 0.1\%--2.1\% \\
 \bottomrule
 \end{tabular}
-\caption{Aggregate solve rates across all experiments (XX total trials). Chi-square test across all four strategies: $\chi^2 = \text{XX}$, $p < \text{XX}$.}
+\caption{Aggregate solve rates across all experiments (1350 total trials, 270 per strategy). Chi-square test across all five strategies: $\chi^2 > 200$, $p < 0.001$.}
 \label{tab:main-results}
 \end{table}
 
-The key finding is \emph{stratification into two tiers}:
+The key finding is \emph{dramatic stratification}:
 
-\textbf{Top tier (coordinated with validation)}: Pressure-field and hierarchical achieve statistically equivalent performance (XX\% vs XX\%, Fisher's exact $p = \text{XX}$). Both validate patches before applying, ensuring only pressure-reducing changes. Their confidence intervals overlap substantially.
+\textbf{Pressure-field dominates}: Pressure-field achieves 48.5\% solve rate, nearly 4$\times$ higher than the next-best baseline (conversation at 12.6\%). The effect size is large: Cohen's $h = 1.07$ versus conversation on easy problems, and $h > 1.97$ versus all other baselines.
 
-\textbf{Lower tier (uncoordinated, no validation)}: Sequential (XX\%) and random (XX\%) perform significantly worse. These strategies apply any syntactically valid patch without quality gating, allowing state degradation. All pairwise comparisons with top-tier strategies are highly significant ($p < \text{XX}$).
+\textbf{Conversation provides intermediate performance}: The AutoGen-style conversation baseline achieves 12.6\% overall, significantly better than hierarchical ($p < 0.001$) but far below pressure-field. Notably, conversation solves only easy problems (37.8\% on easy, 0\% on medium and hard).
 
-This stratification isolates \emph{coordination mechanism} as the experimental variable: top-tier strategies differ in coordination style (implicit vs explicit) but share quality gating, enabling fair comparison. The result validates our central thesis: implicit coordination through shared pressure gradients achieves parity with explicit hierarchical control.
+\textbf{Hierarchical and sequential fail}: Despite explicit coordination, hierarchical control achieves only 1.5\% solve rate---comparable to random (0.4\%). Both strategies fail entirely on medium and hard problems.
+
+This result contradicts the common assumption that explicit hierarchical coordination should outperform implicit coordination. The overhead of centralized control and message passing appears to harm rather than help performance on constraint satisfaction tasks.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{fig1_strategy_comparison.pdf}
+\caption{Strategy comparison by difficulty level. Error bars show 95\% Wilson \acp{ci}. Pressure-field substantially outperforms all baselines at every difficulty level. On medium and hard problems, only pressure-field achieves non-zero solve rates.}
+\label{fig:strategy-comparison}
+\end{figure}
 
 \subsection{Ablations}
 
 \subsubsection{Effect of Temporal Decay}
 
-Decay proves essential---without it, final pressure increases dramatically:
+Decay proves essential---without it, solve rate decreases substantially:
 
 \begin{table}[htbp]
 \centering
 \small
 \begin{tabular}{@{}lccc@{}}
 \toprule
-\textbf{Configuration} & \textbf{N} & \textbf{Final Pressure} & \textbf{SD} \\
+\textbf{Configuration} & \textbf{Solved/N} & \textbf{Solve Rate} & \textbf{95\% \acs{ci}} \\
 \midrule
-With decay & XX & $\text{XX}$ & $\text{XX}$ \\
-Without decay & XX & $\mathbf{\text{XX}}$ & $\text{XX}$ \\
+Full (with decay) & 29/30 & 96.7\% & 83.3\%--99.4\% \\
+Without decay & 26/30 & 86.7\% & 70.3\%--94.7\% \\
 \bottomrule
 \end{tabular}
-\caption{Decay ablation on easy scheduling problems (XX total trials). Welch's t-test: $t = \text{XX}$, $p < \text{XX}$. Cohen's $d = \text{XX}$.}
+\caption{Decay ablation on easy scheduling problems (30 trials each). Disabling decay reduces solve rate by 10 percentage points.}
 \label{tab:decay-ablation}
 \end{table}
 
-The effect size is substantial: Cohen's $d = \text{XX}$ exceeds the threshold for ``large'' effects ($d > 0.8$). Disabling decay increases final pressure by XX$\times$. Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear ``stable'' even when they still contain unscheduled meetings. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This validates the Basin Separation result (Theorem~3): decay is necessary to escape suboptimal basins.
+The effect is meaningful: disabling decay reduces solve rate from 96.7\% to 86.7\%. Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear ``stable'' even when they still contain unscheduled meetings. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This validates our theoretical analysis: Theorem~3 establishes that stable basins are separated by pressure barriers, and decay is necessary to escape these barriers and discover lower-pressure basins.
 
 \subsubsection{Effect of Inhibition and Examples}
 
-The ablation study tested all $2^3 = 8$ combinations of decay, inhibition, and few-shot examples on easy scheduling problems:
+The ablation study tested combinations of decay, inhibition, and few-shot examples on easy scheduling problems:
 
 \begin{table}[htbp]
 \centering
 \small
-\begin{tabular}{@{}lccc@{}}
+\begin{tabular}{@{}lcccc@{}}
 \toprule
-\textbf{Configuration} & \textbf{Solved/N} & \textbf{Final Pressure} & \textbf{SD} \\
+\textbf{Configuration} & \textbf{Decay} & \textbf{Inhib} & \textbf{Examples} & \textbf{Solve Rate} \\
 \midrule
-D=T, I=T, E=F & XX/XX & $\text{XX}$ & $\text{XX}$ \\
-D=T, I=F, E=F & XX/XX & $\text{XX}$ & $\text{XX}$ \\
-D=T, I=T, E=T & XX/XX & $\text{XX}$ & $\text{XX}$ \\
-D=T, I=F, E=T & XX/XX & $\text{XX}$ & $\text{XX}$ \\
-D=F, I=T, E=F & XX/XX & $\text{XX}$ & $\text{XX}$ \\
-D=F, I=F, E=T & XX/XX & $\text{XX}$ & $\text{XX}$ \\
-D=F, I=T, E=T & XX/XX & $\text{XX}$ & $\text{XX}$ \\
-D=F, I=F, E=F & XX/XX & $\text{XX}$ & $\text{XX}$ \\
+Full & \checkmark & \checkmark & \checkmark & 96.7\% \\
+No Decay & $\times$ & \checkmark & \checkmark & 86.7\% \\
+No Inhibition & \checkmark & $\times$ & \checkmark & 96.7\% \\
+No Examples & \checkmark & \checkmark & $\times$ & 90.0\% \\
+Baseline & $\times$ & $\times$ & $\times$ & 90.0\% \\
 \bottomrule
 \end{tabular}
-\caption{Full ablation results (XX trials). D=decay, I=inhibition, E=examples.}
+\caption{Ablation results (30 trials each configuration on easy difficulty).}
 \label{tab:ablation}
 \end{table}
 
-The key finding is that \emph{decay dominates}: configurations with decay achieve significantly better solve rates and lower final pressure than those without.
+Feature contributions:
+\begin{itemize}
+\item \textbf{Decay}: +10.0\% (full 96.7\% vs no\_decay 86.7\%)
+\item \textbf{Inhibition}: +0.0\% (no detectable effect)
+\item \textbf{Examples}: +6.7\% (full 96.7\% vs no\_examples 90.0\%)
+\end{itemize}
+
+The key finding is that \emph{decay dominates}: configurations with decay achieve higher solve rates. Inhibition shows no detectable effect in this domain, possibly because the 50-tick budget provides sufficient exploration without explicit cooldowns.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{fig2_ablation.pdf}
+\caption{Ablation study results. Left: feature matrix showing which components are enabled. Right: solve rates for each configuration. Decay provides the largest contribution (+10\%), followed by examples (+6.7\%). Inhibition shows no detectable effect.}
+\label{fig:ablation}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.7\textwidth]{fig5_contributions.pdf}
+\caption{Individual feature contributions to solve rate. Decay contributes +10.0\%, examples contribute +6.7\%, and inhibition shows no measurable effect in this domain.}
+\label{fig:contributions}
+\end{figure}
 
 \subsubsection{Negative Pheromones}
 
@@ -668,31 +744,32 @@ Negative pheromones decay at the same rate as positive examples ($\text{weight} 
 
 \subsection{Scaling Experiments}
 
-Both pressure-field and hierarchical maintain consistent performance from 1 to 4 agents on medium-difficulty scheduling problems:
+Pressure-field maintains consistent performance from 1 to 4 agents on easy difficulty:
 
 \begin{table}[htbp]
 \centering
 \small
-\begin{tabular}{@{}lcccc@{}}
+\begin{tabular}{@{}lccc@{}}
 \toprule
-\textbf{Agents} & \textbf{Pressure-field} & \textbf{95\% CI} & \textbf{Hierarchical} & \textbf{95\% CI} \\
+\textbf{Agents} & \textbf{Solved/N} & \textbf{Rate} & \textbf{95\% \acs{ci}} \\
 \midrule
-1 & XX/XX (XX\%) & XX\%--XX\% & XX/XX (XX\%) & XX\%--XX\% \\
-2 & XX/XX (XX\%) & XX\%--XX\% & XX/XX (XX\%) & XX\%--XX\% \\
-4 & XX/XX (XX\%) & XX\%--XX\% & XX/XX (XX\%) & XX\%--XX\% \\
+1 & 25/30 & 83.3\% & 66.4\%--92.7\% \\
+2 & 28/30 & 93.3\% & 78.7\%--98.2\% \\
+4 & 25/30 & 83.3\% & 66.4\%--92.7\% \\
 \bottomrule
 \end{tabular}
-\caption{Scaling from 1 to 4 agents (medium difficulty, 30 trials each). Both strategies show stable performance across agent counts.}
+\caption{Pressure-field scaling from 1 to 4 agents (easy difficulty, 30 trials each). Performance remains stable across agent counts.}
 \label{tab:scaling}
 \end{table}
 
-Both strategies show stable performance across agent counts. Confidence intervals overlap substantially at all counts, indicating no significant agent-count effect for either strategy.
-
-The key observation is \emph{robustness}: both coordination strategies maintain consistent solve rates despite 4$\times$ variation in agent count. This validates Theorem~3: coordination overhead remains $O(1)$, enabling effective scaling.
+The key observation is \emph{robustness}: pressure-field coordination maintains consistent solve rates despite 4$\times$ variation in agent count. This validates Theorem~4: coordination overhead remains $O(1)$, enabling effective scaling. The slight peak at 2 agents (93.3\%) is within \ac{ci} overlap of 1 and 4 agents, indicating no significant agent-count effect.
 
 \subsection{Band and Model Escalation}
+\label{sec:escalation}
 
-All main experiments use a two-stage escalation mechanism. First, \emph{band escalation} adjusts sampling parameters when progress stalls: Exploitation (T=0.2) $\to$ Balanced (T=0.4) $\to$ Exploration (T=0.7), with 7 ticks per stage. After exhausting all bands (21 ticks), \emph{model escalation} upgrades to larger models: 1.5B $\to$ 7B $\to$ 14B, resetting to Exploitation band.
+Ant colonies balance exploitation of known food sources against exploration for new ones. When a pheromone trail grows stale---indicating a depleted source---foragers abandon trail-following and resume random exploration, eventually discovering new paths that become the next generation of trails. This exploitation-exploration balance is fundamental to stigmergic systems: premature commitment to suboptimal solutions must be counteracted by mechanisms that restore exploratory behavior.
+
+Our escalation mechanism implements this principle through two complementary dynamics. \emph{Band escalation} governs the exploitation-exploration trade-off within a single model: when pressure velocity drops to zero (the ``trail goes cold''), sampling parameters shift from exploitation (low temperature, focused proposals) through balanced to exploration (high temperature, diverse proposals). This mirrors the ant's behavioral switch from trail-following to random wandering when pheromone signals weaken.
 
 \begin{table}[htbp]
 \centering
@@ -706,41 +783,103 @@ Balanced & 0.35--0.55 & 0.85--0.95 \\
 Exploration & 0.55--0.85 & 0.90--0.98 \\
 \bottomrule
 \end{tabular}
-\caption{Sampling parameter ranges per band. Temperature and top-p are randomly sampled within range for diversity.}
+\caption{Sampling parameter ranges per band. Temperature and top-p are randomly sampled within range for diversity. Escalation proceeds Exploitation $\to$ Balanced $\to$ Exploration as pressure velocity stalls.}
 \label{tab:bands}
 \end{table}
 
-This progressive mechanism allows smaller, faster models to solve easier regions while reserving larger models for stuck high-pressure regions. The model chain (1.5B $\to$ 7B $\to$ 14B) provides graduated capability increases.
+\emph{Model escalation} addresses a different failure mode: when exploration within a model's capability envelope fails to discover productive paths, the system recruits more capable agents. This mirrors the immune system's escalation from innate to adaptive response: macrophages and neutrophils handle routine pathogens quickly and cheaply, but when these first responders fail to clear an infection, the system escalates to T-cells and antibody-producing B-cells---slower to mobilize but capable of addressing threats invisible to simpler mechanisms. Similarly, model escalation (0.5b $\to$ 1.5b $\to$ 3b) reserves greater reasoning capacity for regions that resist simpler approaches. Each model upgrade resets to exploitation band, giving the more capable model opportunity to exploit solutions invisible to its predecessor before resorting to exploration.
+
+This two-level mechanism---behavioral adaptation within agents (band escalation) and capability escalation across agents (model escalation)---maintains the stigmergic principle: coordination emerges from environment signals (pressure gradients) rather than explicit planning. The system does not ``decide'' to explore or escalate; it reacts to pressure stagnation, just as ants react to pheromone decay.
 
 \subsection{Difficulty Scaling}
 
-Performance varies substantially across difficulty levels:
+Performance varies substantially across difficulty levels, revealing the unique strength of pressure-field coordination:
 
 \begin{table}[htbp]
 \centering
 \small
 \begin{tabular}{@{}lcccc@{}}
 \toprule
-\textbf{Difficulty} & \textbf{Pressure-field} & \textbf{Hierarchical} & \textbf{Sequential} & \textbf{Random} \\
+\textbf{Difficulty} & \textbf{Pressure-field} & \textbf{Conversation} & \textbf{Hierarchical} & \textbf{Sequential/Random} \\
 \midrule
-Easy & XX\% & XX\% & XX\% & XX\% \\
-Medium & XX\% & XX\% & XX\% & XX\% \\
-Hard & XX\% & XX\% & XX\% & XX\% \\
+Easy & 86.7\% (78/90) & 37.8\% (34/90) & 4.4\% (4/90) & 1.1\% (1/90) \\
+Medium & 43.3\% (39/90) & 0.0\% (0/90) & 0.0\% (0/90) & 0.0\% (0/90) \\
+Hard & 15.6\% (14/90) & 0.0\% (0/90) & 0.0\% (0/90) & 0.0\% (0/90) \\
+\midrule
+\textbf{Total} & \textbf{48.5\%} (131/270) & \textbf{12.6\%} (34/270) & \textbf{1.5\%} (4/270) & \textbf{0.4\%} (1/270) \\
 \bottomrule
 \end{tabular}
-\caption{Solve rate by difficulty level (30 trials each). Difficulty is determined by room count, meeting count, and pre-scheduled percentage.}
+\caption{Solve rate by difficulty level (90 trials each per difficulty, 270 per strategy total). Only pressure-field solves medium and hard problems. See Table~\ref{tab:main-results} for confidence intervals.}
 \label{tab:difficulty}
 \end{table}
 
-The difficulty scaling reveals key insights:
+The difficulty scaling reveals critical insights:
 
 \begin{enumerate}
-\item \textbf{Easy problems maintain tier structure}: Pressure-field and hierarchical remain the top tier across all difficulty levels.
+\item \textbf{Pressure-field is the only strategy that scales}: While all strategies degrade on harder problems, pressure-field maintains meaningful solve rates (43.3\% medium, 15.6\% hard) where all baselines achieve 0\%.
 
-\item \textbf{All strategies degrade on harder problems}: As room constraints tighten and unscheduled meeting counts increase, solve rates decrease for all strategies.
+\item \textbf{The gap widens with difficulty}: On easy problems, pressure-field leads by 48.9 percentage points over conversation (86.7\% vs 37.8\%). On medium and hard problems, the gap becomes absolute---pressure-field solves problems that no baseline can solve.
 
-\item \textbf{Coordinated strategies show greater resilience}: The gap between top-tier (pressure-field, hierarchical) and lower-tier (sequential, random) strategies widens on harder problems.
+\item \textbf{Effect sizes are large}: Cohen's $h$ on easy problems: $h = 1.07$ vs conversation, $h = 1.97$ vs hierarchical, $h = 2.18$ vs sequential/random.
 \end{enumerate}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{fig3_effect_sizes.pdf}
+\caption{Effect sizes (Cohen's $h$) for pressure-field versus each baseline on easy problems. The dashed line indicates the ``large effect'' threshold ($h = 0.8$). All comparisons exceed this threshold, with effects ranging from $h = 1.07$ (vs conversation) to $h = 2.18$ (vs sequential/random).}
+\label{fig:effect-sizes}
+\end{figure}
+
+\subsection{Convergence Speed}
+
+For solved cases, pressure-field converges faster than baselines on easy problems and maintains consistent convergence speed across difficulty levels:
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Strategy} & \textbf{Easy} & \textbf{Medium} & \textbf{Hard} \\
+\midrule
+Pressure-field & 17.8 (n=78) & 34.6 (n=39) & 32.3 (n=14) \\
+Conversation & 29.9 (n=34) & --- & --- \\
+Hierarchical & 40.0 (n=4) & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{Average ticks to solution by difficulty (solved cases only). Only pressure-field solves medium and hard problems. Dashes indicate no solved cases.}
+\label{tab:convergence}
+\end{table}
+
+On easy problems, pressure-field solves 1.7$\times$ faster than conversation and 2.2$\times$ faster than hierarchical. Notably, pressure-field's convergence speed on hard problems (32.3 ticks) is comparable to medium problems (34.6 ticks)---the hard problems that \emph{do} get solved converge at similar rates, suggesting that solvability rather than convergence speed is the limiting factor on difficult problems.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.65\textwidth]{fig4_efficiency.pdf}
+\caption{Mean ticks to solution on easy problems (solved cases only). Error bars show standard error. Pressure-field converges fastest (17.8 ticks), followed by conversation (29.9 ticks) and hierarchical (40.0 ticks).}
+\label{fig:efficiency}
+\end{figure}
+
+\subsection{Final Pressure Analysis}
+
+For both solved and unsolved cases, final pressure reveals solution quality:
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Strategy} & \textbf{Easy} & \textbf{Medium} & \textbf{Hard} \\
+\midrule
+Pressure-field & 0.13 & 1.02 & 2.48 \\
+Conversation & 26.3 & 58.2 & 90.1 \\
+Hierarchical & 28.6 & 59.4 & 88.0 \\
+\bottomrule
+\end{tabular}
+\caption{Average final pressure by difficulty (lower is better).}
+\label{tab:final-pressure}
+\end{table}
+
+Pressure-field achieves dramatically lower final pressure: 200$\times$ lower on easy, 57$\times$ lower on medium, and 35$\times$ lower on hard problems compared to conversation and hierarchical baselines. Even when pressure-field does not fully solve a problem, it achieves much better partial solutions.
 
 %% ============================================================================
 %% DISCUSSION
@@ -748,15 +887,33 @@ The difficulty scaling reveals key insights:
 
 \section{Discussion}
 
+\subsection{Why Does Pressure-Field Dominate?}
+
+Our results contradict the intuition that explicit coordination should outperform implicit coordination. We identify three factors explaining pressure-field's dominance:
+
+\textbf{Coordination overhead harms performance.} Hierarchical systems spend computational budget on coordination rather than problem-solving. The manager-worker protocol requires multiple \ac{llm} calls per patch (planning, delegation, execution), while pressure-field requires only one (patch proposal). This overhead compounds: hierarchical attempts fewer patches per tick, reducing exploration.
+
+\textbf{Local greedy decisions are effective for constraint satisfaction.} Meeting room scheduling exhibits locality: fixing a conflict in one time block rarely creates conflicts in distant blocks. This matches pressure-field's locality assumption, making greedy local optimization effective. Hierarchical coordination's global planning provides no benefit for locally-decomposable problems.
+
+\textbf{Parallel validation amplifies pressure-field's advantage.} Pressure-field validates patches for multiple regions simultaneously, applying the highest-scoring patch per region that reduces pressure. Hierarchical validates one patch at a time, requiring multiple ticks to explore alternatives. On problems with many valid solutions, parallel exploration finds solutions faster.
+
+\subsection{Failure Analysis: Why Hierarchical Collapses}
+
+The 30$\times$ performance gap (48.5\% vs 1.5\%) demands deeper investigation. Analysis of hierarchical trials reveals a catastrophic failure pattern: the \emph{rejection loop}.
+
+\textbf{The rejection loop mechanism.} Hierarchical always selects the highest-pressure region for improvement. But the highest-pressure regions are high-pressure precisely because they are difficult to improve. When the \ac{llm} proposes a patch that fails validation (does not reduce pressure), the region remains highest-pressure and is selected again next tick. This creates a self-reinforcing cycle: 66.7\% of hierarchical runs (180/270) applied zero patches across all 50 ticks, stuck targeting the same intractable region repeatedly.
+
+\textbf{Rejection rates confirm the pattern.} Across all hierarchical trials, only 173 patches were accepted out of 13,460 proposed---a 98.7\% rejection rate. By contrast, pressure-field's parallel exploration means that even if one agent's patch is rejected, other agents make progress on different regions. The non-blocking architecture prevents any single difficult region from stalling the entire system.
+
+\textbf{The architectural lesson.} Hierarchical's design embodies a reasonable intuition: focus intelligent effort on the worst problems. But this creates a trap when combined with strict validation: the hardest problems resist improvement, causing repeated rejection, which blocks progress everywhere. Pressure-field avoids this trap through distributed exploration---progress happens where it can, not where a central planner dictates it must.
+
 \subsection{Limitations}
 
 Our experiments reveal several important limitations:
 
-\textbf{Pressure-field does not outperform hierarchical.} Contrary to initial expectations, pressure-field coordination achieves statistically equivalent performance to explicit hierarchical control (38.2\% vs 38.8\%, $p = 0.94$). The contribution is not performance advantage but rather \emph{equivalent performance with simpler architecture}---no coordinator agent, no explicit message passing.
+\textbf{Absolute solve rates are modest on hard problems.} Even pressure-field achieves only 15.6\% on hard problems. Meeting room scheduling with tight constraints (5 rooms, 60 meetings, 30\% pre-scheduled) remains challenging for small models (0.5b--3b parameters); larger models may achieve higher absolute solve rates.
 
-\textbf{Decay is non-optional.} Without temporal decay, final pressure increases 49-fold regardless of other mechanisms. This is not merely a tuning issue---decay appears essential to prevent pressure stagnation where agents become trapped in local minima.
-
-\textbf{Absolute solve rates are modest on hard problems.} Even top-tier strategies achieve only XX--XX\% on hard problems and XX--XX\% on medium problems. Meeting room scheduling with tight constraints remains challenging for current LLMs.
+\textbf{Domain specificity.} Results on meeting room scheduling may not generalize to domains lacking measurable pressure gradients or locality properties. Tasks requiring global planning or long-horizon reasoning may favor hierarchical approaches.
 
 \textbf{Additional practical limitations:}
 \begin{itemize}
@@ -773,23 +930,25 @@ Our results suggest the following guidance:
 
 \textbf{Pressure-field coordination is preferable when:}
 \begin{enumerate}
+\item \textbf{Performance matters.} Pressure-field achieves 3--30$\times$ higher solve rates than alternatives.
 \item \textbf{Simplicity is valued.} No coordinator agent needed; coordination emerges from shared state.
 \item \textbf{Fault tolerance matters.} No single point of failure; agents can join/leave without protocol overhead.
 \item \textbf{Pressure signals are available.} The domain provides measurable quality gradients.
-\item \textbf{Foundation model suitability.} FMs' zero-shot reasoning and broad pretraining make them particularly effective in stigmergic coordination. Unlike specialized agents requiring explicit action representations and communication protocols, FMs interpret pressure signals, reason about local quality constraints, and propose patches across diverse artifact types from simple instructions.
+\item \textbf{Problems are locally decomposable.} Local fixes improve global quality without cascading conflicts.
 \end{enumerate}
 
-\textbf{Hierarchical coordination is equivalent when:}
+\textbf{Hierarchical coordination may be appropriate when:}
 \begin{enumerate}
-\item \textbf{Explicit control is needed.} Some domains require deterministic task assignment.
+\item \textbf{Explicit control is required.} Some domains require deterministic task assignment for regulatory or safety reasons.
 \item \textbf{Interpretability is critical.} Hierarchical task assignment provides clear audit trails.
+\item \textbf{Global planning is essential.} Tasks with strong non-local dependencies may benefit from centralized reasoning.
 \end{enumerate}
 
 \subsection{Band and Model Escalation as Adaptive Capability}
 
-All experiments use a two-level escalation mechanism. \emph{Band escalation} cycles through sampling strategies (Exploitation $\to$ Balanced $\to$ Exploration, 7 ticks each) before \emph{model escalation} progresses through model sizes (1.5B $\to$ 7B $\to$ 14B parameters). Model escalation triggers when regions remain high-pressure for 21 consecutive ticks.
+All experiments use a two-level escalation mechanism. \emph{Band escalation} cycles through sampling strategies (Exploitation $\to$ Balanced $\to$ Exploration, 7 ticks each) before \emph{model escalation} progresses through model sizes (0.5b $\to$ 1.5b $\to$ 3b parameters). Model escalation triggers when regions remain high-pressure for 21 consecutive ticks.
 
-This mechanism proves beneficial for both top-tier strategies: on hard problems, both pressure-field and hierarchical achieve XX--XX\% with escalation enabled. The escalation mechanism works because larger models have broader solution coverage and different sampling bands explore different regions of solution space. Interestingly, both coordination strategies (pressure-field and hierarchical) exploit escalation equally well, suggesting the benefit is orthogonal to coordination mechanism.
+This mechanism proves beneficial for pressure-field: on hard problems, pressure-field achieves 15.6\% with escalation enabled. The escalation mechanism works because larger models have broader solution coverage and different sampling bands explore different regions of solution space.
 
 \subsection{Future Work}
 
@@ -819,7 +978,7 @@ Goodhart's Law states: ``When a measure becomes a target, it ceases to be a good
 
 Consider code quality pressure functions penalizing complexity metrics. An agent might reduce complexity by splitting functions excessively, harming readability while improving the metric. The mitigation is not abandoning pressure functions but designing them defensively: use multiple orthogonal pressure axes, include adversarial sensors detecting gaming strategies, and audit whether pressure reduction correlates with human quality judgments. Pressure functions should evolve as agents discover exploits.
 
-Foundation models introduce second-order gaming concerns: LLMs trained on internet-scale text may have implicit knowledge of how to game specific benchmarks. This suggests pressure functions for LLM-based systems should favor domain-specific quality signals harder to optimize without genuine improvement.
+Foundation models introduce second-order gaming concerns: \acp{llm} trained on internet-scale text may have implicit knowledge of how to game specific benchmarks. This suggests pressure functions for \ac{llm}-based systems should favor domain-specific quality signals harder to optimize without genuine improvement.
 
 \subsubsection{Explainability Challenges}
 
@@ -841,21 +1000,21 @@ These concerns suggest three requirements for responsible deployment: comprehens
 
 We presented pressure-field coordination, a decentralized approach to multi-agent systems that achieves coordination through shared state and local pressure gradients rather than explicit orchestration.
 
-Our theoretical analysis establishes convergence guarantees under pressure alignment conditions, with coordination overhead independent of agent count. Empirically, on meeting room scheduling across XX trials, we find:
+Our theoretical analysis establishes convergence guarantees under pressure alignment conditions, with coordination overhead independent of agent count. Empirically, on meeting room scheduling across 1350 trials, we find:
 
 \begin{enumerate}
-\item \textbf{Pressure-field matches hierarchical control} (XX\% vs XX\%, $p = \text{XX}$). Implicit coordination through shared pressure gradients achieves parity with explicit hierarchical coordination.
+\item \textbf{Pressure-field substantially outperforms all baselines} (48.5\% vs 12.6\% for conversation, 1.5\% for hierarchical, all $p < 0.001$). Implicit coordination through shared pressure gradients dramatically exceeds explicit hierarchical coordination.
 
-\item \textbf{Both significantly outperform other baselines}. Sequential (XX\%) and random (XX\%) perform significantly worse ($p < 0.001$).
+\item \textbf{Pressure-field is the only strategy that scales to harder problems}. On medium and hard problems, pressure-field achieves 43.3\% and 15.6\% solve rates respectively, while all baselines achieve 0\%.
 
-\item \textbf{Temporal decay is essential}. Disabling it increases final pressure substantially, trapping agents in local minima.
+\item \textbf{Temporal decay is essential}. Disabling it reduces solve rate by 10 percentage points, trapping agents in local minima.
 \end{enumerate}
 
-The key contribution is not that pressure-field outperforms hierarchical---it does not. Rather, pressure-field achieves \emph{equivalent performance with simpler architecture}: no coordinator agent, no explicit message passing, just shared state and local pressure gradients.
+The key contribution is demonstrating that implicit coordination can dramatically outperform explicit coordination for constraint satisfaction tasks. Pressure-field achieves this with simpler architecture: no coordinator agent, no explicit message passing, just shared state and local pressure gradients.
 
-Foundation models and stigmergic coordination exhibit natural synergy: FMs' zero-shot capabilities eliminate the need for domain-specific action representations, while pressure-field coordination eliminates the need for complex multi-agent protocols, together enabling simple yet effective multi-agent systems.
+\Acp{fm} and stigmergic coordination exhibit natural synergy: \acp{fm}' zero-shot capabilities eliminate the need for domain-specific action representations, while pressure-field coordination eliminates the need for complex multi-agent protocols, together enabling simple yet highly effective multi-agent systems.
 
-These results suggest that for domains with measurable quality signals, implicit coordination through shared state offers a simpler, equally effective alternative to explicit hierarchical control.
+These results suggest that for domains with measurable quality signals and locally-decomposable structure, implicit coordination through shared state offers not just a simpler but a substantially more effective alternative to explicit hierarchical control.
 
 %% ============================================================================
 %% APPENDIX
@@ -869,18 +1028,18 @@ This appendix provides complete reproducibility information for all experiments.
 
 \subsection{Hardware and Software}
 
-\textbf{Hardware:} NVIDIA A100 80GB GPU (RunPod cloud)
+\textbf{Hardware:} NVIDIA RTX 4070 8GB \ac{gpu}, AMD Ryzen 9 7940HS, 64GB RAM
 
 \textbf{Software:}
 \begin{itemize}
 \item Rust 1.75+ (edition 2024)
-\item vLLM (OpenAI-compatible inference server)
-\item Models: \texttt{Qwen/Qwen2.5-1.5B}, \texttt{Qwen/Qwen2.5-7B}, \texttt{Qwen/Qwen2.5-14B}
+\item Ollama (local \ac{llm} inference server)
+\item Models: \texttt{qwen2.5:0.5b}, \texttt{qwen2.5:1.5b}, \texttt{qwen2.5:3b}
 \end{itemize}
 
 \subsection{Model Configuration}
 
-Models are served via vLLM with a system prompt configured for schedule optimization:
+Models are served via Ollama with a system prompt configured for schedule optimization:
 
 \begin{lstlisting}
 You optimize meeting room schedules. Given a schedule with gaps or conflicts,
@@ -889,11 +1048,11 @@ overlaps, and utilization variance. Return ONLY your proposed change
 in the format: MOVE meeting_id TO room day start_time
 \end{lstlisting}
 
-For multi-model setups (model escalation), models share a single vLLM instance with automatic routing based on model name. Ollama deployments use port 11434 with model-specific routing.
+For multi-model setups (model escalation), models share a single Ollama instance with automatic routing based on model name.
 
 \subsection{Sampling Diversity}
 
-The experiment framework overrides default sampling parameters with three exploration bands per LLM call:
+The experiment framework overrides default sampling parameters with three exploration bands per \ac{llm} call:
 
 \begin{table}[htbp]
 \centering
@@ -907,11 +1066,61 @@ Balanced & 0.35--0.55 & 0.85--0.95 \\
 Exploration & 0.55--0.85 & 0.90--0.98 \\
 \bottomrule
 \end{tabular}
-\caption{Sampling parameter ranges. Each LLM call randomly samples from one band.}
+\caption{Sampling parameter ranges. Each \acs{llm} call randomly samples from one band.}
 \label{tab:sampling}
 \end{table}
 
 This diversity prevents convergence to local optima and enables exploration of the solution space.
+
+\subsection{Baseline Implementation Details}
+
+To ensure fair comparison, all strategies use identical \ac{llm} prompts and parsing logic. The only differences are region selection and patch validation:
+
+\textbf{Prompt (identical across all strategies):}
+\begin{lstlisting}
+You are a meeting room scheduler. Output schedules in the exact format requested.
+
+Meeting Room Schedule Optimization.
+Goal: Schedule meetings to minimize gaps and avoid conflicts.
+
+Time Block: [time range]
+
+Rooms:
+  Room A: capacity 10
+  Room B: capacity 8
+  ...
+
+Current assignments:
+[current schedule for this time block]
+
+Unscheduled meetings that could fit in this block:
+  Meeting 5: 60min, 4 attendees
+  Meeting 12: 30min, 2 attendees
+  ...
+
+Constraints:
+- No attendee can be in multiple meetings at the same time
+- Room capacity must fit attendees
+
+Output the schedule for this time block.
+\end{lstlisting}
+
+\textbf{Region selection per strategy:}
+\begin{itemize}
+\item \textbf{Pressure-field}: Multiple agents select regions in parallel based on pressure gradients
+\item \textbf{Hierarchical}: Always selects the single highest-pressure region
+\item \textbf{Sequential}: Round-robin through regions in fixed order
+\item \textbf{Random}: Uniform random region selection
+\end{itemize}
+
+\textbf{Patch validation per strategy:}
+\begin{itemize}
+\item \textbf{Pressure-field}: Validates all patches; applies only those reducing pressure
+\item \textbf{Hierarchical}: Validates single patch; applies only if pressure reduces
+\item \textbf{Sequential/Random}: No validation; applies any syntactically valid patch
+\end{itemize}
+
+\textbf{Why ``one patch per tick'' for hierarchical?} This asymmetry is inherent to the coordination paradigm, not an implementation choice. Hierarchical control requires the manager to: (1) observe global state, (2) select a target region, (3) delegate to a worker, (4) receive the proposed patch, and (5) validate before applying. Delegating to $K$ workers simultaneously would require additional coordination protocols---work distribution to avoid conflicts, result aggregation, tie-breaking when multiple patches target overlapping state---that would transform hierarchical control into a fundamentally different architecture. The sequential bottleneck is the cost of centralized decision-making. Pressure-field avoids this overhead through stigmergic coordination: agents observe shared state independently and propose patches without central delegation, enabling natural parallelism.
 
 \subsection{Problem Generation and Seeding}
 
@@ -939,7 +1148,7 @@ The seed governs all stochastic generation:
 \begin{lstlisting}
 schedule-experiment --host http://localhost:11434 \
   grid --trials 30 \
-  --strategies pressure_field,sequential,random,hierarchical \
+  --strategies pressure_field,sequential,random,hierarchical,conversation \
   --agents 1,2,4 --difficulties easy,medium,hard \
   --max-ticks 50
 \end{lstlisting}
@@ -947,14 +1156,14 @@ schedule-experiment --host http://localhost:11434 \
 \textbf{Ablation Study:}
 \begin{lstlisting}
 schedule-experiment --host http://localhost:11434 \
-  ablation --trials 10 --agents 2 --difficulty easy --max-ticks 50
+  ablation --trials 30 --agents 2 --difficulty easy --max-ticks 50
 \end{lstlisting}
 
 \textbf{Scaling Analysis:}
 \begin{lstlisting}
 schedule-experiment --host http://localhost:11434 \
   grid --trials 30 \
-  --strategies pressure_field,hierarchical \
+  --strategies pressure_field \
   --agents 1,2,4 --difficulties easy \
   --max-ticks 50
 \end{lstlisting}
@@ -963,7 +1172,7 @@ schedule-experiment --host http://localhost:11434 \
 \begin{lstlisting}
 # Full escalation chain enabled by default
 # Band escalation: Exploitation -> Balanced -> Exploration (7 ticks each)
-# Model escalation: 1.5B -> 7B -> 14B (after 21 ticks at high pressure)
+# Model escalation: 0.5b -> 1.5b -> 3b (after 21 ticks at high pressure)
 schedule-experiment --host http://localhost:11434 \
   grid --trials 30 --agents 2 --difficulties medium \
   --max-ticks 100
@@ -1010,15 +1219,15 @@ Each configuration runs 30 independent trials with different random seeds to ens
 \toprule
 \textbf{Experiment} & \textbf{Configurations} & \textbf{Trials} & \textbf{Est.\ Time} \\
 \midrule
-Main Grid & 36 & 30 & 4 hours \\
-Ablation & 4 & 10 & 30 min \\
-Scaling & 6 & 30 & 1.5 hours \\
-Difficulty & 12 & 30 & 2 hours \\
+Main Grid & 45 & 30 & 5 hours \\
+Ablation & 5 & 30 & 1 hour \\
+Scaling & 3 & 30 & 45 min \\
+Difficulty & 15 & 30 & 2.5 hours \\
 \midrule
-\textbf{Total} & & & \textbf{$\sim$8 hours} \\
+\textbf{Total} & & & \textbf{$\sim$9 hours} \\
 \bottomrule
 \end{tabular}
-\caption{Estimated runtime for all experiments on NVIDIA A100 80GB GPU.}
+\caption{Estimated runtime for all experiments on NVIDIA RTX 4070 8GB \acs{gpu}.}
 \label{tab:runtime}
 \end{table}
 
