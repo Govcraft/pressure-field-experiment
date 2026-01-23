@@ -6,7 +6,7 @@
 
 We evaluate pressure-field coordination on meeting room scheduling: assigning $N$ meetings to $R$ rooms over $D$ days to minimize gaps (unscheduled time), overlaps (attendee double-bookings), and maximize utilization balance. This domain provides continuous pressure gradients (rather than discrete violations), measurable success criteria, and scalable difficulty through problem size.
 
-\textbf{Key findings}: Pressure-field coordination substantially outperforms all baselines (\S\ref{sec:main-results}). Temporal decay is critical---disabling it reduces solve rate by 10 percentage points (\S\ref{sec:ablations}). The approach maintains consistent performance from 1 to 4 agents (\S\ref{sec:scaling}).
+\textbf{Key findings}: Pressure-field coordination outperforms all baselines (\S\ref{sec:main-results}). Temporal decay is critical---disabling it reduces solve rate by 10 percentage points (\S\ref{sec:ablations}). The approach maintains consistent performance from 1 to 4 agents (\S\ref{sec:scaling}).
 
 \subsection{Setup}
 
@@ -44,7 +44,7 @@ We compare five coordination strategies, all using identical \acp{llm} (\texttt{
 
 \textbf{Conversation}: AutoGen-style multi-agent dialogue where agents exchange messages to coordinate scheduling decisions. Agents discuss conflicts and propose solutions through explicit communication.
 
-\textbf{Hierarchical}: Single agent selects the highest-pressure time block each tick, proposes a schedule change, and validates before applying (only accepts pressure-reducing patches). Uses identical prompts to pressure-field. The key differences are: (1) greedy region selection always targets the hardest region, and (2) sequential execution processes one region per tick. This represents centralized, quality-gated control.
+\textbf{Hierarchical}: Single agent selects the highest-pressure time block each tick, proposes a schedule change, and validates before applying (only accepts pressure-reducing patches). Uses identical prompts to pressure-field. The differences are: (1) greedy region selection always targets the hardest region, and (2) sequential execution processes one region per tick. This represents centralized, quality-gated control.
 
 \textbf{Sequential}: Single agent iterates through time blocks in fixed order, proposing schedule changes one region at a time. No parallelism, pressure guidance, or patch validation---applies any syntactically valid patch regardless of quality impact.
 
@@ -73,7 +73,7 @@ We compare five coordination strategies, all using identical \acp{llm} (\texttt{
 \subsection{Main Results}
 \label{sec:main-results}
 
-Across 1350 total trials spanning three difficulty levels (easy, medium, hard) and agent counts (1, 2, 4), we find that pressure-field coordination substantially outperforms all baselines:
+Across 1350 total trials spanning three difficulty levels (easy, medium, hard) and agent counts (1, 2, 4), we find that pressure-field coordination outperforms all baselines:
 
 \begin{table}[htbp]
 \centering
@@ -93,7 +93,7 @@ Random & 1/270 & 0.4\% & 0.1\%--2.1\% \\
 \label{tab:main-results}
 \end{table}
 
-The key finding is \emph{dramatic stratification}:
+The results show clear stratification:
 
 \textbf{Pressure-field dominates}: Pressure-field achieves 48.5\% solve rate, nearly 4$\times$ higher than the next-best baseline (conversation at 12.6\%). The effect size is large: Cohen's $h = 1.07$ versus conversation on easy problems, and $h > 1.97$ versus all other baselines.
 
@@ -106,7 +106,7 @@ This result contradicts the common assumption that explicit hierarchical coordin
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\textwidth]{fig1_strategy_comparison.pdf}
-\caption{Strategy comparison by difficulty level. Error bars show 95\% Wilson \acp{ci}. Pressure-field substantially outperforms all baselines at every difficulty level. On medium and hard problems, only pressure-field achieves non-zero solve rates.}
+\caption{Strategy comparison by difficulty level. Error bars show 95\% Wilson \acp{ci}. Pressure-field outperforms all baselines at every difficulty level. On medium and hard problems, only pressure-field achieves non-zero solve rates.}
 \label{fig:strategy-comparison}
 \end{figure}
 
@@ -115,7 +115,7 @@ This result contradicts the common assumption that explicit hierarchical coordin
 
 \subsubsection{Effect of Temporal Decay}
 
-Decay proves essential---without it, solve rate decreases substantially:
+Decay proves essential---without it, solve rate drops:
 
 \begin{table}[htbp]
 \centering
@@ -163,7 +163,7 @@ Feature contributions:
 \item \textbf{Examples}: +6.7\% (full 96.7\% vs no\_examples 90.0\%)
 \end{itemize}
 
-The key finding is that \emph{decay dominates}: configurations with decay achieve higher solve rates. Inhibition shows no detectable effect in this domain, possibly because the 50-tick budget provides sufficient exploration without explicit cooldowns.
+\emph{Decay dominates}: configurations with decay achieve higher solve rates. Inhibition shows no detectable effect in this domain, possibly because the 50-tick budget provides sufficient exploration without explicit cooldowns.
 
 \begin{figure}[htbp]
 \centering
@@ -208,7 +208,7 @@ Pressure-field maintains consistent performance from 1 to 4 agents on easy diffi
 \label{tab:scaling}
 \end{table}
 
-The key observation is \emph{robustness}: pressure-field coordination maintains consistent solve rates despite 4$\times$ variation in agent count. This validates Theorem~\ref{thm:linear-scaling}: coordination overhead remains $O(1)$, enabling effective scaling. The slight peak at 2 agents (93.3\%) is within \ac{ci} overlap of 1 and 4 agents, indicating no significant agent-count effect.
+The result demonstrates \emph{robustness}: pressure-field coordination maintains consistent solve rates despite 4$\times$ variation in agent count. This validates Theorem~\ref{thm:linear-scaling}: coordination overhead remains $O(1)$, enabling effective scaling. The slight peak at 2 agents (93.3\%) is within \ac{ci} overlap of 1 and 4 agents, indicating no significant agent-count effect.
 
 \subsection{Band and Model Escalation}
 \label{sec:escalation}
@@ -239,7 +239,7 @@ This two-level mechanism---behavioral adaptation within agents (band escalation)
 
 \subsection{Difficulty Scaling}
 
-Performance varies substantially across difficulty levels, revealing the unique strength of pressure-field coordination:
+Performance varies across difficulty levels, revealing the unique strength of pressure-field coordination:
 
 \begin{table}[htbp]
 \centering
@@ -325,4 +325,4 @@ Hierarchical & 28.6 & 59.4 & 88.0 \\
 \label{tab:final-pressure}
 \end{table}
 
-Pressure-field achieves dramatically lower final pressure: 200$\times$ lower on easy, 57$\times$ lower on medium, and 35$\times$ lower on hard problems compared to conversation and hierarchical baselines. Even when pressure-field does not fully solve a problem, it achieves much better partial solutions.
+Pressure-field achieves 200$\times$ lower final pressure on easy, 57$\times$ lower on medium, and 35$\times$ lower on hard problems compared to conversation and hierarchical baselines. Even when pressure-field does not fully solve a problem, it achieves much better partial solutions.

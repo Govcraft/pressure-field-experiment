@@ -19,7 +19,7 @@ ticks, provided the fitness boost $\Delta_f$ from successful patches exceeds dec
 
 \emph{Proof sketch.} Under alignment with $\epsilon$-bounded coupling, each applied patch reduces global pressure by at least $\delta_{\min} - (n-1)\epsilon > 0$. Since $P(s) \geq 0$ and decreases by a fixed minimum per tick (when patches are applied), the system must reach a state where no region exceeds $\tau_{\text{act}}$ within the stated bound. The decay constraint ensures that stability is maintained once reached: fitness reinforcement from the final patches persists longer than the decay erodes it. $\square$
 
-The bound is loose but establishes the key property: convergence time scales with initial pressure, not with state space size or number of possible actions.
+The bound is loose but establishes that convergence time scales with initial pressure, not with state space size or number of possible actions.
 
 \subsection{Basin Quality}
 
@@ -60,7 +60,7 @@ Let $m$ be the number of regions and $n$ be the number of parallel agents. The p
 Total: $O(m \cdot (d + k + a \cdot \log(ma)))$, independent of agent count $n$.
 \end{theorem}
 
-The key observation: adding agents increases throughput (more patches proposed per tick) without increasing coordination cost. This contrasts with hierarchical schemes where coordination overhead grows with agent count.
+Adding agents increases throughput (more patches proposed per tick) without increasing coordination cost. This contrasts with hierarchical schemes where coordination overhead grows with agent count.
 
 \begin{theorem}[Parallel Convergence]
 \label{thm:parallel-convergence}
