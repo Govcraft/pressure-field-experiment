@@ -188,11 +188,7 @@ Example: PROPOSE schedule meeting=5 room=A start=10:00"#,
     }
 
     /// Validator checks scheduling constraints.
-    pub fn validator(
-        proposal: &str,
-        room_schedule: &str,
-        block_content: &str,
-    ) -> String {
+    pub fn validator(proposal: &str, room_schedule: &str, block_content: &str) -> String {
         format!(
             r#"You are a Validator agent checking scheduling constraints.
 
@@ -220,7 +216,11 @@ REJECT <brief reason>"#,
     }
 
     /// Coordinator makes final decision after dialogue.
-    pub fn coordinator_decide(conversation_history: &str, block_content: &str, rooms_info: &str) -> String {
+    pub fn coordinator_decide(
+        conversation_history: &str,
+        block_content: &str,
+        rooms_info: &str,
+    ) -> String {
         format!(
             r#"You are a Coordinator agent. Based on the conversation, make the final decision.
 
@@ -404,7 +404,10 @@ impl ConversationRunner {
                         .and_then(|v| v.as_array())
                         .map(|a| a.len())
                         .unwrap_or(0);
-                    format!("Block {}: {} ({} unscheduled)\n{}", i, time_range, unscheduled, r.content)
+                    format!(
+                        "Block {}: {} ({} unscheduled)\n{}",
+                        i, time_range, unscheduled, r.content
+                    )
                 })
             })
             .collect::<Vec<_>>()
@@ -420,7 +423,10 @@ impl ConversationRunner {
             .join("\n")
     }
 
-    fn format_unscheduled_info(&self, metadata: &std::collections::HashMap<String, serde_json::Value>) -> String {
+    fn format_unscheduled_info(
+        &self,
+        metadata: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> String {
         metadata
             .get("unscheduled_meetings")
             .and_then(|v| v.as_array())
@@ -433,9 +439,7 @@ impl ConversationRunner {
                         let attendees = m.get("attendees")?.as_u64().unwrap_or(0);
                         Some(format!(
                             "Meeting {}: {} slots, {} attendees",
-                            id,
-                            duration,
-                            attendees
+                            id, duration, attendees
                         ))
                     })
                     .collect::<Vec<_>>()
@@ -444,7 +448,11 @@ impl ConversationRunner {
             .unwrap_or_default()
     }
 
-    fn get_room_schedule_for_proposal(&self, artifact: &ScheduleArtifact, proposal: &str) -> String {
+    fn get_room_schedule_for_proposal(
+        &self,
+        artifact: &ScheduleArtifact,
+        proposal: &str,
+    ) -> String {
         // Extract room name from proposal
         let room_re = Regex::new(r"room\s*=\s*([A-Za-z]+)").ok();
         let room_name = room_re
@@ -510,8 +518,13 @@ impl ConversationRunner {
         time_range: &str,
     ) -> Result<Option<String>> {
         let history = state.format_history();
-        let prompt =
-            PromptTemplates::proposer(block_content, unscheduled_info, rooms_info, time_range, &history);
+        let prompt = PromptTemplates::proposer(
+            block_content,
+            unscheduled_info,
+            rooms_info,
+            time_range,
+            &history,
+        );
         let response = self.call_llm(&prompt).await?;
 
         state.add_message(
@@ -589,7 +602,9 @@ fn parse_coordinator_decision(response: &str) -> Option<String> {
     if response.to_uppercase().contains("APPLY") {
         // Extract everything after APPLY that looks like room assignments
         let lines: Vec<&str> = response.lines().collect();
-        let apply_idx = lines.iter().position(|l| l.to_uppercase().contains("APPLY"));
+        let apply_idx = lines
+            .iter()
+            .position(|l| l.to_uppercase().contains("APPLY"));
 
         if let Some(idx) = apply_idx {
             let content_lines: Vec<&str> = lines[idx + 1..]
@@ -627,7 +642,10 @@ mod tests {
     fn test_parse_coordinator_target() {
         assert_eq!(parse_coordinator_target("TARGET block=3"), Some(3));
         assert_eq!(parse_coordinator_target("TARGET block=0"), Some(0));
-        assert_eq!(parse_coordinator_target("I think block 2 needs work"), Some(2));
+        assert_eq!(
+            parse_coordinator_target("I think block 2 needs work"),
+            Some(2)
+        );
         assert_eq!(parse_coordinator_target("invalid"), None);
     }
 

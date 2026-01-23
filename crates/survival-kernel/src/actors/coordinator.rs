@@ -26,8 +26,8 @@ use crate::messages::{
     ApplyDecay, ClaimManagerReady, CoordinatorReady, EvaluatePatch, EvaluatePatchResponse,
     MeasureRegion, MeasurementResult, PatchActorReady, PatchActorsReady, PatchProposal,
     PressureResponse, ProposeForRegion, QueryPressure, RegionApplyPatch, RegionPatchResult,
-    RegisterRegionActors, ResetClaims, SaveArtifact, SensorReady, SensorsReady, SetOutputDir,
-    Tick, TickComplete, ValidatePatch, ValidatePatchResponse, WaitForPatchActors, WaitForSensors,
+    RegisterRegionActors, ResetClaims, SaveArtifact, SensorReady, SensorsReady, SetOutputDir, Tick,
+    TickComplete, ValidatePatch, ValidatePatchResponse, WaitForPatchActors, WaitForSensors,
 };
 use crate::pressure::PressureVector;
 use crate::region::{Patch, RegionId, RegionView};
@@ -282,7 +282,10 @@ impl std::fmt::Debug for KernelCoordinatorState {
             .field("region_actors", &self.region_actors.len())
             .field("artifact", &self.artifact.is_some())
             .field("registered_sensors", &self.registered_sensors.len())
-            .field("registered_patch_actors", &self.registered_patch_actors.len())
+            .field(
+                "registered_patch_actors",
+                &self.registered_patch_actors.len(),
+            )
             .field("pending_measurements", &self.pending_measurements.len())
             .field(
                 "pending_pressure_queries",
@@ -362,10 +365,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         // Get ERN from message payload (broker broadcasts don't preserve sender in envelope)
         let sender_ern = &context.message().sensor_ern;
 
-        actor
-            .model
-            .registered_sensors
-            .insert(sender_ern.clone());
+        actor.model.registered_sensors.insert(sender_ern.clone());
 
         let current_count = actor.model.registered_sensors.len();
         debug!(
@@ -388,10 +388,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         for i in satisfied_indices.into_iter().rev() {
             let (_, sender) = actor.model.pending_sensor_waits.remove(i);
             let _ = sender.send(current_count);
-            debug!(
-                registered = current_count,
-                "Satisfied pending sensor wait"
-            );
+            debug!(registered = current_count, "Satisfied pending sensor wait");
         }
 
         Reply::ready()
@@ -403,7 +400,11 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let sender_ern = &msg.actor_ern;
 
         // Only add if not already registered (dedup via HashSet)
-        if actor.model.registered_patch_actors.insert(sender_ern.clone()) {
+        if actor
+            .model
+            .registered_patch_actors
+            .insert(sender_ern.clone())
+        {
             // Store handle for round-robin dispatch
             actor.model.patch_actor_handles.push(msg.handle.clone());
         }
@@ -443,7 +444,10 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let msg = context.message();
         actor.model.region_actors.clear();
         for (region_id, handle) in &msg.actors {
-            actor.model.region_actors.insert(region_id.clone(), handle.clone());
+            actor
+                .model
+                .region_actors
+                .insert(region_id.clone(), handle.clone());
         }
         trace!(
             regions = actor.model.region_actors.len(),
@@ -474,7 +478,11 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             );
             let broker = actor.broker().clone();
             Reply::pending(async move {
-                broker.broadcast(PatchActorsReady { registered_count: current_count }).await;
+                broker
+                    .broadcast(PatchActorsReady {
+                        registered_count: current_count,
+                    })
+                    .await;
             })
         } else {
             // Need to wait for more actors to register
@@ -490,7 +498,9 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             Reply::pending(async move {
                 // Wait for the oneshot to be triggered when enough actors register
                 if let Ok(registered_count) = rx.await {
-                    broker.broadcast(PatchActorsReady { registered_count }).await;
+                    broker
+                        .broadcast(PatchActorsReady { registered_count })
+                        .await;
                 }
             })
         }
@@ -510,7 +520,11 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             );
             let broker = actor.broker().clone();
             Reply::pending(async move {
-                broker.broadcast(SensorsReady { registered_count: current_count }).await;
+                broker
+                    .broadcast(SensorsReady {
+                        registered_count: current_count,
+                    })
+                    .await;
             })
         } else {
             // Need to wait for more sensors to register
@@ -570,7 +584,12 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let region_data: Vec<_> = artifact
             .region_ids()
             .iter()
-            .filter_map(|rid| artifact.read_region(rid.clone()).ok().map(|view| (rid.clone(), view)))
+            .filter_map(|rid| {
+                artifact
+                    .read_region(rid.clone())
+                    .ok()
+                    .map(|view| (rid.clone(), view))
+            })
             .collect();
 
         let sensor_count = actor.model.registered_sensors.len();
@@ -840,8 +859,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
 
         // Round-robin dispatch: each region goes to exactly one agent
         Reply::pending(async move {
-            for (i, (rid, view, signals, pressures, state)) in
-                proposal_data.into_iter().enumerate()
+            for (i, (rid, view, signals, pressures, state)) in proposal_data.into_iter().enumerate()
             {
                 // Deterministic assignment: region i goes to agent i % handle_count
                 let agent_idx = i % handle_count;
@@ -903,10 +921,10 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         };
 
         // Aggregate token counts before consuming proposals
-        let (prompt_tokens, completion_tokens) = pending.proposals.iter().fold(
-            (0u32, 0u32),
-            |(pt, ct), p| (pt + p.prompt_tokens, ct + p.completion_tokens),
-        );
+        let (prompt_tokens, completion_tokens) =
+            pending.proposals.iter().fold((0u32, 0u32), |(pt, ct), p| {
+                (pt + p.prompt_tokens, ct + p.completion_tokens)
+            });
 
         // Group patches by region and select best patch for each eligible region
         let all_patches: Vec<(f64, Patch)> = pending
@@ -1051,9 +1069,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         {
             let patch = Patch {
                 region: result.region_id.clone(),
-                op: crate::region::PatchOp::Replace(
-                    result.new_content.clone().unwrap_or_default(),
-                ),
+                op: crate::region::PatchOp::Replace(result.new_content.clone().unwrap_or_default()),
                 rationale: String::new(),
                 expected_delta: HashMap::new(),
             };
@@ -1376,13 +1392,13 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         };
 
         // Use artifact's evaluate_patch for clone-based validation
-        let (should_accept, pressure_delta) =
-            if let Some(artifact) = actor.model.artifact.as_ref() {
-                artifact.evaluate_patch(&msg.patch)
-            } else {
-                warn!("EvaluatePatch: artifact not initialized");
-                (false, 0.0)
-            };
+        let (should_accept, pressure_delta) = if let Some(artifact) = actor.model.artifact.as_ref()
+        {
+            artifact.evaluate_patch(&msg.patch)
+        } else {
+            warn!("EvaluatePatch: artifact not initialized");
+            (false, 0.0)
+        };
 
         let response = EvaluatePatchResponse {
             correlation_id: msg.correlation_id,

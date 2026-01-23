@@ -293,7 +293,14 @@ impl ExperimentRunner {
             }
 
             // Handle Conversation strategy separately (different flow)
-            let (patches_applied, messages_this_tick, tick_prompt_tokens, tick_completion_tokens, tick_rejections, tick_model) = if strategy == Strategy::Conversation {
+            let (
+                patches_applied,
+                messages_this_tick,
+                tick_prompt_tokens,
+                tick_completion_tokens,
+                tick_rejections,
+                tick_model,
+            ) = if strategy == Strategy::Conversation {
                 let runner = conversation_runner.as_ref().unwrap();
                 let (patch_opt, conv_state) = runner.run_tick(&artifact, &shared_grid).await?;
 
@@ -307,7 +314,9 @@ impl ExperimentRunner {
                 let conv_model = if self.config.model_chain.is_empty() {
                     self.config.model.clone()
                 } else {
-                    self.config.model_chain[current_model_idx.min(self.config.model_chain.len() - 1)].clone()
+                    self.config.model_chain
+                        [current_model_idx.min(self.config.model_chain.len() - 1)]
+                    .clone()
                 };
 
                 let mut tick_rejections: HashMap<PatchRejection, usize> = HashMap::new();
@@ -353,7 +362,9 @@ impl ExperimentRunner {
                             }
                             Err(e) => {
                                 debug!(tick = tick, error = %e, "Conversation patch rejected");
-                                *tick_rejections.entry(PatchRejection::WouldIncreaseViolations).or_insert(0) += 1;
+                                *tick_rejections
+                                    .entry(PatchRejection::WouldIncreaseViolations)
+                                    .or_insert(0) += 1;
                             }
                         }
                     }
@@ -369,7 +380,14 @@ impl ExperimentRunner {
                     *total_patch_rejections.entry(*reason).or_insert(0) += count;
                 }
 
-                (applied, Some(messages_count), tick_prompt_tokens, tick_completion_tokens, tick_rejections, conv_model)
+                (
+                    applied,
+                    Some(messages_count),
+                    tick_prompt_tokens,
+                    tick_completion_tokens,
+                    tick_rejections,
+                    conv_model,
+                )
             } else {
                 // Standard strategies: PressureField, Sequential, Random, Hierarchical
                 let region_id = match strategy {
@@ -406,13 +424,20 @@ impl ExperimentRunner {
                 let current_model = if self.config.model_chain.is_empty() {
                     self.config.model.clone()
                 } else {
-                    self.config.model_chain[current_model_idx.min(self.config.model_chain.len() - 1)]
-                        .clone()
+                    self.config.model_chain
+                        [current_model_idx.min(self.config.model_chain.len() - 1)]
+                    .clone()
                 };
 
                 // Generate multiple patches concurrently using LLM
                 let patch_results = self
-                    .generate_concurrent_patches(&artifact, region_id.clone(), &examples, &current_model, current_model_idx)
+                    .generate_concurrent_patches(
+                        &artifact,
+                        region_id.clone(),
+                        &examples,
+                        &current_model,
+                        current_model_idx,
+                    )
                     .await?;
 
                 // Tick-level tracking
@@ -431,7 +456,9 @@ impl ExperimentRunner {
                 for (new_content, _, _) in &patch_results {
                     // Skip empty content (parse failures)
                     if new_content.is_empty() {
-                        *tick_rejections.entry(PatchRejection::ParseFailure).or_insert(0) += 1;
+                        *tick_rejections
+                            .entry(PatchRejection::ParseFailure)
+                            .or_insert(0) += 1;
                         continue;
                     }
 
@@ -475,12 +502,16 @@ impl ExperimentRunner {
                             }
                             Err(e) => {
                                 debug!(tick = tick, error = %e, "Patch rejected - invalid");
-                                *tick_rejections.entry(PatchRejection::WouldIncreaseViolations).or_insert(0) += 1;
+                                *tick_rejections
+                                    .entry(PatchRejection::WouldIncreaseViolations)
+                                    .or_insert(0) += 1;
                             }
                         }
                     } else {
                         debug!(tick = tick, "Patch rejected - did not reduce pressure");
-                        *tick_rejections.entry(PatchRejection::DidNotReducePressure).or_insert(0) += 1;
+                        *tick_rejections
+                            .entry(PatchRejection::DidNotReducePressure)
+                            .or_insert(0) += 1;
                     }
                 }
 
@@ -491,7 +522,14 @@ impl ExperimentRunner {
                     *total_patch_rejections.entry(*reason).or_insert(0) += count;
                 }
 
-                (patches_applied, None, tick_prompt_tokens, tick_completion_tokens, tick_rejections, current_model)
+                (
+                    patches_applied,
+                    None,
+                    tick_prompt_tokens,
+                    tick_completion_tokens,
+                    tick_rejections,
+                    current_model,
+                )
             };
 
             // Record metrics
@@ -587,7 +625,8 @@ impl ExperimentRunner {
         let final_model = if self.config.model_chain.is_empty() {
             self.config.model.clone()
         } else {
-            self.config.model_chain[current_model_idx.min(self.config.model_chain.len() - 1)].clone()
+            self.config.model_chain[current_model_idx.min(self.config.model_chain.len() - 1)]
+                .clone()
         };
 
         // Build conversation stats for Conversation strategy
@@ -704,10 +743,7 @@ impl ExperimentRunner {
     }
 
     /// Select the region with most empty cells.
-    fn select_most_incomplete_region(
-        &self,
-        artifact: &LatinSquareArtifact,
-    ) -> Result<RegionId> {
+    fn select_most_incomplete_region(&self, artifact: &LatinSquareArtifact) -> Result<RegionId> {
         let mut max_empty = 0;
         let mut max_region = artifact.region_ids()[0].clone();
 
@@ -767,7 +803,10 @@ impl ExperimentRunner {
         };
 
         // Create concurrent LLM calls
-        let num_calls = self.config.max_concurrent_llm.min(empty_positions.len() * 2);
+        let num_calls = self
+            .config
+            .max_concurrent_llm
+            .min(empty_positions.len() * 2);
         let vllm_host = self.config.get_vllm_host(model_idx);
         let client = Arc::new(VllmClient::new(vllm_host));
 
@@ -818,7 +857,10 @@ What number goes in position {target_pos}? Return just the number."#,
                         _ => (rng.random_range(0.55..0.85), rng.random_range(0.90..0.98)),
                     };
 
-                    match client.generate_with_usage(&model, &prompt, temp, top_p, 8).await {
+                    match client
+                        .generate_with_usage(&model, &prompt, temp, top_p, 8)
+                        .await
+                    {
                         Ok(response) => {
                             let response_text = response.content.trim();
                             // Parse single number
@@ -840,7 +882,11 @@ What number goes in position {target_pos}? Return just the number."#,
                                 }
                             }
                             // Failed to parse, but still consumed tokens
-                            Some(("".to_string(), response.prompt_tokens, response.completion_tokens))
+                            Some((
+                                "".to_string(),
+                                response.prompt_tokens,
+                                response.completion_tokens,
+                            ))
                         }
                         Err(e) => {
                             debug!(error = %e, "Concurrent LLM call failed");
@@ -926,11 +972,10 @@ What number goes in position {target_pos}? Return just the number."#,
         }
 
         // Build kernel and spawn (without running tick loop)
-        let coordinator_handle =
-            AsyncKernelBuilder::new(kernel_config, Box::new(artifact.clone()))
-                .add_sensor(Box::new(sensor))
-                .spawn(&mut runtime)
-                .await;
+        let coordinator_handle = AsyncKernelBuilder::new(kernel_config, Box::new(artifact.clone()))
+            .add_sensor(Box::new(sensor))
+            .spawn(&mut runtime)
+            .await;
 
         // Create observer to collect TickComplete broadcasts
         let (tick_tx, mut tick_rx) = tokio::sync::mpsc::channel::<TickResult>(1000);
@@ -1398,7 +1443,11 @@ mod tests {
         // Test the clamping logic used in experiment.rs:320 and :465
         for idx in 0..10 {
             let clamped = idx.min(model_chain.len() - 1);
-            assert!(clamped < model_chain.len(), "Index {} should be clamped", idx);
+            assert!(
+                clamped < model_chain.len(),
+                "Index {} should be clamped",
+                idx
+            );
             // Should not panic when accessing
             let _model = &model_chain[clamped];
         }
@@ -1484,8 +1533,14 @@ mod tests {
 
         // Verify default config has escalation enabled
         let config = ExperimentRunnerConfig::default();
-        assert!(!config.model_chain.is_empty(), "Model chain should not be empty");
-        assert_eq!(config.escalation_threshold, 20, "Default escalation threshold");
+        assert!(
+            !config.model_chain.is_empty(),
+            "Model chain should not be empty"
+        );
+        assert_eq!(
+            config.escalation_threshold, 20,
+            "Default escalation threshold"
+        );
 
         // Verify all strategies would use the same model selection logic
         // (current_model_idx starts at 0 for all, and escalation increments it)
@@ -1512,7 +1567,10 @@ mod tests {
         // Edge case: Column conflicts weighted same as row duplicates
         let col_only = compute_pressure(0.0, 0.0, 3.0);
         let row_only = compute_pressure(0.0, 3.0, 0.0);
-        assert_eq!(col_only, row_only, "Col conflicts and row dups should have same weight");
+        assert_eq!(
+            col_only, row_only,
+            "Col conflicts and row dups should have same weight"
+        );
     }
 
     #[test]
@@ -1528,7 +1586,11 @@ mod tests {
         // This triggers escalation when zero_velocity_streak >= escalation_threshold
         let threshold = 20;
         let stuck_ticks = 25;
-        assert!(stuck_ticks >= threshold, "Should trigger escalation after {} ticks", stuck_ticks);
+        assert!(
+            stuck_ticks >= threshold,
+            "Should trigger escalation after {} ticks",
+            stuck_ticks
+        );
     }
 
     #[test]

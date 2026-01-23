@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use mti::prelude::*;
 use survival_kernel::artifact::Artifact;
 use survival_kernel::region::{Patch, PatchOp, RegionId, RegionView};
@@ -316,10 +316,8 @@ impl Artifact for LatinSquareArtifact {
                 let new_row = Self::parse_row(content, self.n)?;
 
                 // Validate that fixed cells are preserved
-                for (col, (is_fixed, new_val)) in self.fixed[row_idx]
-                    .iter()
-                    .zip(new_row.iter())
-                    .enumerate()
+                for (col, (is_fixed, new_val)) in
+                    self.fixed[row_idx].iter().zip(new_row.iter()).enumerate()
                 {
                     if *is_fixed {
                         let original = self.grid[row_idx][col];
@@ -376,7 +374,11 @@ impl Artifact for LatinSquareArtifact {
 
 impl fmt::Display for LatinSquareArtifact {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Latin Square {}x{} (puzzle: {})", self.n, self.n, self.puzzle_id)?;
+        writeln!(
+            f,
+            "Latin Square {}x{} (puzzle: {})",
+            self.n, self.n, self.puzzle_id
+        )?;
         for (i, row) in self.grid.iter().enumerate() {
             write!(f, "  Row {}: ", i)?;
             for cell in row {
@@ -603,7 +605,10 @@ mod tests {
 
         // Now for row 2, column 1 should NOT have 2 available (row 0 and row 1 both have 2)
         let avail_after = artifact.column_availability(2);
-        assert!(!avail_after[&1].contains(&2), "2 should not be available in col 1 for row 2");
+        assert!(
+            !avail_after[&1].contains(&2),
+            "2 should not be available in col 1 for row 2"
+        );
     }
 
     // =========================================================================
@@ -680,13 +685,69 @@ mod tests {
     fn test_is_solved_valid_7x7() {
         // Valid 7x7 Latin square (the size used in experiments)
         let grid = vec![
-            vec![Some(1), Some(2), Some(3), Some(4), Some(5), Some(6), Some(7)],
-            vec![Some(2), Some(3), Some(4), Some(5), Some(6), Some(7), Some(1)],
-            vec![Some(3), Some(4), Some(5), Some(6), Some(7), Some(1), Some(2)],
-            vec![Some(4), Some(5), Some(6), Some(7), Some(1), Some(2), Some(3)],
-            vec![Some(5), Some(6), Some(7), Some(1), Some(2), Some(3), Some(4)],
-            vec![Some(6), Some(7), Some(1), Some(2), Some(3), Some(4), Some(5)],
-            vec![Some(7), Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)],
+            vec![
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(6),
+                Some(7),
+            ],
+            vec![
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(6),
+                Some(7),
+                Some(1),
+            ],
+            vec![
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(6),
+                Some(7),
+                Some(1),
+                Some(2),
+            ],
+            vec![
+                Some(4),
+                Some(5),
+                Some(6),
+                Some(7),
+                Some(1),
+                Some(2),
+                Some(3),
+            ],
+            vec![
+                Some(5),
+                Some(6),
+                Some(7),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+            ],
+            vec![
+                Some(6),
+                Some(7),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+            ],
+            vec![
+                Some(7),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(6),
+            ],
         ];
         let artifact = LatinSquareArtifact::new(7, grid, "test").unwrap();
         assert!(artifact.is_solved(), "Valid 7x7 should be solved");
@@ -705,7 +766,11 @@ mod tests {
             vec![None, None, None, None],
         ];
         let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
-        assert_eq!(artifact.total_violations(), 0, "Empty grid has no violations");
+        assert_eq!(
+            artifact.total_violations(),
+            0,
+            "Empty grid has no violations"
+        );
     }
 
     #[test]
@@ -717,7 +782,11 @@ mod tests {
             vec![None, None, None, None],
         ];
         let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
-        assert_eq!(artifact.total_violations(), 1, "Should count one row violation");
+        assert_eq!(
+            artifact.total_violations(),
+            1,
+            "Should count one row violation"
+        );
     }
 
     #[test]
@@ -729,7 +798,11 @@ mod tests {
             vec![None, None, None, None],
         ];
         let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
-        assert_eq!(artifact.total_violations(), 1, "Should count one column violation");
+        assert_eq!(
+            artifact.total_violations(),
+            1,
+            "Should count one column violation"
+        );
     }
 
     #[test]
@@ -742,7 +815,11 @@ mod tests {
         ];
         let artifact = LatinSquareArtifact::new(4, grid, "test").unwrap();
         // Row 0 has 1 duplicate, Column 0 has 1 duplicate
-        assert_eq!(artifact.total_violations(), 2, "Should count row and column violations");
+        assert_eq!(
+            artifact.total_violations(),
+            2,
+            "Should count row and column violations"
+        );
     }
 
     #[test]
@@ -783,7 +860,10 @@ mod tests {
         artifact.apply_patch(patch).unwrap();
 
         let regions_after = artifact.region_ids();
-        assert_eq!(regions_before, regions_after, "Region IDs should be stable after patch");
+        assert_eq!(
+            regions_before, regions_after,
+            "Region IDs should be stable after patch"
+        );
     }
 
     #[test]

@@ -294,15 +294,14 @@ impl LlmActor {
 
                 // Generate patch
                 let config_guard = config.as_ref().unwrap().read().await;
-                let result = generate_schedule_patch(&config_guard, &msg, &examples, &rejected).await;
+                let result =
+                    generate_schedule_patch(&config_guard, &msg, &examples, &rejected).await;
 
                 drop(config_guard);
 
                 match result {
                     Ok((patch, prompt_tokens, completion_tokens)) => {
-                        let patches = patch
-                            .map(|p| vec![(1.0, p)])
-                            .unwrap_or_default();
+                        let patches = patch.map(|p| vec![(1.0, p)]).unwrap_or_default();
 
                         broker
                             .broadcast(PatchProposal {
@@ -389,10 +388,16 @@ async fn generate_schedule_patch(
                 .iter()
                 .map(|m| {
                     let id = m.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let duration = m.get("duration_slots").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let duration = m
+                        .get("duration_slots")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
                     let attendees = m.get("attendees").and_then(|v| v.as_u64()).unwrap_or(0);
                     let duration_min = duration * 30;
-                    format!("  Meeting {}: {}min, {} attendees", id, duration_min, attendees)
+                    format!(
+                        "  Meeting {}: {}min, {} attendees",
+                        id, duration_min, attendees
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -417,10 +422,7 @@ async fn generate_schedule_patch(
         String::new()
     } else {
         let formatted: Vec<String> = rejected.iter().map(|r| r.format_for_prompt()).collect();
-        let text = format!(
-            "\nHints for better scheduling:\n{}\n",
-            formatted.join("\n")
-        );
+        let text = format!("\nHints for better scheduling:\n{}\n", formatted.join("\n"));
         debug!(hints = %text, "Including positive guidance hints in prompt");
         text
     };

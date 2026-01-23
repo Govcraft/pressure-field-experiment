@@ -133,7 +133,10 @@ impl ScheduleGenerator {
         (0..self.config.num_rooms)
             .map(|i| Room {
                 id: i as u32,
-                name: room_names.get(i).map(|c| c.to_string()).unwrap_or_else(|| format!("R{}", i)),
+                name: room_names
+                    .get(i)
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| format!("R{}", i)),
                 capacity: self.rng.random_range(min_cap..=max_cap),
             })
             .collect()
@@ -147,22 +150,33 @@ impl ScheduleGenerator {
             (self.config.num_meetings as f64 * self.config.pre_scheduled_fraction) as usize;
 
         // Track scheduled slots to avoid initial overlaps
-        let mut scheduled_slots: Vec<Vec<Vec<bool>>> = vec![
-            vec![vec![false; self.config.slots_per_day as usize]; self.config.num_days as usize];
-            rooms.len()
-        ];
+        let mut scheduled_slots: Vec<Vec<Vec<bool>>> =
+            vec![
+                vec![
+                    vec![false; self.config.slots_per_day as usize];
+                    self.config.num_days as usize
+                ];
+                rooms.len()
+            ];
 
         // Track attendee schedules to avoid initial double-bookings
-        let mut attendee_schedules: Vec<Vec<Vec<bool>>> = vec![
-            vec![vec![false; self.config.slots_per_day as usize]; self.config.num_days as usize];
-            self.config.num_attendees
-        ];
+        let mut attendee_schedules: Vec<Vec<Vec<bool>>> =
+            vec![
+                vec![
+                    vec![false; self.config.slots_per_day as usize];
+                    self.config.num_days as usize
+                ];
+                self.config.num_attendees
+            ];
 
         let mut meetings = Vec::with_capacity(self.config.num_meetings);
 
         for i in 0..self.config.num_meetings {
             let duration_slots = self.rng.random_range(min_dur..=max_dur);
-            let num_attendees = self.rng.random_range(min_att..=max_att).min(self.config.num_attendees);
+            let num_attendees = self
+                .rng
+                .random_range(min_att..=max_att)
+                .min(self.config.num_attendees);
 
             // Select random attendees
             let mut attendees: Vec<u32> = (0..self.config.num_attendees as u32).collect();
@@ -219,9 +233,8 @@ impl ScheduleGenerator {
             let start_slot = self.rng.random_range(0..max_start);
 
             // Check if room is available
-            let room_available = (start_slot..start_slot + duration_slots).all(|slot| {
-                !scheduled_slots[room_id as usize][day as usize][slot as usize]
-            });
+            let room_available = (start_slot..start_slot + duration_slots)
+                .all(|slot| !scheduled_slots[room_id as usize][day as usize][slot as usize]);
 
             if !room_available {
                 continue;
@@ -229,9 +242,8 @@ impl ScheduleGenerator {
 
             // Check if all attendees are available
             let attendees_available = attendees.iter().all(|&att| {
-                (start_slot..start_slot + duration_slots).all(|slot| {
-                    !attendee_schedules[att as usize][day as usize][slot as usize]
-                })
+                (start_slot..start_slot + duration_slots)
+                    .all(|slot| !attendee_schedules[att as usize][day as usize][slot as usize])
             });
 
             if !attendees_available {

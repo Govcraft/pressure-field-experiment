@@ -130,8 +130,8 @@ impl RegionActor {
         let region_id = self.region_id.clone();
         let region_id_short = format!("{:.8}", region_id);
 
-        let mut actor = runtime
-            .new_actor_with_name::<RegionActorState>(format!("Region:{}", region_id_short));
+        let mut actor =
+            runtime.new_actor_with_name::<RegionActorState>(format!("Region:{}", region_id_short));
 
         // Initialize state
         actor.model.region_id = self.region_id;
@@ -212,7 +212,11 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
                     .copied()
                     .unwrap_or(weighted_pressure);
                 let new_ema = alpha * weighted_pressure + (1.0 - alpha) * current;
-                actor.model.state.pressure_ema.insert(axis.name.clone(), new_ema);
+                actor
+                    .model
+                    .state
+                    .pressure_ema
+                    .insert(axis.name.clone(), new_ema);
             }
         }
 

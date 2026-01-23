@@ -259,11 +259,25 @@ mod tests {
             let mut seen = [false; 5];
             for cell in row {
                 let val = cell.expect("No empty cells") as usize;
-                assert!((1..=5).contains(&val), "Row {} has out of range value {}", row_idx, val);
-                assert!(!seen[val - 1], "Row {} has duplicate value {}", row_idx, val);
+                assert!(
+                    (1..=5).contains(&val),
+                    "Row {} has out of range value {}",
+                    row_idx,
+                    val
+                );
+                assert!(
+                    !seen[val - 1],
+                    "Row {} has duplicate value {}",
+                    row_idx,
+                    val
+                );
                 seen[val - 1] = true;
             }
-            assert!(seen.iter().all(|&x| x), "Row {} missing some values", row_idx);
+            assert!(
+                seen.iter().all(|&x| x),
+                "Row {} missing some values",
+                row_idx
+            );
         }
     }
 
@@ -283,11 +297,25 @@ mod tests {
             let mut seen = [false; 5];
             for row in grid.iter() {
                 let val = row[col_idx].expect("No empty cells") as usize;
-                assert!((1..=5).contains(&val), "Column {} has out of range value {}", col_idx, val);
-                assert!(!seen[val - 1], "Column {} has duplicate value {}", col_idx, val);
+                assert!(
+                    (1..=5).contains(&val),
+                    "Column {} has out of range value {}",
+                    col_idx,
+                    val
+                );
+                assert!(
+                    !seen[val - 1],
+                    "Column {} has duplicate value {}",
+                    col_idx,
+                    val
+                );
                 seen[val - 1] = true;
             }
-            assert!(seen.iter().all(|&x| x), "Column {} missing some values", col_idx);
+            assert!(
+                seen.iter().all(|&x| x),
+                "Column {} missing some values",
+                col_idx
+            );
         }
     }
 
@@ -374,7 +402,10 @@ mod tests {
         // (with random seeds, the chance of all 10 being identical is vanishingly small)
         let first_grid = batch[0].grid();
         let all_same = batch.iter().all(|a| a.grid() == first_grid);
-        assert!(!all_same, "Batch should generate varied puzzles without a seed");
+        assert!(
+            !all_same,
+            "Batch should generate varied puzzles without a seed"
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
 //! Region types: the atomic units of artifacts that can be independently scored and patched.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use dashmap::DashMap;
 use mti::prelude::MagicTypeId;
@@ -147,7 +147,8 @@ impl AtomicRegionState {
 
     /// Set the confidence value atomically.
     pub fn set_confidence(&self, value: f64) {
-        self.confidence_bits.store(value.to_bits(), Ordering::Release);
+        self.confidence_bits
+            .store(value.to_bits(), Ordering::Release);
     }
 
     /// Check if this region is currently inhibited.
@@ -238,7 +239,12 @@ impl AtomicRegionState {
     }
 
     /// Apply decay to fitness and confidence values.
-    pub fn apply_decay(&self, now_ms: u64, fitness_half_life_ms: u64, confidence_half_life_ms: u64) {
+    pub fn apply_decay(
+        &self,
+        now_ms: u64,
+        fitness_half_life_ms: u64,
+        confidence_half_life_ms: u64,
+    ) {
         let last_updated = self.last_updated_ms.load(Ordering::Acquire);
         let dt_ms = now_ms.saturating_sub(last_updated);
 

@@ -45,13 +45,7 @@ impl LatinSquareSensor {
         content
             .split_whitespace()
             .take(n)
-            .map(|s| {
-                if s == "_" {
-                    None
-                } else {
-                    s.parse().ok()
-                }
-            })
+            .map(|s| if s == "_" { None } else { s.parse().ok() })
             .collect()
     }
 
@@ -118,7 +112,10 @@ impl Sensor for LatinSquareSensor {
 
         // Count column conflicts (requires grid access)
         let col_conflicts = {
-            let grid = self.grid.read().map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+            let grid = self
+                .grid
+                .read()
+                .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
             Self::count_column_conflicts(&row, row_idx, &grid, self.n) as f64
         };
 
@@ -141,7 +138,9 @@ impl Sensor for LatinSquareSensor {
 ///
 /// This should be called after each successful patch application.
 pub fn update_shared_grid(grid: &SharedGrid, new_state: &[Vec<Option<u8>>]) -> Result<()> {
-    let mut locked = grid.write().map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+    let mut locked = grid
+        .write()
+        .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
     locked.clear();
     locked.extend(new_state.iter().cloned());
     Ok(())
@@ -294,7 +293,10 @@ mod tests {
         };
 
         let signals = sensor.measure(&view_row1_with_conflict).unwrap();
-        assert_eq!(signals["col_conflicts"], 1.0, "Should detect conflict with row 0's column 1");
+        assert_eq!(
+            signals["col_conflicts"], 1.0,
+            "Should detect conflict with row 0's column 1"
+        );
 
         // Now simulate a patch that changes row 0's column 1 from 2 to 4
         // After update_shared_grid, the conflict should no longer exist
@@ -340,7 +342,10 @@ mod tests {
         };
 
         let signals = sensor.measure(&view_row1).unwrap();
-        assert_eq!(signals["col_conflicts"], 0.0, "Row 1's 2,1,4,3 has no conflicts with row 0");
+        assert_eq!(
+            signals["col_conflicts"], 0.0,
+            "Row 1's 2,1,4,3 has no conflicts with row 0"
+        );
 
         // Suppose the kernel applied a patch to row 0, changing it to 2,1,3,4
         // But we DO NOT call update_shared_grid (simulating the bug)
@@ -426,7 +431,10 @@ mod tests {
         // Row 1 proposes (3, 2, 1, 4):
         //   Col 0: 3 conflicts with row 2's 3
         //   Col 2: 1 conflicts with row 2's 1
-        assert_eq!(signals_before["col_conflicts"], 2.0, "Initial state should show 2 conflicts");
+        assert_eq!(
+            signals_before["col_conflicts"], 2.0,
+            "Initial state should show 2 conflicts"
+        );
 
         // Now apply a patch to row 0 via the artifact
         let patch = Patch {
@@ -447,7 +455,10 @@ mod tests {
         // Col 0: 3 still conflicts with row 2's 3
         // Col 2: 1 still conflicts with row 2's 1
         // But importantly, the sensor is seeing CURRENT state, not stale state
-        assert_eq!(signals_after["col_conflicts"], 2.0, "After update, still 2 conflicts");
+        assert_eq!(
+            signals_after["col_conflicts"], 2.0,
+            "After update, still 2 conflicts"
+        );
     }
 
     /// Test multiple sequential patches with shared_grid sync
@@ -492,7 +503,10 @@ mod tests {
             },
         };
         let signals = sensor.measure(&view_row1_attempt1).unwrap();
-        assert_eq!(signals["col_conflicts"], 4.0, "Row 1 duplicating row 0 should have 4 col conflicts");
+        assert_eq!(
+            signals["col_conflicts"], 4.0,
+            "Row 1 duplicating row 0 should have 4 col conflicts"
+        );
 
         // Tick 2: Patch row 1 to "2 1 4 3" (valid, no conflicts)
         let patch1 = Patch {
@@ -516,7 +530,10 @@ mod tests {
             },
         };
         let signals = sensor.measure(&view_row2_attempt).unwrap();
-        assert_eq!(signals["col_conflicts"], 4.0, "Row 2 duplicating row 0 should have 4 conflicts");
+        assert_eq!(
+            signals["col_conflicts"], 4.0,
+            "Row 2 duplicating row 0 should have 4 conflicts"
+        );
 
         // A valid row 2 proposal
         let view_row2_valid = RegionView {
@@ -530,7 +547,10 @@ mod tests {
             },
         };
         let signals = sensor.measure(&view_row2_valid).unwrap();
-        assert_eq!(signals["col_conflicts"], 0.0, "Valid row 2 should have no conflicts");
+        assert_eq!(
+            signals["col_conflicts"], 0.0,
+            "Valid row 2 should have no conflicts"
+        );
     }
 
     /// Test that demonstrates the exact bug scenario:
@@ -673,7 +693,13 @@ mod tests {
             },
         };
         let signals = sensor.measure(&view_row3_valid).unwrap();
-        assert_eq!(signals["col_conflicts"], 0.0, "Valid completion should have no conflicts");
-        assert_eq!(signals["row_duplicates"], 0.0, "Valid completion should have no duplicates");
+        assert_eq!(
+            signals["col_conflicts"], 0.0,
+            "Valid completion should have no conflicts"
+        );
+        assert_eq!(
+            signals["row_duplicates"], 0.0,
+            "Valid completion should have no duplicates"
+        );
     }
 }

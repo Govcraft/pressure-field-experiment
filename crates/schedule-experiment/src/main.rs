@@ -9,10 +9,10 @@ use clap::{Parser, Subcommand};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+use schedule_experiment::ScheduleGenerator;
 use schedule_experiment::experiment::{ExperimentRunner, ExperimentRunnerConfig, Strategy};
 use schedule_experiment::generator::ScheduleGeneratorConfig;
 use schedule_experiment::results::{ExperimentResult, GridResults};
-use schedule_experiment::ScheduleGenerator;
 use survival_kernel::artifact::Artifact;
 
 #[derive(Parser)]
@@ -75,7 +75,11 @@ enum Commands {
         #[arg(short, long, default_value = "30")]
         trials: usize,
         /// Strategies (comma-separated)
-        #[arg(short, long, default_value = "pressure_field,conversation,sequential,random,hierarchical")]
+        #[arg(
+            short,
+            long,
+            default_value = "pressure_field,conversation,sequential,random,hierarchical"
+        )]
         strategies: String,
         /// Agent counts (comma-separated)
         #[arg(short, long, default_value = "1,2,4")]
@@ -166,22 +170,25 @@ async fn main() -> Result<()> {
             max_ticks,
             output,
         } => {
-            let strategy = parse_strategy(&strategy)
-                .unwrap_or_else(|| {
-                    eprintln!("Unknown strategy: {}. Using 'pressure_field'.", strategy);
-                    Strategy::PressureField
-                });
+            let strategy = parse_strategy(&strategy).unwrap_or_else(|| {
+                eprintln!("Unknown strategy: {}. Using 'pressure_field'.", strategy);
+                Strategy::PressureField
+            });
 
             let generator_config = parse_difficulty(&difficulty);
 
-            let model_chain: Vec<String> = cli.model_chain
+            let model_chain: Vec<String> = cli
+                .model_chain
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect();
 
             let config = ExperimentRunnerConfig {
                 vllm_host: cli.host.clone(),
-                model: model_chain.first().cloned().unwrap_or_else(|| "qwen2.5:1.5b".to_string()),
+                model: model_chain
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "qwen2.5:1.5b".to_string()),
                 model_chain,
                 generator_config,
                 max_ticks,
@@ -210,14 +217,20 @@ async fn main() -> Result<()> {
             if !result.band_escalation_events.is_empty() {
                 println!("\nBand escalation events:");
                 for event in &result.band_escalation_events {
-                    println!("  Tick {}: {} -> {}", event.tick, event.from_band, event.to_band);
+                    println!(
+                        "  Tick {}: {} -> {}",
+                        event.tick, event.from_band, event.to_band
+                    );
                 }
             }
 
             if !result.escalation_events.is_empty() {
                 println!("\nModel escalation events:");
                 for event in &result.escalation_events {
-                    println!("  Tick {}: {} -> {}", event.tick, event.from_model, event.to_model);
+                    println!(
+                        "  Tick {}: {} -> {}",
+                        event.tick, event.from_model, event.to_model
+                    );
                 }
             }
 
@@ -226,7 +239,10 @@ async fn main() -> Result<()> {
                 println!("  Total messages: {}", stats.total_messages);
                 println!("  Avg messages/tick: {:.2}", stats.avg_messages_per_tick);
                 println!("  Consensus rate: {:.1}%", stats.consensus_rate * 100.0);
-                println!("  Avg turns to consensus: {:.2}", stats.avg_turns_to_consensus);
+                println!(
+                    "  Avg turns to consensus: {:.2}",
+                    stats.avg_turns_to_consensus
+                );
             }
 
             if let Some(output) = output {
@@ -255,12 +271,10 @@ async fn main() -> Result<()> {
                 .filter_map(|s| s.trim().parse().ok())
                 .collect();
 
-            let difficulty_names: Vec<&str> = difficulties
-                .split(',')
-                .map(|s| s.trim())
-                .collect();
+            let difficulty_names: Vec<&str> = difficulties.split(',').map(|s| s.trim()).collect();
 
-            let model_chain: Vec<String> = cli.model_chain
+            let model_chain: Vec<String> = cli
+                .model_chain
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect();
@@ -281,7 +295,10 @@ async fn main() -> Result<()> {
 
                 let config = ExperimentRunnerConfig {
                     vllm_host: cli.host.clone(),
-                    model: model_chain.first().cloned().unwrap_or_else(|| "qwen2.5:1.5b".to_string()),
+                    model: model_chain
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "qwen2.5:1.5b".to_string()),
                     model_chain: model_chain.clone(),
                     generator_config,
                     max_ticks,
@@ -356,7 +373,8 @@ async fn main() -> Result<()> {
         } => {
             let generator_config = parse_difficulty(&difficulty);
 
-            let model_chain: Vec<String> = cli.model_chain
+            let model_chain: Vec<String> = cli
+                .model_chain
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect();
@@ -386,15 +404,15 @@ async fn main() -> Result<()> {
             for (decay, inhibition, examples, name) in &ablation_configs {
                 info!(
                     config = name,
-                    decay,
-                    inhibition,
-                    examples,
-                    "Running ablation config"
+                    decay, inhibition, examples, "Running ablation config"
                 );
 
                 let config = ExperimentRunnerConfig {
                     vllm_host: cli.host.clone(),
-                    model: model_chain.first().cloned().unwrap_or_else(|| "qwen2.5:1.5b".to_string()),
+                    model: model_chain
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "qwen2.5:1.5b".to_string()),
                     model_chain: model_chain.clone(),
                     generator_config: generator_config.clone(),
                     max_ticks,
@@ -408,15 +426,13 @@ async fn main() -> Result<()> {
 
                 for trial in 0..trials {
                     let seed = Some((trial as u64) * 1000);
-                    let result = runner.run(Strategy::PressureField, agents, trial, seed).await?;
+                    let result = runner
+                        .run(Strategy::PressureField, agents, trial, seed)
+                        .await?;
 
                     println!(
                         "{}: trial={} solved={} ticks={} pressure={:.2}",
-                        name,
-                        trial,
-                        result.solved,
-                        result.total_ticks,
-                        result.final_pressure
+                        name, trial, result.solved, result.total_ticks, result.final_pressure
                     );
 
                     results.push(result);

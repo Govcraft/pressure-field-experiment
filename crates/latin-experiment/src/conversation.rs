@@ -156,7 +156,11 @@ Example: TARGET row=2"#,
         )
     }
 
-    pub fn coordinator_decide(conversation_history: &str, region_content: &str, n: usize) -> String {
+    pub fn coordinator_decide(
+        conversation_history: &str,
+        region_content: &str,
+        n: usize,
+    ) -> String {
         format!(
             r#"You are a Coordinator agent. Based on the conversation, make the final decision.
 
@@ -287,7 +291,9 @@ impl ConversationRunner {
 
         // Turn 1: Coordinator selects region
         let puzzle_state = self.format_puzzle_state(artifact);
-        let region_idx = self.coordinator_select_region(&mut state, &puzzle_state, n).await?;
+        let region_idx = self
+            .coordinator_select_region(&mut state, &puzzle_state, n)
+            .await?;
 
         if region_idx >= n {
             warn!(
@@ -378,11 +384,7 @@ impl ConversationRunner {
             .join("\n")
     }
 
-    fn format_availability(
-        &self,
-        artifact: &LatinSquareArtifact,
-        row_idx: usize,
-    ) -> String {
+    fn format_availability(&self, artifact: &LatinSquareArtifact, row_idx: usize) -> String {
         let availability = artifact.column_availability(row_idx);
         let mut entries: Vec<_> = availability.iter().collect();
         entries.sort_by_key(|(col, _)| *col);
@@ -396,7 +398,12 @@ impl ConversationRunner {
             .join("\n")
     }
 
-    fn get_column_values(&self, shared_grid: &SharedGrid, col: usize, exclude_row: usize) -> String {
+    fn get_column_values(
+        &self,
+        shared_grid: &SharedGrid,
+        col: usize,
+        exclude_row: usize,
+    ) -> String {
         let grid = shared_grid.read().unwrap();
         let values: Vec<String> = grid
             .iter()
@@ -437,8 +444,7 @@ impl ConversationRunner {
         let content = response.content.trim().to_string();
         state.add_message(AgentRole::Coordinator, content.clone(), None);
 
-        parse_coordinator_target(&content).unwrap_or(0)
-            .pipe(Ok)
+        parse_coordinator_target(&content).unwrap_or(0).pipe(Ok)
     }
 
     async fn coordinator_decide(
@@ -453,7 +459,11 @@ impl ConversationRunner {
 
         state.add_tokens(response.prompt_tokens, response.completion_tokens);
         let content = response.content.trim().to_string();
-        state.add_message(AgentRole::Coordinator, content.clone(), state.target_region.clone());
+        state.add_message(
+            AgentRole::Coordinator,
+            content.clone(),
+            state.target_region.clone(),
+        );
 
         Ok(parse_coordinator_decision(&content, n))
     }
@@ -471,7 +481,11 @@ impl ConversationRunner {
 
         state.add_tokens(response.prompt_tokens, response.completion_tokens);
         let content = response.content.trim().to_string();
-        state.add_message(AgentRole::Proposer, content.clone(), state.target_region.clone());
+        state.add_message(
+            AgentRole::Proposer,
+            content.clone(),
+            state.target_region.clone(),
+        );
 
         Ok(parse_proposer_proposal(&content))
     }
@@ -492,7 +506,11 @@ impl ConversationRunner {
 
         state.add_tokens(response.prompt_tokens, response.completion_tokens);
         let content = response.content.trim().to_string();
-        state.add_message(AgentRole::Validator, content.clone(), state.target_region.clone());
+        state.add_message(
+            AgentRole::Validator,
+            content.clone(),
+            state.target_region.clone(),
+        );
 
         Ok(parse_validator_response(&content))
     }
@@ -593,7 +611,10 @@ mod tests {
     fn test_parse_coordinator_target() {
         assert_eq!(parse_coordinator_target("TARGET row=3"), Some(3));
         assert_eq!(parse_coordinator_target("TARGET row=0"), Some(0));
-        assert_eq!(parse_coordinator_target("I think row 2 needs work"), Some(2));
+        assert_eq!(
+            parse_coordinator_target("I think row 2 needs work"),
+            Some(2)
+        );
         assert_eq!(parse_coordinator_target("invalid"), None);
     }
 

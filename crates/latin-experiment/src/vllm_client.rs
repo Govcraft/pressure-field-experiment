@@ -134,8 +134,15 @@ impl VllmClient {
         top_p: f32,
         max_tokens: u32,
     ) -> Result<String> {
-        self.generate_with_system(model, LATIN_SYSTEM_PROMPT, prompt, temperature, top_p, max_tokens)
-            .await
+        self.generate_with_system(
+            model,
+            LATIN_SYSTEM_PROMPT,
+            prompt,
+            temperature,
+            top_p,
+            max_tokens,
+        )
+        .await
     }
 
     /// Generate a response with full token usage tracking.
@@ -149,8 +156,15 @@ impl VllmClient {
         top_p: f32,
         max_tokens: u32,
     ) -> Result<LlmResponse> {
-        self.generate_with_system_and_usage(model, LATIN_SYSTEM_PROMPT, prompt, temperature, top_p, max_tokens)
-            .await
+        self.generate_with_system_and_usage(
+            model,
+            LATIN_SYSTEM_PROMPT,
+            prompt,
+            temperature,
+            top_p,
+            max_tokens,
+        )
+        .await
     }
 
     /// Generate a response with a custom system prompt.
@@ -166,7 +180,14 @@ impl VllmClient {
         max_tokens: u32,
     ) -> Result<String> {
         let response = self
-            .generate_with_system_and_usage(model, system_prompt, user_prompt, temperature, top_p, max_tokens)
+            .generate_with_system_and_usage(
+                model,
+                system_prompt,
+                user_prompt,
+                temperature,
+                top_p,
+                max_tokens,
+            )
             .await?;
         Ok(response.content)
     }

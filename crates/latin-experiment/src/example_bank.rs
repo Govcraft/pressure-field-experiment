@@ -176,7 +176,11 @@ impl ExampleBank {
         examples.push(example);
 
         // Sort by weight (highest first)
-        examples.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+        examples.sort_by(|a, b| {
+            b.weight
+                .partial_cmp(&a.weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Evict if over capacity
         if examples.len() > self.config.max_examples {
@@ -221,7 +225,11 @@ impl ExampleBank {
         }
 
         // Re-sort by weight
-        examples.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+        examples.sort_by(|a, b| {
+            b.weight
+                .partial_cmp(&a.weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 
     /// Get the top examples for few-shot prompting.
@@ -273,11 +281,7 @@ impl ExampleBank {
         // Sort by relevance (highest first)
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        scored
-            .into_iter()
-            .take(n)
-            .map(|(_, e)| e.clone())
-            .collect()
+        scored.into_iter().take(n).map(|(_, e)| e.clone()).collect()
     }
 
     /// Get current statistics for logging.
@@ -337,12 +341,7 @@ mod tests {
     fn test_add_example() {
         let bank = ExampleBank::new(ExampleBankConfig::default());
 
-        bank.add_example(
-            "1 _ 3 _".to_string(),
-            "1 2 3 4".to_string(),
-            4.0,
-            0.0,
-        );
+        bank.add_example("1 _ 3 _".to_string(), "1 2 3 4".to_string(), 4.0, 0.0);
 
         let examples = bank.get_examples_for_prompt();
         assert_eq!(examples.len(), 1);
@@ -448,12 +447,7 @@ mod tests {
     fn test_filled_positions() {
         let bank = ExampleBank::new(ExampleBankConfig::default());
 
-        bank.add_example(
-            "1 _ 3 _".to_string(),
-            "1 2 3 4".to_string(),
-            4.0,
-            0.0,
-        );
+        bank.add_example("1 _ 3 _".to_string(), "1 2 3 4".to_string(), 4.0, 0.0);
 
         let examples = bank.get_examples_for_prompt();
         assert_eq!(examples[0].filled_positions, vec![1, 3]);

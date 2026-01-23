@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, RwLock};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use mti::prelude::*;
 use serde::{Deserialize, Serialize};
 use survival_kernel::artifact::Artifact;
@@ -454,7 +454,8 @@ impl ScheduleArtifact {
 
         // Apply patch to the clone
         if let Some(ref new_content) = content {
-            if let Ok(assignments) = self.parse_block_schedule(new_content, day, start_slot, end_slot)
+            if let Ok(assignments) =
+                self.parse_block_schedule(new_content, day, start_slot, end_slot)
             {
                 apply_block_schedule_to_grid(
                     &mut test_schedule,
@@ -513,7 +514,11 @@ impl ScheduleArtifact {
             .collect();
 
         // Sort by weight (highest first)
-        matches.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.weight
+                .partial_cmp(&a.weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         matches.truncate(max);
         matches
     }
@@ -565,7 +570,12 @@ impl ScheduleArtifact {
     }
 
     /// Get meetings that could potentially be scheduled in a time block.
-    fn unscheduled_meetings_for_block(&self, _day: u8, start_slot: u8, end_slot: u8) -> Vec<&Meeting> {
+    fn unscheduled_meetings_for_block(
+        &self,
+        _day: u8,
+        start_slot: u8,
+        end_slot: u8,
+    ) -> Vec<&Meeting> {
         self.schedule
             .meetings
             .values()
@@ -579,7 +589,12 @@ impl ScheduleArtifact {
     }
 
     /// Get current assignments in a time block.
-    fn block_assignments(&self, day: u8, start_slot: u8, end_slot: u8) -> HashMap<RoomId, Vec<(MeetingId, u8, u8)>> {
+    fn block_assignments(
+        &self,
+        day: u8,
+        start_slot: u8,
+        end_slot: u8,
+    ) -> HashMap<RoomId, Vec<(MeetingId, u8, u8)>> {
         let mut assignments: HashMap<RoomId, Vec<(MeetingId, u8, u8)>> = HashMap::new();
 
         for room in &self.schedule.rooms {
@@ -880,7 +895,10 @@ impl Artifact for ScheduleArtifact {
         metadata.insert("day".to_string(), serde_json::json!(day));
         metadata.insert("start_slot".to_string(), serde_json::json!(start_slot));
         metadata.insert("end_slot".to_string(), serde_json::json!(end_slot));
-        metadata.insert("schedule_id".to_string(), serde_json::json!(&self.schedule_id));
+        metadata.insert(
+            "schedule_id".to_string(),
+            serde_json::json!(&self.schedule_id),
+        );
 
         // Include unscheduled meetings that could fit
         let unscheduled: Vec<serde_json::Value> = self
@@ -895,7 +913,10 @@ impl Artifact for ScheduleArtifact {
                 })
             })
             .collect();
-        metadata.insert("unscheduled_meetings".to_string(), serde_json::json!(unscheduled));
+        metadata.insert(
+            "unscheduled_meetings".to_string(),
+            serde_json::json!(unscheduled),
+        );
 
         // Include room info
         let rooms_info: Vec<serde_json::Value> = self
@@ -915,11 +936,14 @@ impl Artifact for ScheduleArtifact {
         // Block time range
         let start_time = TimeSlot::new(day, start_slot);
         let end_time = TimeSlot::new(day, end_slot);
-        metadata.insert("time_range".to_string(), serde_json::json!(format!(
-            "{} - {}",
-            start_time.format(),
-            end_time.format().split(' ').nth(1).unwrap_or("??:??")
-        )));
+        metadata.insert(
+            "time_range".to_string(),
+            serde_json::json!(format!(
+                "{} - {}",
+                start_time.format(),
+                end_time.format().split(' ').nth(1).unwrap_or("??:??")
+            )),
+        );
 
         Ok(RegionView {
             id,
@@ -1060,9 +1084,21 @@ mod tests {
 
     fn sample_rooms() -> Vec<Room> {
         vec![
-            Room { id: 0, name: "A".to_string(), capacity: 10 },
-            Room { id: 1, name: "B".to_string(), capacity: 6 },
-            Room { id: 2, name: "C".to_string(), capacity: 4 },
+            Room {
+                id: 0,
+                name: "A".to_string(),
+                capacity: 10,
+            },
+            Room {
+                id: 1,
+                name: "B".to_string(),
+                capacity: 6,
+            },
+            Room {
+                id: 2,
+                name: "C".to_string(),
+                capacity: 4,
+            },
         ]
     }
 

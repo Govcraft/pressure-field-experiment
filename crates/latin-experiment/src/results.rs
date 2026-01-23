@@ -245,8 +245,7 @@ impl GridResults {
             let min_ticks = ticks.iter().map(|t| *t as usize).min().unwrap_or(0);
             let max_ticks = ticks.iter().map(|t| *t as usize).max().unwrap_or(0);
 
-            let avg_final_pressure =
-                results.iter().map(|r| r.final_pressure).sum::<f64>() / n;
+            let avg_final_pressure = results.iter().map(|r| r.final_pressure).sum::<f64>() / n;
 
             self.summary.insert(
                 key.clone(),
@@ -680,19 +679,15 @@ mod tests {
             empty_cells_history: vec![12, 10, 7, 4, 0],
             example_bank_stats: None,
             tick_metrics: vec![],
-            escalation_events: vec![
-                EscalationEvent {
-                    tick: 10,
-                    from_model: "3B".to_string(),
-                    to_model: "7B".to_string(),
-                },
-            ],
+            escalation_events: vec![EscalationEvent {
+                tick: 10,
+                from_model: "3B".to_string(),
+                to_model: "7B".to_string(),
+            }],
             final_model: "Qwen/Qwen2.5-7B".to_string(),
             total_prompt_tokens: 2048,
             total_completion_tokens: 256,
-            total_patch_rejections: HashMap::from([
-                (PatchRejection::DidNotReducePressure, 5),
-            ]),
+            total_patch_rejections: HashMap::from([(PatchRejection::DidNotReducePressure, 5)]),
             conversation_stats: None,
         };
 

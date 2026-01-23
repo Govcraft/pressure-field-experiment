@@ -447,4 +447,3 @@ pub struct ClaimManagerReady {
     /// The ClaimManager actor's handle for direct message sending
     pub handle: acton_reactive::prelude::ActorHandle,
 }
-

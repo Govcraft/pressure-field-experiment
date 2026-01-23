@@ -31,8 +31,13 @@ use crate::artifact::{ScheduleArtifact, SharedSchedule};
 use crate::conversation::ConversationRunner;
 use crate::example_bank::{ExampleBank, ExampleBankConfig};
 use crate::generator::{ScheduleGenerator, ScheduleGeneratorConfig};
-use crate::llm_actor::{LlmActor, LlmActorConfig, SamplingBand, SamplingConfig, UpdateBand, UpdateModel};
-use crate::results::{BandEscalationEvent, ConversationStats, EscalationEvent, ExperimentConfig, ExperimentResult, PatchRejection, TickMetrics};
+use crate::llm_actor::{
+    LlmActor, LlmActorConfig, SamplingBand, SamplingConfig, UpdateBand, UpdateModel,
+};
+use crate::results::{
+    BandEscalationEvent, ConversationStats, EscalationEvent, ExperimentConfig, ExperimentResult,
+    PatchRejection, TickMetrics,
+};
 use crate::sensors::CombinedScheduleSensor;
 use crate::vllm_client::VllmClient;
 
@@ -185,7 +190,8 @@ impl ExperimentRunner {
 
         // Generate schedule problem
         let actual_seed = seed.unwrap_or_else(rand::random);
-        let mut generator = ScheduleGenerator::new(self.config.generator_config.clone(), actual_seed);
+        let mut generator =
+            ScheduleGenerator::new(self.config.generator_config.clone(), actual_seed);
         let artifact = generator.generate();
 
         let num_meetings = artifact.meetings().len();
@@ -203,9 +209,9 @@ impl ExperimentRunner {
         );
 
         // Set up shared schedule for sensors
-        let shared_schedule: SharedSchedule = artifact.shared_schedule().unwrap_or_else(|| {
-            Arc::new(std::sync::RwLock::new(artifact.schedule().clone()))
-        });
+        let shared_schedule: SharedSchedule = artifact
+            .shared_schedule()
+            .unwrap_or_else(|| Arc::new(std::sync::RwLock::new(artifact.schedule().clone())));
 
         // Set up example bank
         let example_bank = if self.config.examples_enabled {
@@ -338,11 +344,10 @@ impl ExperimentRunner {
         }
 
         // Build kernel and spawn
-        let coordinator_handle =
-            AsyncKernelBuilder::new(kernel_config, Box::new(artifact.clone()))
-                .add_sensor(Box::new(sensor))
-                .spawn(&mut runtime)
-                .await;
+        let coordinator_handle = AsyncKernelBuilder::new(kernel_config, Box::new(artifact.clone()))
+            .add_sensor(Box::new(sensor))
+            .spawn(&mut runtime)
+            .await;
 
         // Create observer to collect TickComplete broadcasts
         let (tick_tx, mut tick_rx) = tokio::sync::mpsc::channel::<TickResult>(1000);
@@ -531,7 +536,9 @@ impl ExperimentRunner {
                     current_band_level = 0;
                     runtime
                         .broker()
-                        .broadcast(UpdateBand { band: SamplingBand::Exploitation })
+                        .broadcast(UpdateBand {
+                            band: SamplingBand::Exploitation,
+                        })
                         .await;
 
                     escalation_events.push(EscalationEvent {
@@ -551,7 +558,11 @@ impl ExperimentRunner {
                 break;
             }
             if max_ticks > 0 && current_tick >= max_ticks {
-                info!(trial = ctx.trial, tick = current_tick, "Schedule unsolved! Max ticks reached");
+                info!(
+                    trial = ctx.trial,
+                    tick = current_tick,
+                    "Schedule unsolved! Max ticks reached"
+                );
                 break;
             }
             // Stop if fully escalated (max band + max model) and still stuck
@@ -773,14 +784,16 @@ impl ExperimentRunner {
 
                     // Add to example bank
                     if self.config.examples_enabled {
-                        let pressure_before = self.measure_region_pressure(&region_view, &ctx.sensor)?;
+                        let pressure_before =
+                            self.measure_region_pressure(&region_view, &ctx.sensor)?;
                         let temp_view = survival_kernel::region::RegionView {
                             id: region_id.clone(),
                             kind: "time_block".to_string(),
                             content: new_content.clone(),
                             metadata: region_view.metadata.clone(),
                         };
-                        let pressure_after = self.measure_region_pressure(&temp_view, &ctx.sensor)?;
+                        let pressure_after =
+                            self.measure_region_pressure(&temp_view, &ctx.sensor)?;
 
                         let bank = ctx.example_bank.read().await;
                         bank.add_example(
@@ -860,7 +873,11 @@ impl ExperimentRunner {
             if current_model_idx == self.config.model_chain.len().saturating_sub(1)
                 && zero_velocity_ticks >= self.config.escalation_threshold
             {
-                info!(trial = run_ctx.trial, tick = tick, "Schedule unsolved! Converged at largest model");
+                info!(
+                    trial = run_ctx.trial,
+                    tick = tick,
+                    "Schedule unsolved! Converged at largest model"
+                );
                 break;
             }
         }
@@ -943,7 +960,8 @@ impl ExperimentRunner {
         let mut total_turns_to_consensus: usize = 0;
 
         // Initial measurement
-        let initial_pressure = self.measure_total_pressure(&baseline_ctx.artifact, &baseline_ctx.sensor)?;
+        let initial_pressure =
+            self.measure_total_pressure(&baseline_ctx.artifact, &baseline_ctx.sensor)?;
         pressure_history.push(initial_pressure);
 
         // Model escalation state
@@ -996,7 +1014,8 @@ impl ExperimentRunner {
             }
 
             // Track tick results
-            let current_pressure = self.measure_total_pressure(&baseline_ctx.artifact, &baseline_ctx.sensor)?;
+            let current_pressure =
+                self.measure_total_pressure(&baseline_ctx.artifact, &baseline_ctx.sensor)?;
             pressure_history.push(current_pressure);
             patches_per_tick.push(patches_applied);
 
@@ -1065,7 +1084,11 @@ impl ExperimentRunner {
             if current_model_idx == self.config.model_chain.len().saturating_sub(1)
                 && zero_velocity_ticks >= self.config.escalation_threshold
             {
-                info!(trial = ctx.trial, tick = tick, "Schedule unsolved! Converged at largest model");
+                info!(
+                    trial = ctx.trial,
+                    tick = tick,
+                    "Schedule unsolved! Converged at largest model"
+                );
                 break;
             }
         }
@@ -1076,7 +1099,11 @@ impl ExperimentRunner {
 
         // Log if max ticks reached without solving
         if !solved && tick_count >= self.config.max_ticks {
-            info!(trial = ctx.trial, tick = tick_count, "Schedule unsolved! Max ticks reached");
+            info!(
+                trial = ctx.trial,
+                tick = tick_count,
+                "Schedule unsolved! Max ticks reached"
+            );
         }
 
         let example_bank_stats = {
@@ -1317,10 +1344,16 @@ impl ExperimentRunner {
                     .iter()
                     .map(|m| {
                         let id = m.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let duration = m.get("duration_slots").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let duration = m
+                            .get("duration_slots")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
                         let attendees = m.get("attendees").and_then(|v| v.as_u64()).unwrap_or(0);
                         let duration_min = duration * 30;
-                        format!("  Meeting {}: {}min, {} attendees", id, duration_min, attendees)
+                        format!(
+                            "  Meeting {}: {}min, {} attendees",
+                            id, duration_min, attendees
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join("\n")

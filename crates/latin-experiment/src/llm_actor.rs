@@ -229,7 +229,9 @@ impl LlmActor {
             let actor_ern = actor.handle().name().to_string();
             let handle = actor.handle().clone();
             Reply::pending(async move {
-                broker.broadcast(PatchActorReady { actor_ern, handle }).await;
+                broker
+                    .broadcast(PatchActorReady { actor_ern, handle })
+                    .await;
             })
         });
 

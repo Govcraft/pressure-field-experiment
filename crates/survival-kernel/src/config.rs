@@ -86,11 +86,11 @@ impl Default for KernelConfig {
     fn default() -> Self {
         Self {
             tick_interval_ms: 250,
-            max_ticks: 0,         // unlimited
-            stable_threshold: 3,  // stop after 3 ticks with no patches
+            max_ticks: 0,        // unlimited
+            stable_threshold: 3, // stop after 3 ticks with no patches
             pressure_axes: Vec::new(),
             decay: DecayConfig {
-                fitness_half_life_ms: 600_000,    // 10 minutes
+                fitness_half_life_ms: 600_000,      // 10 minutes
                 confidence_half_life_ms: 1_800_000, // 30 minutes
                 ema_alpha: 0.2,
             },

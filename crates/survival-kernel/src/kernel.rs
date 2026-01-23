@@ -31,9 +31,9 @@ use std::sync::Arc;
 use acton_reactive::prelude::*;
 
 use crate::actors::{ClaimManager, KernelCoordinator, RegionActor};
-use crate::messages::Tick;
 use crate::artifact::Artifact;
 use crate::config::KernelConfig;
+use crate::messages::Tick;
 use crate::messages::{
     PatchActorsReady, RegisterRegionActors, SensorsReady, StopReason, WaitForPatchActors,
     WaitForSensors,
@@ -155,7 +155,13 @@ impl AsyncKernelBuilder {
         let region_ids: Vec<RegionId> = self.coordinator.artifact.region_ids();
         let region_views: Vec<_> = region_ids
             .iter()
-            .filter_map(|rid| self.coordinator.artifact.read_region(rid.clone()).ok().map(|v| (rid.clone(), v)))
+            .filter_map(|rid| {
+                self.coordinator
+                    .artifact
+                    .read_region(rid.clone())
+                    .ok()
+                    .map(|v| (rid.clone(), v))
+            })
             .collect();
         let pressure_axes = self.coordinator.config.pressure_axes.clone();
         let validation_sensor = self.validation_sensor.clone();
@@ -212,7 +218,11 @@ impl AsyncKernelBuilder {
     ///
     /// The caller should spawn patch actors before calling this method.
     /// Use `WaitForPatchActors` to synchronize startup.
-    pub async fn run(self, runtime: &mut ActorRuntime, expected_patch_actors: usize) -> KernelResult {
+    pub async fn run(
+        self,
+        runtime: &mut ActorRuntime,
+        expected_patch_actors: usize,
+    ) -> KernelResult {
         use crate::actors::SensorActor;
 
         // Get artifact info and config before moving
@@ -220,7 +230,13 @@ impl AsyncKernelBuilder {
         let region_ids: Vec<RegionId> = self.coordinator.artifact.region_ids();
         let region_views: Vec<_> = region_ids
             .iter()
-            .filter_map(|rid| self.coordinator.artifact.read_region(rid.clone()).ok().map(|v| (rid.clone(), v)))
+            .filter_map(|rid| {
+                self.coordinator
+                    .artifact
+                    .read_region(rid.clone())
+                    .ok()
+                    .map(|v| (rid.clone(), v))
+            })
             .collect();
         let pressure_axes = config.pressure_axes.clone();
         let validation_sensor = self.validation_sensor.clone();

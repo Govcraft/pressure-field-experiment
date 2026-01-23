@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use chrono::Local;
 use clap::{Parser, Subcommand};
-use tracing::{info, warn, Level};
+use tracing::{Level, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -23,7 +23,10 @@ use latin_experiment::results::GridResults;
 /// e.g., "results.json" -> "results-20260108-010530.json"
 fn timestamped_path(path: &Path) -> PathBuf {
     let timestamp = Local::now().format("%Y%m%d-%H%M%S");
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("results");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("results");
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("json");
     let parent = path.parent().unwrap_or(std::path::Path::new("."));
     parent.join(format!("{}-{}.{}", stem, timestamp, ext))
@@ -35,7 +38,11 @@ fn timestamped_path(path: &Path) -> PathBuf {
 #[command(about = "Latin Square coordination experiments")]
 struct Cli {
     /// vLLM host URL (used when vllm-hosts not specified)
-    #[arg(long = "vllm-host", env = "VLLM_HOST", default_value = "http://localhost:8003")]
+    #[arg(
+        long = "vllm-host",
+        env = "VLLM_HOST",
+        default_value = "http://localhost:8003"
+    )]
     vllm_host: String,
 
     /// vLLM hosts for model escalation (comma-separated, one per model in chain)
@@ -49,7 +56,11 @@ struct Cli {
 
     /// Model escalation chain (comma-separated, smallest to largest)
     /// When stuck at local minimum, escalates to larger models
-    #[arg(long, default_value = "Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B", value_delimiter = ',')]
+    #[arg(
+        long,
+        default_value = "Qwen/Qwen2.5-3B,Qwen/Qwen2.5-7B,Qwen/Qwen2.5-14B",
+        value_delimiter = ','
+    )]
     model_chain: Vec<String>,
 
     /// Ticks with zero progress before escalating to larger model
@@ -177,7 +188,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Set up logging
-    let level = if cli.verbose { Level::DEBUG } else { Level::INFO };
+    let level = if cli.verbose {
+        Level::DEBUG
+    } else {
+        Level::INFO
+    };
     FmtSubscriber::builder()
         .with_max_level(level)
         .with_target(false)
@@ -242,7 +257,10 @@ async fn main() -> Result<()> {
             // Token usage metrics
             println!("\nToken Usage:");
             println!("  Total prompt tokens: {}", result.total_prompt_tokens);
-            println!("  Total completion tokens: {}", result.total_completion_tokens);
+            println!(
+                "  Total completion tokens: {}",
+                result.total_completion_tokens
+            );
             let total_tokens = result.total_prompt_tokens + result.total_completion_tokens;
             println!("  Total tokens: {}", total_tokens);
 
@@ -304,7 +322,12 @@ async fn main() -> Result<()> {
                     .replace("Qwen2.5-", "");
                 println!(
                     "  {:>4} {:>8.2} {:>8.2} {:>6} {:>8} {:>10}",
-                    tm.tick, tm.pressure_before, tm.pressure_after, tm.patches_applied, tick_tokens, model_short
+                    tm.tick,
+                    tm.pressure_before,
+                    tm.pressure_after,
+                    tm.patches_applied,
+                    tick_tokens,
+                    model_short
                 );
             }
         }
@@ -403,13 +426,13 @@ async fn main() -> Result<()> {
 
             // Ablation configurations: (decay, inhibition, examples)
             let configs = vec![
-                (true, true, true),   // Full model
-                (false, true, true),  // No decay
-                (true, false, true),  // No inhibition
-                (true, true, false),  // No examples
-                (false, false, true), // No decay, no inhibition
-                (true, false, false), // No inhibition, no examples
-                (false, true, false), // No decay, no examples
+                (true, true, true),    // Full model
+                (false, true, true),   // No decay
+                (true, false, true),   // No inhibition
+                (true, true, false),   // No examples
+                (false, false, true),  // No decay, no inhibition
+                (true, false, false),  // No inhibition, no examples
+                (false, true, false),  // No decay, no examples
                 (false, false, false), // Baseline (nothing)
             ];
 
