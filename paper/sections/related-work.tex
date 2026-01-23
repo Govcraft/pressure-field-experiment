@@ -1,0 +1,67 @@
+%% ============================================================================
+%% RELATED WORK
+%% ============================================================================
+
+\section{Related Work}
+
+Our approach bridges four research traditions: multi-agent systems coordination theory provides the conceptual foundation; swarm intelligence provides the stigmergic mechanism; \ac{llm} systems provide the application domain; and decentralized optimization provides theoretical guarantees. We survey each and position pressure-field coordination within this landscape.
+
+\subsection{\acs{mas} Coordination Theory}
+
+Pressure-field coordination occupies a unique position in the \ac{mas} landscape: it eliminates roles (unlike organizational paradigms), messages (unlike \ac{gpgp}), and intention reasoning (unlike SharedPlans) while providing formal convergence guarantees (unlike purely reactive systems). This section positions our contribution within four established coordination frameworks, showing how artifact refinement with measurable quality signals enables this architectural simplification. The key insight: for this domain class, coordination complexity collapses from quadratic message-passing to constant-time state-sharing.
+
+\subsubsection{Organizational Paradigms and Dependency Management}
+
+Pressure-field coordination achieves role-free coordination: any agent can address any high-pressure region without negotiating access rights or awaiting task assignment. This contrasts sharply with traditional organizational paradigms. Horling and Lesser~\cite{horling2004survey} surveyed nine such paradigms---from rigid hierarchies to flexible markets---finding that all assign explicit roles constraining agent behavior. While role assignment reduces coordination complexity by pre-structuring interactions, it introduces brittleness: role changes require protocol modifications, and role failure can cascade through the system.
+
+Our approach instantiates Malone and Crowston's~\cite{malone1994coordination} coordination framework with a critical difference: the artifact itself is the shared resource, and pressure gradients serve as dependency signals. Rather than assigning roles to manage resource access, agents share read access to the entire artifact and propose changes to high-pressure regions. Coordination emerges from pressure alignment---agents reduce local pressure, which reduces global pressure through the artifact's shared state.
+
+\subsubsection{Distributed Problem Solving and Communication Overhead}
+
+Pressure-field coordination achieves $O(1)$ inter-agent communication overhead---agents exchange no messages. Coordination occurs entirely through shared artifact reads and writes, eliminating the message-passing bottleneck. This contrasts with the \ac{gpgp} framework~\cite{decker1995gpgp}, which reduces communication from $O(n^2)$ pairwise negotiation to $O(n \log n)$ hierarchical aggregation through summary information exchange. While \ac{gpgp} represents significant progress, its explicit messages---task announcements, commitment exchanges, schedule updates---still introduce latency and failure points at scale.
+
+The approaches target different domains. Pressure-field coordination specializes in artifact refinement tasks where quality decomposes into measurable regional signals---a class including code quality improvement, document editing, and configuration management. \Ac{gpgp} generalizes to complex task networks with precedence constraints. For artifact refinement, however, pressure-field's stigmergic coordination eliminates message-passing overhead entirely.
+
+\subsubsection{Shared Intentions and Alignment Costs}
+
+Pressure-field coordination eliminates intention alignment through pressure alignment. Rather than reasoning about what other agents believe or intend, agents observe artifact state and pressure gradients. When agents greedily reduce local pressure under separable or bounded-coupling conditions, global pressure decreases. This is coordination without communication about intentions---agents align through shared objective functions, not mutual beliefs.
+
+This contrasts with the SharedPlans framework~\cite{grosz1996sharedplans}, which formalizes joint activity through shared mental attitudes: mutual beliefs about goals, commitments, and action sequences. The framework elegantly captures human-like collaboration but requires significant cognitive machinery---intention recognition, commitment protocols, belief revision---all computationally expensive operations that scale poorly with agent count.
+
+Our experiments validate this analysis: pressure-field coordination eliminates the overhead of explicit dialogue by coordinating through shared artifact state. The coordination overhead of belief negotiation in explicit dialogue systems can exceed its organizational benefit for constraint satisfaction tasks. The trade-off is transparency: SharedPlans supports dialogue about why agents act; pressure-field agents react to gradients without explaining reasoning.
+
+\subsubsection{Self-Organization and Emergent Coordination}
+
+Pressure-field coordination satisfies De Wolf and Holvoet's~\cite{dewolf2005engineering} self-organization criteria: absence of external control, local interactions producing global patterns, and dynamic adaptation. They explicitly cite ``gradient fields'' as a self-organization design pattern---our approach instantiates this pattern with formal guarantees.
+
+No external controller exists---agents observe and act autonomously based on local pressure signals. Coordination emerges from local decisions: agents reduce regional pressure through greedy actions, and global coordination arises from shared artifact state. Temporal decay provides dynamic adaptation---fitness erodes continuously, preventing premature convergence and enabling continued refinement.
+
+The theoretical contribution formalizes this intuition through potential game theory. Theorem~\ref{thm:convergence} establishes convergence guarantees for aligned pressure systems; the Basin Separation result (Theorem~\ref{thm:basin-separation}) explains why decay is necessary to escape suboptimal basins.
+
+\subsubsection{Foundation Model Enablement}
+
+\Acp{fm} enable stigmergic coordination through three capabilities: (1) broad pretraining allows patch proposals across diverse artifact types without domain-specific fine-tuning; (2) instruction-following allows operation from pressure signals alone, without complex action representations; (3) zero-shot reasoning interprets constraint violations without explicit protocol training. These properties make \acp{fm} suitable for stigmergic coordination---they require only local context and quality signals to generate productive actions, matching pressure-field's locality constraints.
+
+\subsection{Multi-Agent \acs{llm} Systems}
+
+Recent work has explored multi-agent architectures for \ac{llm}-based task solving. AutoGen~\cite{wu2023autogen} introduces a conversation-based framework where customizable agents interact through message passing, with support for human-in-the-loop workflows. MetaGPT~\cite{hong2023metagpt} encodes \acp{sop} into agent workflows, assigning specialized roles (architect, engineer, QA) in an assembly-line paradigm. CAMEL~\cite{li2023camel} proposes role-playing between AI assistant and AI user agents, using inception prompting to guide autonomous cooperation. CrewAI~\cite{crewai2024} similarly defines agents with roles, goals, and backstories that collaborate on complex tasks.
+
+These frameworks share a common design pattern: explicit orchestration through message passing, role assignment, and hierarchical task decomposition. While effective for structured workflows, this approach faces scaling limitations. Central coordinators become bottlenecks, message-passing overhead grows with agent count, and failures in manager agents cascade to dependents. Our work takes a fundamentally different approach: coordination emerges from shared state rather than explicit communication.
+
+Foundation models enable pressure-field coordination through capabilities that prior agent architectures lacked. Their broad pretraining allows reasonable patches across diverse artifact types---code, text, configurations---without domain-specific fine-tuning. Their instruction-following capabilities allow operation from pressure signals and quality feedback alone. Their zero-shot reasoning interprets constraint violations and proposes repairs without explicit protocol training. These properties make foundation models particularly suitable for stigmergic coordination: they require only local context and quality signals to generate productive actions, matching the locality constraints of pressure-field systems.
+
+\subsection{Swarm Intelligence and Stigmergy}
+
+The concept of stigmergy---indirect coordination through environment modification---was introduced by Grass\'{e}~\cite{grasse1959stigmergie} to explain termite nest-building behavior. Termites deposit pheromone-infused material that attracts further deposits, leading to emergent construction without central planning. This directly instantiates Malone and Crowston's~\cite{malone1994coordination} shared resource coordination: pheromone trails encode dependency information about solution quality. This principle has proven remarkably powerful: complex structures arise from simple local rules without any agent having global knowledge.
+
+Dorigo and colleagues~\cite{dorigo1996ant,dorigo1997acs} formalized this insight into \ac{aco}, where artificial pheromone trails guide search through solution spaces. Key mechanisms include positive feedback (reinforcing good paths), negative feedback (pheromone evaporation), and purely local decision-making. \Ac{aco} has achieved strong results on combinatorial optimization problems including \ac{tsp}, vehicle routing, and scheduling.
+
+Our pressure-field coordination directly inherits from stigmergic principles. The artifact serves as the shared environment; regional pressures are analogous to pheromone concentrations; decay corresponds to evaporation. However, we generalize beyond path-finding to arbitrary artifact refinement and provide formal convergence guarantees through the potential game framework.
+
+\subsection{Decentralized Optimization}
+
+Potential games, introduced by Monderer and Shapley~\cite{monderer1996potential}, are games where individual incentives align with a global potential function. A key property is that any sequence of unilateral improvements converges to a Nash equilibrium---greedy local play achieves global coordination. This provides the theoretical foundation for our convergence guarantees: under pressure alignment, the artifact pressure serves as a potential function.
+
+Distributed gradient descent methods~\cite{nedic2009distributed,yuan2016convergence} address optimization when data or computation is distributed across nodes. The standard approach combines local gradient steps with consensus averaging. While these methods achieve convergence rates matching centralized alternatives, they typically require communication protocols and synchronization. Our approach avoids explicit communication entirely: agents coordinate only through the shared artifact, achieving $O(1)$ coordination overhead.
+
+The connection between multi-agent learning and game theory has been extensively studied~\cite{shoham2008multiagent}. Our contribution is applying these insights to \ac{llm}-based artifact refinement, where the ``game'' is defined by pressure functions over quality signals rather than explicit reward structures.

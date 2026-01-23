@@ -1,0 +1,156 @@
+\documentclass[10pt,letterpaper]{article}
+
+%% Page layout - NeurIPS style
+\usepackage[margin=1in,left=1.5in,right=1.5in]{geometry}
+
+%% Font - Computer Modern
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+%% Microtypographic optimization - reduces rivers in justified text
+\usepackage[
+  activate={true,nocompatibility},
+  tracking=true,
+  kerning=true,
+  spacing=true,
+  factor=1100,
+  stretch=10,
+  shrink=10
+]{microtype}
+\microtypecontext{spacing=nonfrench}
+
+%% Packages
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{xurl}
+\usepackage{hyperref}
+\hypersetup{breaklinks=true,colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{acro}
+
+%% Acronym definitions
+\DeclareAcronym{llm}{
+  short = LLM,
+  long  = Large Language Model
+}
+\DeclareAcronym{mas}{
+  short = MAS,
+  long  = Multi-Agent System
+}
+\DeclareAcronym{gpgp}{
+  short = GPGP,
+  long  = Generalized Partial Global Planning
+}
+\DeclareAcronym{fm}{
+  short = FM,
+  long  = Foundation Model
+}
+\DeclareAcronym{aco}{
+  short = ACO,
+  long  = Ant Colony Optimization
+}
+\DeclareAcronym{tsp}{
+  short = TSP,
+  long  = Traveling Salesman Problem
+}
+\DeclareAcronym{gpu}{
+  short = GPU,
+  long  = Graphics Processing Unit
+}
+\DeclareAcronym{ast}{
+  short = AST,
+  long  = Abstract Syntax Tree
+}
+\DeclareAcronym{sop}{
+  short = SOP,
+  long  = Standardized Operating Procedure
+}
+\DeclareAcronym{ci}{
+  short = CI,
+  long  = Confidence Interval
+}
+
+%% Paragraph formatting
+\setlength{\parindent}{1.5em}
+\setlength{\parskip}{0.5em}
+
+%% Justification and hyphenation settings to reduce rivers
+\tolerance=1000              % Allow moderate flexibility in word spacing
+\emergencystretch=3em        % Additional stretch as last resort
+\hyphenpenalty=50            % Encourage hyphenation to avoid large spaces
+\exhyphenpenalty=50          % Same penalty for explicit hyphens
+
+%% Section formatting - numbered, bold
+\titleformat{\section}{\normalfont\fontsize{12}{14}\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\fontsize{10}{12}\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\fontsize{10}{12}\bfseries\itshape}{\thesubsubsection}{1em}{}
+\titlespacing*{\section}{0pt}{1em}{0.5em}
+\titlespacing*{\subsection}{0pt}{0.8em}{0.4em}
+\titlespacing*{\subsubsection}{0pt}{0.6em}{0.3em}
+
+%% Theorem environments
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+
+%% Custom algorithm environment
+\newcounter{algorithm}
+\newenvironment{algorithm}[1][]{%
+  \refstepcounter{algorithm}%
+  \begin{figure}[htbp]%
+  \centering
+  \begin{minipage}{0.95\textwidth}%
+  \hrule\vspace{0.5em}%
+  \noindent\textbf{Algorithm \thealgorithm}\ifx\\#1\\\else: \textbf{#1}\fi\par\vspace{0.5em}%
+}{%
+  \vspace{0.5em}\hrule%
+  \end{minipage}%
+  \end{figure}%
+}
+
+%% Code listing style
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  commentstyle=\color{gray},
+  keywordstyle=\color{blue},
+}
+
+%% Custom abstract environment - centered, 85% width
+\renewenvironment{abstract}{%
+  \begin{center}
+  \begin{minipage}{0.85\textwidth}
+  \small
+  \noindent\textbf{Abstract.}
+}{%
+  \end{minipage}
+  \end{center}
+  \vspace{1em}
+}
+
+%% Custom title/author formatting
+\makeatletter
+\renewcommand{\maketitle}{%
+  \begin{center}
+  \vspace*{0.5in}
+  {\fontsize{16}{19}\bfseries\@title\par}
+  \vspace{1em}
+  {\normalsize\@author\par}
+  \vspace{0.3em}
+  {\normalsize January 2026\par}
+  \vspace{1em}
+  \end{center}
+}
+\makeatother

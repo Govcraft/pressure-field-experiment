@@ -1,0 +1,80 @@
+%% ============================================================================
+%% PROBLEM FORMULATION
+%% ============================================================================
+
+\section{Problem Formulation}
+
+We formalize artifact refinement as a dynamical system over a pressure landscape rather than an optimization problem with a target state. The system evolves through local actions and continuous decay, settling into stable basins that represent acceptable artifact states.
+
+\subsection{State Space}
+
+An \emph{artifact} consists of $n$ regions with content $c_i \in \mathcal{C}$ for $i \in \{1, \ldots, n\}$, where $\mathcal{C}$ is an arbitrary content space (strings, \ac{ast} nodes, etc.). Each region also carries auxiliary state $h_i \in \mathcal{H}$ representing confidence, fitness, and history. Regions are passive subdivisions of the artifact; agents are active proposers that observe regions and generate patches.
+
+The full system state is:
+\[
+s = ((c_1, h_1), \ldots, (c_n, h_n)) \in (\mathcal{C} \times \mathcal{H})^n
+\]
+
+\subsection{Pressure Landscape}
+
+A \emph{signal function} $\sigma: \mathcal{C} \to \mathbb{R}^d$ maps content to measurable features. Signals are \emph{local}: $\sigma(c_i)$ depends only on region $i$.
+
+A \emph{pressure function} $\phi: \mathbb{R}^d \to \mathbb{R}_{\geq 0}$ maps signals to scalar ``badness.'' We consider $k$ pressure axes with weights $\mathbf{w} \in \mathbb{R}^k_{>0}$. The \emph{region pressure} is:
+\[
+P_i(s) = \sum_{j=1}^k w_j \phi_j(\sigma(c_i))
+\]
+
+The \emph{artifact pressure} is:
+\[
+P(s) = \sum_{i=1}^n P_i(s)
+\]
+
+This defines a landscape over artifact states. Low-pressure regions are ``valleys'' where the artifact satisfies quality constraints.
+
+\subsection{System Dynamics}
+
+The system evolves in discrete time steps (ticks). Each tick consists of four phases:
+
+\textbf{Phase 1: Decay.} Auxiliary state erodes toward a baseline. For fitness $f_i$ and confidence $\gamma_i$ components of $h_i$:
+\[
+f_i^{t+1} = f_i^t \cdot e^{-\lambda_f}, \quad \gamma_i^{t+1} = \gamma_i^t \cdot e^{-\lambda_\gamma}
+\]
+where $\lambda_f, \lambda_\gamma > 0$ are decay rates. Decay ensures that stability requires continuous reinforcement.
+
+\textbf{Phase 2: Proposal.} For each region $i$ where pressure exceeds activation threshold ($P_i > \tau_{\text{act}}$) and the region is not inhibited, \emph{each actor} $a_k: \mathcal{C} \times \mathcal{H} \times \mathbb{R}^d \to \mathcal{C}$ proposes a content transformation in parallel. Each actor observes only local state $(c_i, h_i, \sigma(c_i))$---actors do not communicate or coordinate their proposals.
+
+\textbf{Phase 3: Validation.} When multiple patches are proposed, each is validated on an independent \emph{fork} of the artifact. Forks are created by cloning artifact state; validation proceeds in parallel across forks. This addresses a fundamental resource constraint: a single artifact cannot be used to test multiple patches simultaneously without cloning.
+
+\textbf{Phase 4: Reinforcement.} Regions where actions were applied receive fitness and confidence boosts, and enter an inhibition period preventing immediate re-modification. Inhibition allows changes to propagate through the artifact and forces agents to address other high-pressure regions, preventing oscillation around local fixes.
+\[
+f_i^{t+1} = \min(f_i^t + \Delta_f, 1), \quad \gamma_i^{t+1} = \min(\gamma_i^t + \Delta_\gamma, 1)
+\]
+
+\subsection{Stable Basins}
+
+\begin{definition}[Stability]
+A state $s^*$ is \emph{stable} if, under the system dynamics with no external perturbation:
+\begin{enumerate}
+\item All region pressures are below activation threshold: $P_i(s^*) < \tau_{\text{act}}$ for all $i$
+\item Decay is balanced by residual fitness: the system remains in a neighborhood of $s^*$
+\end{enumerate}
+\end{definition}
+
+The central questions are:
+\begin{enumerate}
+\item \textbf{Existence}: Under what conditions do stable basins exist?
+\item \textbf{Quality}: What is the pressure $P(s^*)$ of states in stable basins?
+\item \textbf{Convergence}: From initial state $s_0$, does the system reach a stable basin? How quickly?
+\item \textbf{Decentralization}: Can stability be achieved with purely local decisions?
+\end{enumerate}
+
+\subsection{The Locality Constraint}
+
+The key constraint distinguishing our setting from centralized optimization: agents observe only local state. An actor at region $i$ sees $(c_i, h_i, \sigma(c_i))$ but not:
+\begin{itemize}
+\item Other regions' content $c_j$ for $j \neq i$
+\item Global pressure $P(s)$
+\item Other agents' actions
+\end{itemize}
+
+This rules out coordinated planning. Stability must emerge from local incentives aligned with global pressure reduction.

@@ -1,0 +1,216 @@
+%% ============================================================================
+%% APPENDIX
+%% ============================================================================
+
+\appendix
+
+\section{Experimental Protocol}
+
+This appendix provides complete reproducibility information for all experiments.
+
+\subsection{Hardware and Software}
+
+\textbf{Hardware:} NVIDIA RTX 4070 8GB \ac{gpu}, AMD Ryzen 9 7940HS, 64GB RAM
+
+\textbf{Software:}
+\begin{itemize}
+\item Rust 1.75+ (edition 2024)
+\item Ollama (local \ac{llm} inference server)
+\item Models: \texttt{qwen2.5:0.5b}, \texttt{qwen2.5:1.5b}, \texttt{qwen2.5:3b}
+\end{itemize}
+
+\subsection{Model Configuration}
+
+Models are served via Ollama with a system prompt configured for schedule optimization:
+
+\begin{lstlisting}
+You optimize meeting room schedules. Given a schedule with gaps or conflicts,
+propose ONE change: move, swap, or reschedule a meeting to reduce gaps,
+overlaps, and utilization variance. Return ONLY your proposed change
+in the format: MOVE meeting_id TO room day start_time
+\end{lstlisting}
+
+For multi-model setups (model escalation), models share a single Ollama instance with automatic routing based on model name.
+
+\subsection{Sampling Diversity}
+
+The experiment framework overrides default sampling parameters with three exploration bands per \ac{llm} call:
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Band} & \textbf{Temperature} & \textbf{Top-p} \\
+\midrule
+Exploitation & 0.15--0.35 & 0.80--0.90 \\
+Balanced & 0.35--0.55 & 0.85--0.95 \\
+Exploration & 0.55--0.85 & 0.90--0.98 \\
+\bottomrule
+\end{tabular}
+\caption{Sampling parameter ranges. Each \acs{llm} call randomly samples from one band.}
+\label{tab:sampling}
+\end{table}
+
+This diversity prevents convergence to local optima and enables exploration of the solution space.
+
+\subsection{Baseline Implementation Details}
+
+To ensure fair comparison, all strategies use identical \ac{llm} prompts and parsing logic. The only differences are region selection and patch validation:
+
+\textbf{Prompt (identical across all strategies):}
+\begin{lstlisting}
+You are a meeting room scheduler. Output schedules in the exact format requested.
+
+Meeting Room Schedule Optimization.
+Goal: Schedule meetings to minimize gaps and avoid conflicts.
+
+Time Block: [time range]
+
+Rooms:
+  Room A: capacity 10
+  Room B: capacity 8
+  ...
+
+Current assignments:
+[current schedule for this time block]
+
+Unscheduled meetings that could fit in this block:
+  Meeting 5: 60min, 4 attendees
+  Meeting 12: 30min, 2 attendees
+  ...
+
+Constraints:
+- No attendee can be in multiple meetings at the same time
+- Room capacity must fit attendees
+
+Output the schedule for this time block.
+\end{lstlisting}
+
+\textbf{Region selection per strategy:}
+\begin{itemize}
+\item \textbf{Pressure-field}: Multiple agents select regions in parallel based on pressure gradients
+\item \textbf{Hierarchical}: Always selects the single highest-pressure region
+\item \textbf{Sequential}: Round-robin through regions in fixed order
+\item \textbf{Random}: Uniform random region selection
+\end{itemize}
+
+\textbf{Patch validation per strategy:}
+\begin{itemize}
+\item \textbf{Pressure-field}: Validates all patches; applies only those reducing pressure
+\item \textbf{Hierarchical}: Validates single patch; applies only if pressure reduces
+\item \textbf{Sequential/Random}: No validation; applies any syntactically valid patch
+\end{itemize}
+
+\textbf{Why ``one patch per tick'' for hierarchical?} This asymmetry is inherent to the coordination paradigm, not an implementation choice. Hierarchical control requires the manager to: (1) observe global state, (2) select a target region, (3) delegate to a worker, (4) receive the proposed patch, and (5) validate before applying. Delegating to $K$ workers simultaneously would require additional coordination protocols---work distribution to avoid conflicts, result aggregation, tie-breaking when multiple patches target overlapping state---that would transform hierarchical control into a fundamentally different architecture. The sequential bottleneck is the cost of centralized decision-making. Pressure-field avoids this overhead through stigmergic coordination: agents observe shared state independently and propose patches without central delegation, enabling natural parallelism.
+
+\textbf{Conversation baseline implementation} The conversation baseline implements AutoGen-style multi-agent dialogue with three roles: a \emph{Coordinator} that selects which region to address, a \emph{Proposer} that suggests schedule changes, and a \emph{Validator} that critiques proposals. Each tick proceeds as follows: (1) the Coordinator identifies a high-pressure region (1 \ac{llm} call), (2) the Proposer and Validator engage in up to 5 dialogue turns (2 calls per turn), (3) if the Validator approves, the patch is applied. This yields 4--12 \ac{llm} calls per tick for a single region, compared to pressure-field's $K$ parallel calls across $K$ regions. The conversation terminates when the Validator approves or the turn limit is reached. We use fixed sampling parameters (T=0.3, top-p=0.9) for structured dialogue, lower than pressure-field's exploration bands.
+
+\subsection{Problem Generation and Seeding}
+
+Fair strategy comparison requires identical problem instances: each strategy must face the same scheduling challenge within a trial. We achieve this through deterministic seeding.
+
+Each trial generates its problem from a seed:
+\[
+\text{seed} = \text{trial} \times 1000 + \text{agent\_count}
+\]
+
+Trial 5 with 2 agents yields seed 5002, producing identical meeting configurations whether evaluated with pressure-field, conversation, or hierarchical coordination.
+
+The seed governs all stochastic generation:
+\begin{itemize}
+\item Meeting durations (1--4 time slots)
+\item Attendee assignments (2--5 participants)
+\item Room preferences and capacity requirements
+\item Pre-scheduled vs.\ unassigned meeting distribution
+\item Time slot availability patterns
+\end{itemize}
+
+\subsection{Experiment Commands}
+
+\textbf{Main Grid (Strategy Comparison):}
+\begin{lstlisting}
+schedule-experiment --host http://localhost:11434 \
+  grid --trials 30 \
+  --strategies pressure_field,sequential,random,hierarchical,conversation \
+  --agents 1,2,4 --difficulties easy,medium,hard \
+  --max-ticks 50
+\end{lstlisting}
+
+\textbf{Ablation Study:}
+\begin{lstlisting}
+schedule-experiment --host http://localhost:11434 \
+  ablation --trials 30 --agents 2 --difficulty easy --max-ticks 50
+\end{lstlisting}
+
+\textbf{Scaling Analysis:}
+\begin{lstlisting}
+schedule-experiment --host http://localhost:11434 \
+  grid --trials 30 \
+  --strategies pressure_field \
+  --agents 1,2,4 --difficulties easy \
+  --max-ticks 50
+\end{lstlisting}
+
+\textbf{Band and Model Escalation:}
+\begin{lstlisting}
+# Full escalation chain enabled by default
+# Band escalation: Exploitation -> Balanced -> Exploration (7 ticks each)
+# Model escalation: 0.5b -> 1.5b -> 3b (after 21 ticks at high pressure)
+schedule-experiment --host http://localhost:11434 \
+  grid --trials 30 --agents 2 --difficulties medium \
+  --max-ticks 100
+\end{lstlisting}
+
+\textbf{Difficulty Scaling:}
+\begin{lstlisting}
+# Easy: 3 rooms, 20 meetings, 70% pre-scheduled
+schedule-experiment --host http://localhost:11434 \
+  grid --trials 30 --agents 2 --difficulties easy --max-ticks 50
+
+# Medium: 5 rooms, 40 meetings, 50% pre-scheduled
+schedule-experiment --host http://localhost:11434 \
+  grid --trials 30 --agents 2 --difficulties medium --max-ticks 50
+
+# Hard: 5 rooms, 60 meetings, 30% pre-scheduled
+schedule-experiment --host http://localhost:11434 \
+  grid --trials 30 --agents 2 --difficulties hard --max-ticks 100
+\end{lstlisting}
+
+\subsection{Metrics Collected}
+
+Each experiment records:
+\begin{itemize}
+\item \texttt{solved}: Boolean indicating all meetings scheduled with zero overlaps
+\item \texttt{total\_ticks}: Iterations to solve (or max if unsolved)
+\item \texttt{pressure\_history}: Pressure value at each tick (gaps + overlaps + util\_var + unscheduled)
+\item \texttt{band\_escalation\_events}: Sampling band changes (tick, from\_band, to\_band)
+\item \texttt{model\_escalation\_events}: Model tier changes (tick, from\_model, to\_model)
+\item \texttt{final\_model}: Which model tier solved the schedule
+\item \texttt{token\_usage}: Prompt and completion tokens consumed (pressure-field only; conversation baseline uses a different LLM client path that does not collect token statistics, precluding cross-strategy comparison)
+\end{itemize}
+
+\subsection{Replication Notes}
+
+Each configuration runs 30 independent trials with different random seeds to ensure reliability. Results report mean solve rates and tick counts across trials.
+
+\subsection{Estimated Runtime}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Experiment} & \textbf{Configurations} & \textbf{Trials} & \textbf{Est.\ Time} \\
+\midrule
+Main Grid & 45 & 30 & 5 hours \\
+Ablation & 5 & 30 & 1 hour \\
+Scaling & 3 & 30 & 45 min \\
+Difficulty & 15 & 30 & 2.5 hours \\
+\midrule
+\textbf{Total} & & & \textbf{$\sim$9 hours} \\
+\bottomrule
+\end{tabular}
+\caption{Estimated runtime for all experiments on NVIDIA RTX 4070 8GB \acs{gpu}.}
+\label{tab:runtime}
+\end{table}

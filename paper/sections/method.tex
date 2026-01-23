@@ -1,0 +1,104 @@
+%% ============================================================================
+%% METHOD
+%% ============================================================================
+
+\section{Method}
+
+We now present a coordination mechanism that achieves stability through purely local decisions. The key insight is that under appropriate conditions, the artifact pressure $P(s)$ acts as a \emph{potential function}: local improvements by individual agents decrease global pressure, guaranteeing convergence without coordination.
+
+\subsection{Pressure Alignment}
+
+The locality constraint prohibits agents from observing global state. For decentralized coordination to succeed, we need local incentives to align with global pressure reduction.
+
+\begin{definition}[Pressure Alignment]
+A pressure system is \emph{aligned} if for any region $i$, state $s$, and action $a_i$ that reduces local pressure:
+\[
+P_i(s') < P_i(s) \quad \Longrightarrow \quad P(s') < P(s)
+\]
+where $s' = s[c_i \mapsto a_i(c_i)]$ is the state after applying $a_i$.
+\end{definition}
+
+Alignment holds automatically when pressure functions are \emph{separable}: each $P_i$ depends only on $c_i$, so $P(s) = \sum_i P_i(s)$ and local improvement directly implies global improvement.
+
+More generally, alignment holds when cross-region interactions are bounded:
+
+\begin{definition}[Bounded Coupling]
+A pressure system has \emph{$\epsilon$-bounded coupling} if for any action $a_i$ on region $i$:
+\[
+|P_j(s') - P_j(s)| \leq \epsilon \quad \forall j \neq i
+\]
+That is, modifying region $i$ changes other regions' pressures by at most $\epsilon$.
+\end{definition}
+
+Under $\epsilon$-bounded coupling with $n$ regions, if a local action reduces $P_i$ by $\delta > (n-1)\epsilon$, then global pressure decreases by at least $\delta - (n-1)\epsilon > 0$.
+
+\subsection{Connection to Potential Games}
+
+The aligned pressure system forms a \emph{potential game} where:
+\begin{itemize}
+\item Players are regions (or agents acting on regions)
+\item Strategies are content choices $c_i \in \mathcal{C}$
+\item The potential function is $\Phi(s) = P(s)$
+\end{itemize}
+
+In potential games, any sequence of improving moves converges to a Nash equilibrium. In our setting, Nash equilibria correspond to stable basins: states where no local action can reduce pressure below the activation threshold.
+
+This connection provides our convergence guarantee without requiring explicit coordination.
+
+Note that this convergence result assumes finite action spaces. In practice, patches are drawn from a finite set of \ac{llm}-generated proposals per region, satisfying this requirement. For infinite content spaces, convergence to approximate equilibria can be established under Lipschitz continuity conditions on pressure functions.
+
+\subsection{The Coordination Algorithm}
+
+The tick loop implements greedy local improvement with decay-driven exploration:
+
+\begin{algorithm}[Pressure-Field Tick]
+\textbf{Input:} State $s^t$, signal functions $\{\sigma_j\}$, pressure functions $\{\phi_j\}$, actors $\{a_k\}$, parameters $(\tau_{\text{act}}, \lambda_f, \lambda_\gamma, \Delta_f, \Delta_\gamma, \kappa)$
+
+\textbf{Phase 1: Decay}\\
+\hspace{1em} For each region $i$: $\quad f_i \gets f_i \cdot e^{-\lambda_f}, \quad \gamma_i \gets \gamma_i \cdot e^{-\lambda_\gamma}$
+
+\textbf{Phase 2: Activation and Proposal}\\
+\hspace{1em} $\mathcal{P} \gets \emptyset$\\
+\hspace{1em} For each region $i$ where $P_i(s) \geq \tau_{\text{act}}$ and not inhibited:\\
+\hspace{2em} $\boldsymbol{\sigma}_i \gets \sigma(c_i)$\\
+\hspace{2em} For each actor $a_k$:\\
+\hspace{3em} $\delta \gets a_k(c_i, h_i, \boldsymbol{\sigma}_i)$\\
+\hspace{3em} $\mathcal{P} \gets \mathcal{P} \cup \{(i, \delta, \hat{\Delta}(\delta))\}$
+
+\textbf{Phase 3: Parallel Validation and Selection}\\
+\hspace{1em} For each candidate patch $(i, \delta, \hat{\Delta}) \in \mathcal{P}$:\\
+\hspace{2em} Fork artifact: $(f_{\text{id}}, A_f) \gets A.\text{fork}()$\\
+\hspace{2em} Apply $\delta$ to fork $A_f$\\
+\hspace{2em} Validate fork (run tests, check compilation)\\
+\hspace{1em} Collect validation results $\{(i, \delta, \Delta_{\text{actual}}, \text{valid})\}$\\
+\hspace{1em} Sort validated patches by $\Delta_{\text{actual}}$\\
+\hspace{1em} Greedily select top-$\kappa$ non-conflicting patches
+
+\textbf{Phase 4: Application and Reinforcement}\\
+\hspace{1em} For each selected patch $(i, \delta, \cdot)$:\\
+\hspace{2em} $c_i \gets \delta(c_i)$\\
+\hspace{2em} $f_i \gets \min(f_i + \Delta_f, 1)$, $\gamma_i \gets \min(\gamma_i + \Delta_\gamma, 1)$\\
+\hspace{2em} Mark region $i$ inhibited for $\tau_{\text{inh}}$ ticks
+
+\textbf{Return} updated state $s^{t+1}$
+\end{algorithm}
+
+The algorithm has three key properties:
+
+\textbf{Locality.} Each actor observes only $(c_i, h_i, \sigma(c_i))$. No global state is accessed.
+
+\textbf{Bounded parallelism.} At most $\kappa$ patches per tick prevents thrashing. Inhibition prevents repeated modification of the same region.
+
+\textbf{Decay-driven exploration.} Even stable regions eventually decay below confidence thresholds, attracting re-evaluation. This prevents premature convergence to local minima.
+
+\subsection{Stability and Termination}
+
+The system reaches a stable basin when:
+\begin{enumerate}
+\item All region pressures satisfy $P_i(s) < \tau_{\text{act}}$
+\item Decay is balanced: fitness remains above the threshold needed for stability
+\end{enumerate}
+
+Termination is \emph{economic}, not logical. The system stops acting when the cost of action (measured in pressure reduction per patch) falls below the benefit. This matches natural systems: activity ceases when gradients flatten, not when an external goal is declared achieved.
+
+In practice, we also impose budget constraints (maximum ticks or patches) to bound computation.
