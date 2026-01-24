@@ -83,7 +83,7 @@ Across 1350 total trials spanning three difficulty levels (easy, medium, hard) a
 \textbf{Strategy} & \textbf{Solved/N} & \textbf{Rate} & \textbf{95\% Wilson \acs{ci}} \\
 \midrule
 Pressure-field & 131/270 & 48.5\% & 42.6\%--54.5\% \\
-Conversation & 34/270 & 12.6\% & 9.2\%--17.1\% \\
+Conversation & 26/270 & 9.6\% & 6.7\%--13.7\% \\
 Hierarchical & 4/270 & 1.5\% & 0.6\%--3.7\% \\
 Sequential & 1/270 & 0.4\% & 0.1\%--2.1\% \\
 Random & 1/270 & 0.4\% & 0.1\%--2.1\% \\
@@ -95,9 +95,9 @@ Random & 1/270 & 0.4\% & 0.1\%--2.1\% \\
 
 The results show clear stratification:
 
-\textbf{Pressure-field dominates}: Pressure-field achieves 48.5\% solve rate, nearly 4$\times$ higher than the next-best baseline (conversation at 12.6\%). The effect size is large: Cohen's $h = 1.07$ versus conversation on easy problems, and $h > 1.97$ versus all other baselines.
+\textbf{Pressure-field dominates}: Pressure-field achieves 48.5\% solve rate, roughly 5$\times$ higher than the next-best baseline (conversation at 9.6\%). The effect size is large: Cohen's $h = 1.26$ versus conversation on easy problems, and $h > 1.97$ versus all other baselines.
 
-\textbf{Conversation provides intermediate performance}: The AutoGen-style conversation baseline achieves 12.6\% overall, significantly better than hierarchical ($p < 0.001$) but far below pressure-field. Notably, conversation solves only easy problems (37.8\% on easy, 0\% on medium and hard).
+\textbf{Conversation provides intermediate performance}: The AutoGen-style conversation baseline achieves 9.6\% overall, significantly better than hierarchical ($p < 0.001$) but far below pressure-field. Notably, conversation solves only easy problems (28.9\% on easy, 0\% on medium and hard).
 
 \textbf{Hierarchical and sequential fail}: Despite explicit coordination, hierarchical control achieves only 1.5\% solve rate---comparable to random (0.4\%). Both strategies fail entirely on medium and hard problems.
 
@@ -248,11 +248,11 @@ Performance varies across difficulty levels, revealing the unique strength of pr
 \toprule
 \textbf{Difficulty} & \textbf{Pressure-field} & \textbf{Conversation} & \textbf{Hierarchical} & \textbf{Sequential/Random} \\
 \midrule
-Easy & 86.7\% (78/90) & 37.8\% (34/90) & 4.4\% (4/90) & 1.1\% (1/90) \\
+Easy & 86.7\% (78/90) & 28.9\% (26/90) & 4.4\% (4/90) & 1.1\% (1/90) \\
 Medium & 43.3\% (39/90) & 0.0\% (0/90) & 0.0\% (0/90) & 0.0\% (0/90) \\
 Hard & 15.6\% (14/90) & 0.0\% (0/90) & 0.0\% (0/90) & 0.0\% (0/90) \\
 \midrule
-\textbf{Total} & \textbf{48.5\%} (131/270) & \textbf{12.6\%} (34/270) & \textbf{1.5\%} (4/270) & \textbf{0.4\%} (1/270) \\
+\textbf{Total} & \textbf{48.5\%} (131/270) & \textbf{9.6\%} (26/270) & \textbf{1.5\%} (4/270) & \textbf{0.4\%} (1/270) \\
 \bottomrule
 \end{tabular}
 \caption{Solve rate by difficulty level (90 trials each per difficulty, 270 per strategy total). Only pressure-field solves medium and hard problems. See Table~\ref{tab:main-results} for confidence intervals.}
@@ -264,15 +264,15 @@ The difficulty scaling reveals critical insights:
 \begin{enumerate}
 \item \textbf{Pressure-field is the only strategy that scales}: While all strategies degrade on harder problems, pressure-field maintains meaningful solve rates (43.3\% medium, 15.6\% hard) where all baselines achieve 0\%.
 
-\item \textbf{The gap widens with difficulty}: On easy problems, pressure-field leads by 48.9 percentage points over conversation (86.7\% vs 37.8\%). On medium and hard problems, the gap becomes absolute---pressure-field solves problems that no baseline can solve.
+\item \textbf{The gap widens with difficulty}: On easy problems, pressure-field leads by 57.8 percentage points over conversation (86.7\% vs 28.9\%). On medium and hard problems, the gap becomes absolute---pressure-field solves problems that no baseline can solve.
 
-\item \textbf{Effect sizes are large}: Cohen's $h$ on easy problems: $h = 1.07$ vs conversation, $h = 1.97$ vs hierarchical, $h = 2.18$ vs sequential/random.
+\item \textbf{Effect sizes are large}: Cohen's $h$ on easy problems: $h = 1.26$ vs conversation, $h = 1.97$ vs hierarchical, $h = 2.18$ vs sequential/random.
 \end{enumerate}
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.8\textwidth]{fig3_effect_sizes.pdf}
-\caption{Effect sizes (Cohen's $h$) for pressure-field versus each baseline on easy problems. The dashed line indicates the ``large effect'' threshold ($h = 0.8$). All comparisons exceed this threshold, with effects ranging from $h = 1.07$ (vs conversation) to $h = 2.18$ (vs sequential/random).}
+\caption{Effect sizes (Cohen's $h$) for pressure-field versus each baseline on easy problems. The dashed line indicates the ``large effect'' threshold ($h = 0.8$). All comparisons exceed this threshold, with effects ranging from $h = 1.26$ (vs conversation) to $h = 2.18$ (vs sequential/random).}
 \label{fig:effect-sizes}
 \end{figure}
 
@@ -288,7 +288,7 @@ For solved cases, pressure-field converges faster than baselines on easy problem
 \textbf{Strategy} & \textbf{Easy} & \textbf{Medium} & \textbf{Hard} \\
 \midrule
 Pressure-field & 17.8 (n=78) & 34.6 (n=39) & 32.3 (n=14) \\
-Conversation & 29.9 (n=34) & --- & --- \\
+Conversation & 30.4 (n=26) & --- & --- \\
 Hierarchical & 40.0 (n=4) & --- & --- \\
 \bottomrule
 \end{tabular}
@@ -301,7 +301,7 @@ On easy problems, pressure-field solves 1.7$\times$ faster than conversation and
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.65\textwidth]{fig4_efficiency.pdf}
-\caption{Mean ticks to solution on easy problems (solved cases only). Error bars show standard error. Pressure-field converges fastest (17.8 ticks), followed by conversation (29.9 ticks) and hierarchical (40.0 ticks).}
+\caption{Mean ticks to solution on easy problems (solved cases only). Error bars show standard error. Pressure-field converges fastest (17.8 ticks), followed by conversation (30.4 ticks) and hierarchical (40.0 ticks).}
 \label{fig:efficiency}
 \end{figure}
 
@@ -317,7 +317,7 @@ For both solved and unsolved cases, final pressure reveals solution quality:
 \textbf{Strategy} & \textbf{Easy} & \textbf{Medium} & \textbf{Hard} \\
 \midrule
 Pressure-field & 0.13 & 1.02 & 2.48 \\
-Conversation & 26.3 & 58.2 & 90.1 \\
+Conversation & 26.3 & 58.2 & 89.9 \\
 Hierarchical & 28.6 & 59.4 & 88.0 \\
 \bottomrule
 \end{tabular}
