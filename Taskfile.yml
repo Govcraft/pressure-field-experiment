@@ -1,7 +1,6 @@
 version: '3'
 
 vars:
-  DOCKER_IMAGE: govcraft/latin-experiment
   VERSION:
     sh: grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'
 
@@ -12,40 +11,19 @@ tasks:
       - task --list
 
   build:
-    desc: Build the latin-experiment binary (release)
+    desc: Build the schedule-experiment binary (release)
     cmds:
-      - cargo build --release -p latin-experiment
+      - cargo build --release -p schedule-experiment
 
   test:
     desc: Run tests
     cmds:
-      - cargo nextest run -p latin-experiment
+      - cargo nextest run
 
   check:
     desc: Check code compiles
     cmds:
-      - cargo check -p latin-experiment
-
-  docker:build:
-    desc: Build Docker image for RunPod (tagged with version and latest)
-    deps: [build]
-    cmds:
-      - cp target/release/latin-experiment runpod-template/
-      - cp run-experiments.sh runpod-template/
-      - echo "Building {{.DOCKER_IMAGE}}:{{.VERSION}} and :latest"
-      - docker build --platform linux/amd64 -t {{.DOCKER_IMAGE}}:{{.VERSION}} -t {{.DOCKER_IMAGE}}:latest runpod-template/
-
-  docker:push:
-    desc: Push Docker image to Docker Hub (version and latest tags)
-    cmds:
-      - docker push {{.DOCKER_IMAGE}}:{{.VERSION}}
-      - docker push {{.DOCKER_IMAGE}}:latest
-
-  docker:rebuild:
-    desc: Rebuild and push Docker image (full workflow)
-    cmds:
-      - task: docker:build
-      - task: docker:push
+      - cargo check
 
   paper:
     desc: Compile the paper
@@ -56,4 +34,3 @@ tasks:
     desc: Clean build artifacts
     cmds:
       - cargo clean
-      - rm -f runpod-template/latin-experiment
