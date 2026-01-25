@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 /// - Port 8004: 7B models
 /// - Port 8005: 14B models
 ///
-/// Returns None if model routing is not applicable (single-model setup or Ollama).
+/// Returns None for Ollama models (with colon) or unknown model sizes.
 fn model_to_port(model: &str) -> Option<u16> {
-    // Ollama-style model names (with colon) use single endpoint on port 11434
+    // Ollama-style model names (with colon) use the configured base_url directly
     if model.contains(':') {
-        return Some(11434);
+        return None;
     }
     // vLLM multi-model setup: route to specific port based on model size
     if model.contains("0.5B") || model.contains("0.5b") {
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_model_to_port() {
-        // Test HuggingFace format model names
+        // Test HuggingFace format model names (vLLM multi-model setup)
         assert_eq!(model_to_port("Qwen/Qwen2.5-0.5B"), Some(8001));
         assert_eq!(model_to_port("Qwen/Qwen2.5-1.5B"), Some(8002));
         assert_eq!(model_to_port("Qwen/Qwen2.5-3B"), Some(8003));
@@ -313,6 +313,11 @@ mod tests {
         // Test case insensitivity
         assert_eq!(model_to_port("qwen2.5-0.5b"), Some(8001));
         assert_eq!(model_to_port("model-7b-instruct"), Some(8004));
+
+        // Test Ollama-style model names (use base_url, not port routing)
+        assert_eq!(model_to_port("qwen2.5:0.5b"), None);
+        assert_eq!(model_to_port("qwen2.5:1.5b"), None);
+        assert_eq!(model_to_port("llama3:8b"), None);
 
         // Test fallback for unknown model sizes
         assert_eq!(model_to_port("some-unknown-model"), None);
