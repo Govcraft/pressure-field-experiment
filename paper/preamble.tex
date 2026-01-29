@@ -1,24 +1,32 @@
 %% Springer Nature JAAMAS Submission
 %% Using sn-jnl.cls with sn-basic reference style
+%% Based on Version 3.1 December 2024 template
 
+%%\documentclass[referee,sn-basic]{sn-jnl}% referee option is meant for double line spacing
 \documentclass[pdflatex,sn-basic,referee]{sn-jnl}
 
-%% Standard packages (many already included in sn-jnl.cls)
-\usepackage{graphicx}
-\usepackage{multirow}
-\usepackage{booktabs}
-\usepackage{amsmath,amssymb,amsfonts}
-\usepackage{amsthm}
-\usepackage{manyfoot}
-\usepackage{xurl}
-\usepackage{listings}
-\usepackage{xcolor}
-\usepackage{textcomp}
+%%%% Standard Packages (required by sn-jnl.cls)
+\usepackage{graphicx}%
+\usepackage{multirow}%
+\usepackage{amsmath,amssymb,amsfonts}%
+\usepackage{amsthm}%
+\usepackage{mathrsfs}%
+\usepackage[title]{appendix}%
+\usepackage{xcolor}%
+\usepackage{textcomp}%
+\usepackage{manyfoot}%
+\usepackage{booktabs}%
+%% algorithm packages removed - using custom environment
+%% \usepackage{algorithm}%
+%% \usepackage{algorithmicx}%
+%% \usepackage{algpseudocode}%
+\usepackage{listings}%
+
+%% Additional packages for this paper
 \usepackage{enumitem}
 \usepackage{acro}
 
-%% Hyperref setup
-\usepackage{hyperref}
+%% Hyperref setup (already loaded by class, just configure)
 \hypersetup{breaklinks=true,colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue}
 
 %% Acronym definitions
@@ -63,11 +71,23 @@
   long  = Confidence Interval
 }
 
-%% Theorem environments
-\theoremstyle{plain}
+%% Theorem environments (using template styles)
+\theoremstyle{thmstyleone}%
 \newtheorem{theorem}{Theorem}[section]
 \theoremstyle{definition}
 \newtheorem{definition}{Definition}[section]
+
+%% Code listing style
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  commentstyle=\color{gray},
+  keywordstyle=\color{blue},
+}
 
 %% Custom algorithm environment (simplified for Springer)
 \newcounter{algorithm}
@@ -84,14 +104,5 @@
   \end{figure}%
 }
 
-%% Code listing style
-\lstset{
-  basicstyle=\ttfamily\small,
-  breaklines=true,
-  frame=single,
-  columns=fullflexible,
-  keepspaces=true,
-  showstringspaces=false,
-  commentstyle=\color{gray},
-  keywordstyle=\color{blue},
-}
+%% Required to prevent maketitle tabular bug with halt-on-error
+\raggedbottom
