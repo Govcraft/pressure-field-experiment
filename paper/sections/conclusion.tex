@@ -9,11 +9,11 @@ We presented pressure-field coordination, a decentralized approach to multi-agen
 Our theoretical analysis establishes convergence guarantees under pressure alignment conditions, with coordination overhead independent of agent count. Empirically, on meeting room scheduling across 1350 trials, we find:
 
 \begin{enumerate}
-\item \textbf{Pressure-field outperforms all baselines} (48.5\% vs 9.6\% for conversation, 1.5\% for hierarchical, all $p < 0.001$). Implicit coordination through shared pressure gradients exceeds explicit hierarchical coordination.
+\item \textbf{Pressure-field outperforms all baselines} (48.5\% vs 11.1\% for conversation, 1.5\% for hierarchical, all $p < 0.001$). Implicit coordination through shared pressure gradients exceeds explicit hierarchical coordination.
 
 \item \textbf{Pressure-field is the only strategy that scales to harder problems}. On medium and hard problems, pressure-field achieves 43.3\% and 15.6\% solve rates respectively, while all baselines achieve 0\%.
 
-\item \textbf{Temporal decay is essential}. Disabling it reduces solve rate by 10 percentage points, trapping agents in local minima.
+\item \textbf{Temporal decay shows beneficial effects}. Ablation studies observe a 10 percentage point improvement with decay enabled, consistent with theoretical predictions about escaping local minima, though larger samples would be needed to establish statistical significance.
 \end{enumerate}
 
 This work demonstrates that implicit coordination can outperform explicit coordination for constraint satisfaction tasks. Pressure-field achieves this with simpler architecture: no coordinator agent, no explicit message passing, just shared state and local pressure gradients.

@@ -6,7 +6,7 @@
 
 We evaluate pressure-field coordination on meeting room scheduling: assigning $N$ meetings to $R$ rooms over $D$ days to minimize gaps (unscheduled time), overlaps (attendee double-bookings), and maximize utilization balance. This domain provides continuous pressure gradients (rather than discrete violations), measurable success criteria, and scalable difficulty through problem size.
 
-\textbf{Key findings}: Pressure-field coordination outperforms all baselines (\S\ref{sec:main-results}). Temporal decay is critical---disabling it reduces solve rate by 10 percentage points (\S\ref{sec:ablations}). The approach maintains consistent performance from 1 to 4 agents (\S\ref{sec:scaling}). Despite using more tokens per trial, pressure-field achieves 12\% better token efficiency per successful solve (\S\ref{sec:token-efficiency}).
+\textbf{Key findings}: Pressure-field coordination outperforms all baselines (\S\ref{sec:main-results}). Temporal decay shows a beneficial trend, though statistical significance requires larger samples (\S\ref{sec:ablations}). The approach maintains consistent performance from 1 to 4 agents (\S\ref{sec:scaling}). Despite using more tokens per trial, pressure-field achieves 12\% better token efficiency per successful solve (\S\ref{sec:token-efficiency}).
 
 \subsection{Setup}
 
@@ -35,6 +35,8 @@ Each schedule spans 5 days with 30-minute time slots (8am--4pm). Regions are 2-h
 \textbf{Pressure function}: $P = \text{gaps} \cdot 1.0 + \text{overlaps} \cdot 2.0 + \text{util\_var} \cdot 0.5 + \text{unsched} \cdot 1.5$
 
 where $\text{gaps}$ measures empty slots as a fraction, $\text{overlaps}$ counts attendee double-bookings, $\text{util\_var}$ measures room utilization variance, and $\text{unsched}$ is the fraction of unscheduled meetings.
+
+\textbf{Alignment verification}: The per-region pressure computation uses only $\text{gaps}$, $\text{overlaps}$, and $\text{util\_var}$---all strictly local to each time block. The $\text{unsched}$ component is added to total pressure only, not per-region. This makes the per-region pressure \emph{separable}: modifying region $i$ has zero effect on region $j$'s pressure for $j \neq i$, satisfying the alignment condition (Definition~2) with $\epsilon = 0$. While attendee constraints could theoretically create cross-region coupling (the same person attending meetings in different time blocks), our overlap sensor counts overlaps only within each time block, eliminating this coupling source. Empirical analysis (Appendix~B) confirms that all observed pressure improvements are positive, consistent with separable pressure.
 
 \subsubsection{Baselines}
 
@@ -116,7 +118,7 @@ This result contradicts the common assumption that explicit hierarchical coordin
 
 \subsubsection{Effect of Temporal Decay}
 
-Decay proves essential---without it, solve rate drops:
+Decay appears beneficial, though the effect does not reach statistical significance with our sample size:
 
 \begin{table}[htbp]
 \centering
@@ -129,11 +131,11 @@ Full (with decay) & 29/30 & 96.7\% & 83.3\%--99.4\% \\
 Without decay & 26/30 & 86.7\% & 70.3\%--94.7\% \\
 \bottomrule
 \end{tabular}
-\caption{Decay ablation on easy scheduling problems (30 trials each). Disabling decay reduces solve rate by 10 percentage points.}
+\caption{Decay ablation on easy scheduling problems (30 trials each). Fisher's exact test: $p = 0.35$, indicating the 10 percentage point difference is not statistically significant at $\alpha = 0.05$.}
 \label{tab:decay-ablation}
 \end{table}
 
-The effect is meaningful: disabling decay reduces solve rate from 96.7\% to 86.7\%. Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear ``stable'' even when they still contain unscheduled meetings. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This validates the Basin Separation result (Theorem~\ref{thm:basin-separation}): without decay, agents remain trapped in the first stable basin they reach, even if lower-pressure basins exist elsewhere in the landscape.
+The observed effect---a 10 percentage point reduction when decay is disabled---is directionally consistent with our theoretical predictions but does not reach significance (Fisher's exact $p = 0.35$) given the high baseline solve rate on easy problems and limited sample size. The overlapping confidence intervals (83.3\%--99.4\% vs 70.3\%--94.7\%) reflect this uncertainty. Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear ``stable'' even when they still contain unscheduled meetings. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This mechanism is consistent with the Basin Separation result (Theorem~\ref{thm:basin-separation}): without decay, agents may remain trapped in the first stable basin they reach. Larger-scale ablation studies would be needed to establish the statistical significance of decay's contribution.
 
 \subsubsection{Effect of Inhibition and Examples}
 
@@ -164,12 +166,12 @@ Feature contributions:
 \item \textbf{Examples}: +6.7\% (full 96.7\% vs no\_examples 90.0\%)
 \end{itemize}
 
-\emph{Decay dominates}: configurations with decay achieve higher solve rates. Inhibition shows no detectable effect in this domain, possibly because the 50-tick budget provides sufficient exploration without explicit cooldowns.
+\emph{Decay shows the largest effect}: configurations with decay achieve higher solve rates, though the differences do not reach statistical significance at $n=30$. Inhibition shows no detectable effect in this domain, possibly because the 50-tick budget provides sufficient exploration without explicit cooldowns.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{fig2_ablation.pdf}
-\caption{Ablation study results. Left: feature matrix showing which components are enabled. Right: solve rates for each configuration. Decay provides the largest contribution (+10\%), followed by examples (+6.7\%). Inhibition shows no detectable effect.}
+\caption{Ablation study results. Left: feature matrix showing which components are enabled. Right: solve rates for each configuration. Decay shows the largest observed effect (+10\%), followed by examples (+6.7\%), though neither reaches statistical significance at $n=30$. Inhibition shows no detectable effect.}
 \label{fig:ablation}
 \end{figure}
 
@@ -211,8 +213,10 @@ Pressure-field maintains consistent performance from 1 to 4 agents on easy diffi
 
 The result demonstrates \emph{robustness}: pressure-field coordination maintains consistent solve rates despite 4$\times$ variation in agent count. This validates Theorem~\ref{thm:linear-scaling}: coordination overhead remains $O(1)$, enabling effective scaling. The slight peak at 2 agents (93.3\%) is within \ac{ci} overlap of 1 and 4 agents, indicating no significant agent-count effect.
 
-\subsection{Band and Model Escalation}
+\subsection{Band and Model Escalation: FM-MAS Symbiosis in Practice}
 \label{sec:escalation}
+
+The escalation mechanism demonstrates the FM-MAS symbiosis that pressure-field coordination enables. Traditional approaches face a dilemma: use a large, capable model everywhere (expensive) or use a small, efficient model everywhere (limited). Pressure-field coordination dissolves this dilemma through gradient-driven capability invocation: the coordination mechanism itself determines when greater \ac{fm} capability is needed.
 
 Ant colonies balance exploitation of known food sources against exploration for new ones. When a pheromone trail grows stale---indicating a depleted source---foragers abandon trail-following and resume random exploration, eventually discovering new paths that become the next generation of trails. This exploitation-exploration balance is fundamental to stigmergic systems: premature commitment to suboptimal solutions must be counteracted by mechanisms that restore exploratory behavior.
 
@@ -234,9 +238,16 @@ Exploration & 0.55--0.85 & 0.90--0.98 \\
 \label{tab:bands}
 \end{table}
 
-\emph{Model escalation} addresses a different failure mode: when exploration within a model's capability envelope fails to discover productive paths, the system recruits more capable agents. This mirrors the immune system's escalation from innate to adaptive response: macrophages and neutrophils handle routine pathogens quickly and cheaply, but when these first responders fail to clear an infection, the system escalates to T-cells and antibody-producing B-cells---slower to mobilize but capable of addressing threats invisible to simpler mechanisms. Similarly, model escalation (0.5b $\to$ 1.5b $\to$ 3b) reserves greater reasoning capacity for regions that resist simpler approaches. Each model upgrade resets to exploitation band, giving the more capable model opportunity to exploit solutions invisible to its predecessor before resorting to exploration.
+\emph{Model escalation} addresses a different failure mode: when exploration within a model's capability envelope fails to discover productive paths, the system recruits more capable \acp{fm}. This is where FM-MAS symbiosis becomes concrete: the \ac{mas} coordination mechanism (pressure-field) adaptively invokes higher-capability \acp{fm} based on pressure signals alone. No explicit task decomposition is needed---the pressure gradient indicates that current capabilities are insufficient, triggering escalation. Model escalation (0.5b $\to$ 1.5b $\to$ 3b) reserves greater reasoning capacity for regions that resist simpler approaches. Each model upgrade resets to exploitation band, giving the more capable model opportunity to exploit solutions invisible to its predecessor before resorting to exploration.
 
-This two-level mechanism---behavioral adaptation within agents (band escalation) and capability escalation across agents (model escalation)---maintains the stigmergic principle: coordination emerges from environment signals (pressure gradients) rather than explicit planning. The system does not ``decide'' to explore or escalate; it reacts to pressure stagnation, just as ants react to pheromone decay.
+This architecture instantiates the bidirectional relationship between \acp{fm} and \acp{mas}:
+
+\begin{itemize}
+\item \textbf{FM contribution}: Each model tier provides broad solution coverage without requiring explicit action enumeration. The 3b model can propose patches invisible to the 0.5b model, but both operate through the same interface---observe pressure, propose patch.
+\item \textbf{MAS contribution}: The pressure gradient provides the objective criterion for when to escalate. No heuristics about ``problem difficulty'' are needed; stagnant pressure velocity is sufficient signal. The coordination mechanism manages heterogeneous \ac{fm} capabilities without explicit capability models.
+\end{itemize}
+
+This two-level mechanism---behavioral adaptation within agents (band escalation) and capability escalation across agents (model escalation)---maintains the stigmergic principle: coordination emerges from environment signals (pressure gradients) rather than explicit planning. The system does not ``decide'' to explore or escalate; it reacts to pressure stagnation, just as ants react to pheromone decay. The result is adaptive \ac{fm} utilization: cheap models handle easy regions, expensive models are reserved for regions where cheap models stall.
 
 \subsection{Difficulty Scaling}
 

@@ -41,6 +41,31 @@ Our experiments reveal several important limitations:
 \item Resource cost of parallel validation: testing $K$ patches requires $O(K \cdot |A|)$ memory where $|A|$ is artifact size
 \end{itemize}
 
+\subsubsection{Hallucination Filtering and Emergent Trajectories}
+
+The validation phase (Phase 2b) serves as a filter for individual \ac{fm} hallucinations: patches that increase pressure or violate syntactic constraints are rejected before application. This provides strong guarantees at the individual-action level---no single hallucination can directly harm artifact quality.
+
+However, system-level behavior emerges from \emph{sequences} of validated patches, and trajectory-level risks remain. Consider a hypothetical scenario: an agent proposes a patch that reduces pressure in region $R_1$ by making a change that creates a subtle dependency on region $R_2$. The patch is validated (pressure decreased), but subsequent patches to $R_2$ now have unpredictable effects on $R_1$. The individual patches are all pressure-reducing, but the emergent trajectory creates fragile coupling that was invisible to local validation.
+
+More generally, validation filters based on pressure reduction cannot detect:
+\begin{itemize}
+\item \emph{Coherence drift}: Individual improvements that collectively shift the artifact toward an inconsistent state
+\item \emph{Emergent gaming}: Patches that exploit pressure function weaknesses in ways only apparent over multiple steps
+\item \emph{Dependency accumulation}: Gradual introduction of hidden couplings that reduce future improvability
+\end{itemize}
+
+Mitigating trajectory-level risks requires mechanisms beyond local validation: periodic global coherence checks, trajectory logging for post-hoc analysis, and pressure functions that penalize not just local quality but also coupling metrics. These remain areas for future work.
+
+\subsubsection{Decay Miscalibration Failure Modes}
+
+Temporal decay is critical for escaping local optima (Theorem~\ref{thm:basin-separation}), but miscalibrated decay rates introduce distinct failure modes:
+
+\textbf{Too-fast decay prevents stability.} When fitness decays faster than agents can reinforce successful regions, the system cannot maintain any stable configuration. Solved regions immediately become high-pressure again, triggering unnecessary rework. In the limit, excessively fast decay produces perpetual oscillation: agents patch, decay erases, agents re-patch, indefinitely.
+
+\textbf{Too-slow decay traps in local minima.} When fitness decays slower than the exploration timescale, agents cannot escape suboptimal basins. Early patches establish fitness peaks that persist indefinitely, preventing reconsideration even when better solutions exist. This is the failure mode our ablation study suggests: without decay, we observed a 10 percentage point reduction in solve rate, consistent with agents remaining trapped in initial basins (though the effect did not reach statistical significance at $n=30$).
+
+The optimal decay rate depends on problem characteristics: harder problems with deeper local minima require faster decay to enable escape, while problems with fragile solutions require slower decay to maintain stability. Our experiments use fixed decay rates ($\lambda_f = 0.1$, fitness half-life 5 seconds), which may be suboptimal for some problem instances. Adaptive decay---adjusting rates based on pressure velocity---is a promising direction for future work.
+
 \subsection{When to Choose Each Approach}
 
 Our results suggest the following guidance:
@@ -76,6 +101,38 @@ This mechanism proves beneficial for pressure-field: on hard problems, pressure-
 \item \textbf{Larger-scale experiments}: Testing on schedules with more rooms and longer time horizons to characterize scaling limits
 \item \textbf{Alternative domains}: Applying pressure-field coordination to code refactoring, configuration management, and other artifact refinement tasks
 \end{itemize}
+
+\subsection{FM-MAS Reciprocity: Bidirectional Problem Solving}
+
+The intersection of \acp{fm} and \acp{mas} is not merely additive---each paradigm solves fundamental problems that the other cannot address alone. This reciprocity suggests that pressure-field coordination represents a genuine synthesis rather than a simple combination.
+
+\subsubsection{Foundation Models Solve a MAS Coordination Problem}
+
+Traditional \ac{mas} coordination requires explicit action space enumeration. \Ac{gpgp} coordinates tasks through declared capabilities and commitments; SharedPlans reasons about action sequences and their preconditions; organizational models assign roles with specified behaviors. All these approaches assume that designers can enumerate what agents \emph{can do} and under what conditions.
+
+For open-ended artifact refinement---improving code quality, refining documents, optimizing configurations---this enumeration is intractable. The space of possible improvements is unbounded; no finite action language captures all valid patches. Traditional \ac{mas} approaches require either (a) restricting the problem to a tractable subset with enumerable actions, or (b) developing domain-specific action representations for each artifact type.
+
+\Acp{fm} eliminate this enumeration requirement. Their broad pretraining provides implicit coverage of improvement strategies across diverse domains without explicit action specification. An \ac{llm} actor can propose patches for code, natural language, structured data, or configuration files using the same interface: observe local context, receive pressure feedback, generate improvement proposals. This ``universal actor'' capability enables stigmergic coordination on problem classes where traditional \ac{mas} approaches would require extensive domain engineering.
+
+\subsubsection{Multi-Agent Systems Solve a FM Problem}
+
+Conversely, \acp{fm} face a fundamental problem that \ac{mas} coordination solves: how to combine multiple outputs coherently. A single \ac{fm} produces one response per query; scaling to complex artifacts requires orchestrating multiple generations. Current approaches use ad-hoc combination strategies: voting, ranking, chain-of-thought aggregation, or human-in-the-loop selection.
+
+Pressure-field coordination provides a principled framework for combining \ac{fm} outputs. Rather than voting on which response is ``best'' or ranking outputs by heuristic scores, the pressure gradient defines an objective criterion: accept patches that reduce pressure, reject those that do not. Multiple \ac{fm} outputs compete not through popularity or arbitrary ranking, but through their effect on a well-defined quality function.
+
+This framing clarifies why pressure-field coordination outperforms conversation baselines. AutoGen-style multi-agent dialogue is an ad-hoc combination strategy---agents exchange messages and reach conclusions through emergent consensus. Pressure-field coordination replaces emergent consensus with objective gradients: no negotiation is needed when the artifact state adjudicates quality.
+
+\subsubsection{Implications for FM-MAS Integration}
+
+This reciprocity suggests design principles for future FM-MAS systems:
+
+\begin{enumerate}
+\item \textbf{Leverage FM coverage, constrain via MAS gradients.} Use \acp{fm} for their broad solution coverage, but use \ac{mas} coordination mechanisms to filter and combine outputs objectively.
+\item \textbf{Prefer stigmergic over explicit coordination.} When \acp{fm} serve as actors, stigmergic coordination avoids the overhead of explicit protocols that FMs may not reliably follow.
+\item \textbf{Design pressure functions as FM-MAS interfaces.} The pressure function is the critical interface: it must capture human intent precisely enough that \ac{fm} outputs reducing pressure are genuinely improvements.
+\end{enumerate}
+
+Our experimental results---pressure-field achieving $4\times$ higher solve rates than conversation baselines---provide empirical support for these principles. The coordination overhead of explicit dialogue exceeds its organizational benefit when objective gradients are available.
 
 \subsection{Societal Implications}
 
