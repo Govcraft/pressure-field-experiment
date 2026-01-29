@@ -4,7 +4,7 @@
 
 \section{Conclusion}
 
-We presented pressure-field coordination, a decentralized approach to multi-agent systems that achieves coordination through shared state and local pressure gradients rather than explicit orchestration.
+We presented pressure-field coordination, a decentralized approach to \acp{mas} that achieves coordination through shared state and local pressure gradients rather than explicit orchestration.
 
 Our theoretical analysis establishes convergence guarantees under pressure alignment conditions, with coordination overhead independent of agent count. Empirically, on meeting room scheduling across 1350 total trials (270 per strategy), we find:
 
@@ -18,6 +18,6 @@ Our theoretical analysis establishes convergence guarantees under pressure align
 
 This work demonstrates that implicit coordination can outperform explicit coordination for constraint satisfaction tasks. Pressure-field achieves this with simpler architecture: no coordinator agent, no explicit message passing, just shared state and local pressure gradients.
 
-\Acp{fm}' zero-shot capabilities eliminate the need for domain-specific action representations; pressure-field coordination eliminates the need for complex multi-agent protocols; together they enable simple multi-agent systems.
+\Acp{fm}' zero-shot capabilities eliminate the need for domain-specific action representations; pressure-field coordination eliminates the need for complex multi-agent protocols; together they enable simple \acp{mas}.
 
 These results suggest that for domains with measurable quality signals and locally-decomposable structure, implicit coordination through shared state offers not just a simpler but a more effective alternative to explicit hierarchical control.
