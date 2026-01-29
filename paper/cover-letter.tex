@@ -1,0 +1,42 @@
+\documentclass[11pt]{letter}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{parskip}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\setlength{\parskip}{0.8em}
+
+\signature{Roland R. Rodriguez, Jr.}
+\address{}
+
+\begin{document}
+
+\begin{letter}{Editors\\
+Journal of Autonomous Agents and Multi-Agent Systems\\
+Special Issue: ``When Foundation Models Meet Multi-Agent Systems''}
+
+\opening{Dear Editors,}
+
+I am pleased to submit ``Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay'' for your special issue. This paper demonstrates that foundation model capabilities and MAS coordination mechanisms are \emph{mutually enabling}: FMs solve the action enumeration problem that limited stigmergic approaches to discrete spaces, while MAS pressure gradients provide principled criteria for combining FM outputs---replacing ad-hoc voting with quality-based selection. Section~7.7 explicitly articulates this FM-MAS reciprocity.
+
+\textbf{Connections to Prior MAS Work.}
+The paper situates pressure-field coordination within foundational MAS research:
+\begin{itemize}[nosep,topsep=2pt]
+\item Unlike Horling \& Lesser's organizational paradigms, pressure-field achieves role-free coordination through shared gradients.
+\item Unlike GPGP's explicit task structures and commitment protocols, pressure-field requires no inter-agent messages---$O(1)$ coordination overhead.
+\item Unlike SharedPlans and Joint Intentions, pressure-field eliminates intention reasoning; the shared artifact \emph{is} the mutual belief.
+\item We compare directly against AutoGen-style conversation baselines, demonstrating 4$\times$ higher solve rates.
+\item We extend stigmergic principles to FM-based artifact refinement, showing how FMs overcome the action enumeration limitation.
+\end{itemize}
+
+\textbf{Empirical Results.}
+Across 1350 trials on meeting room scheduling: pressure-field achieves 30$\times$ higher solve rates than hierarchical control (48.5\% vs 1.5\%), 4$\times$ higher than conversation-based approaches (48.5\% vs 11.1\%), all comparisons highly significant ($p < 0.001$, Cohen's $h > 1.0$). On medium and hard problems, only pressure-field achieves non-zero solve rates. These results challenge the assumption that explicit coordination outperforms implicit coordination.
+
+\textbf{Theoretical Results.}
+The paper provides convergence guarantees under pressure alignment (Theorem~1), $O(1)$ coordination overhead (Theorem~4), and proves temporal decay is necessary to escape local minima (Theorem~3).
+
+This work has not been published in a peer-reviewed venue. An earlier arXiv preprint exists; this submission adds FM-MAS reciprocity discussion framed for the special issue theme.
+
+\closing{Sincerely,}
+
+\end{letter}
+\end{document}
