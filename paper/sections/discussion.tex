@@ -32,6 +32,8 @@ Our experiments reveal several important limitations:
 
 \textbf{Domain specificity.} Results on meeting room scheduling may not generalize to domains lacking measurable pressure gradients or locality properties. Tasks requiring global planning or long-horizon reasoning may favor hierarchical approaches.
 
+However, meeting scheduling is representative of a broader class of \emph{resource allocation problems with soft constraints}: cloud compute scheduling (VMs to hosts with affinity/anti-affinity rules), logistics optimization (packages to routes with capacity and time windows), and workforce rostering (employees to shifts with skill and availability constraints). These domains share the structural properties that enable pressure-field coordination: (1) decomposable quality metrics (utilization, constraint violations, balance), (2) locality (fixing one allocation rarely breaks distant allocations), and (3) multiple valid solutions (no single optimum, many acceptable configurations). We selected meeting scheduling as the evaluation domain because it is intuitive, reproducible, and exhibits these properties clearly. The coordination mechanism itself---pressure gradients, temporal decay, parallel validation---is domain-agnostic; only the pressure function requires domain-specific design.
+
 \textbf{Additional practical limitations:}
 \begin{itemize}
 \item Requires well-designed pressure functions (not learned from data)

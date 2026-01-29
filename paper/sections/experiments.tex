@@ -26,7 +26,7 @@ Medium & 5 & 40 & 50\% \\
 Hard & 5 & 60 & 30\% \\
 \bottomrule
 \end{tabular}
-\caption{Problem configurations. Pre-scheduled percentage indicates meetings already placed; remaining must be scheduled by agents.}
+\caption{Problem configurations. Pre-scheduled percentage indicates meetings already placed; remaining meetings must be scheduled by agents.}
 \label{tab:problems}
 \end{table}
 
@@ -54,7 +54,7 @@ We compare five coordination strategies, all using identical \acp{llm} (\texttt{
 
 \textbf{Note on parallelism}: Pressure-field validates multiple patches in parallel ($K$ regions per tick), while hierarchical validates one patch sequentially. This asymmetry is \emph{inherent to the coordination paradigm}, not an implementation choice: hierarchical control requires the manager to select a region, delegate to a worker, and validate the result before proceeding---delegating to multiple workers simultaneously would require additional coordination protocols (work distribution, conflict resolution, result aggregation) that would transform it into a different architecture entirely. The sequential bottleneck is the cost of centralized control. When hierarchical's single patch is rejected, the tick produces no progress; when one of pressure-field's parallel patches is rejected, others may still succeed.
 
-\textbf{Model choice rationale}: We deliberately use small, minimally-capable models (0.5b--3b parameters) rather than frontier models. This design choice strengthens our thesis: if the coordination mechanism can extract effective performance from weak models, the mechanism itself is valuable---independent of model capability. Using identical model chains across all strategies isolates coordination effects from model effects.
+\textbf{Model choice rationale}: We deliberately use small, minimally-capable models (0.5b--3b parameters) rather than frontier models. This design choice strengthens our thesis: if the coordination mechanism can extract effective performance from weak models, the mechanism itself is valuable---independent of model capability. Using identical model chains across all strategies isolates coordination effects from model effects. We hypothesize that frontier models (e.g., GPT-4, Claude) would raise absolute solve rates across all strategies while preserving relative rankings: the coordination advantage is orthogonal to model capability, so pressure-field's $4\times$ improvement over conversation baselines should persist even as the baseline rises.
 
 \subsubsection{Metrics}
 
@@ -135,7 +135,7 @@ Without decay & 26/30 & 86.7\% & 70.3\%--94.7\% \\
 \label{tab:decay-ablation}
 \end{table}
 
-The observed effect---a 10 percentage point reduction when decay is disabled---is directionally consistent with our theoretical predictions but does not reach significance (Fisher's exact $p = 0.35$) given the high baseline solve rate on easy problems and limited sample size. The overlapping confidence intervals (83.3\%--99.4\% vs 70.3\%--94.7\%) reflect this uncertainty. Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear ``stable'' even when they still contain unscheduled meetings. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This mechanism is consistent with the Basin Separation result (Theorem~\ref{thm:basin-separation}): without decay, agents may remain trapped in the first stable basin they reach. Larger-scale ablation studies would be needed to establish the statistical significance of decay's contribution.
+The observed effect---a 10 percentage point reduction when decay is disabled---is directionally consistent with our theoretical predictions. The non-significant $p$-value ($p = 0.35$) reflects both limited sample size and a ceiling effect: the high baseline solve rate on easy problems (96.7\% with decay) leaves limited statistical room to detect improvement. The overlapping confidence intervals (83.3\%--99.4\% vs 70.3\%--94.7\%) reflect this uncertainty. Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear ``stable'' even when they still contain unscheduled meetings. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This mechanism is consistent with the Basin Separation result (Theorem~\ref{thm:basin-separation}): without decay, agents may remain trapped in the first stable basin they reach. Larger-scale ablation studies would be needed to establish the statistical significance of decay's contribution.
 
 \subsubsection{Effect of Inhibition and Examples}
 
@@ -278,7 +278,7 @@ The difficulty scaling reveals critical insights:
 
 \item \textbf{The gap widens with difficulty}: On easy problems, pressure-field leads by 53.4 percentage points over conversation (86.7\% vs 33.3\%). On medium and hard problems, the gap becomes absolute---pressure-field solves problems that no baseline can solve.
 
-\item \textbf{Effect sizes are large}: Cohen's $h$ on easy problems: $h = 1.16$ vs conversation, $h = 1.97$ vs hierarchical, $h = 2.18$ vs sequential/random.
+\item \textbf{Effect sizes are large}: All pairwise comparisons on easy problems exceed Cohen's ``large effect'' threshold ($h > 0.8$); see Figure~\ref{fig:effect-sizes} for the full breakdown.
 \end{enumerate}
 
 \begin{figure}[htbp]
@@ -399,3 +399,5 @@ Conversation & 78K (n=30) & 172K (n=240) \\
 \end{table}
 
 Solved trials terminate early, using fewer tokens. For pressure-field, the 2.8$\times$ gap between solved (318K) and unsolved (900K) reflects the cost of exhaustive exploration when a problem proves intractable. Conversation's smaller gap (2.2$\times$) indicates less intensive search---which may explain its lower solve rate on difficult problems.
+
+\textbf{Cost control through escalation.} The band and model escalation mechanism (Section~\ref{sec:escalation}) serves as an implicit cost-control mechanism. The system begins with cheap exploration: small models (0.5b) and exploitation-focused sampling. Tokens are spent on larger models and broader exploration \emph{only when pressure stagnates}---that is, when the problem actually requires more capable search. Easy problems that solve quickly never trigger escalation, consuming only baseline tokens. The 4$\times$ per-trial cost difference reflects the average across all difficulty levels; on easy problems where pressure-field solves 86.7\% of instances, most trials terminate before expensive escalation occurs.

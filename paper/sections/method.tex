@@ -45,7 +45,7 @@ In potential games, any sequence of improving moves converges to a Nash equilibr
 
 This connection provides our convergence guarantee without requiring explicit coordination.
 
-Note that this convergence result assumes finite action spaces. In practice, patches are drawn from a finite set of \ac{llm}-generated proposals per region, satisfying this requirement. For infinite content spaces, convergence to approximate equilibria can be established under Lipschitz continuity conditions on pressure functions.
+Note that this convergence result assumes finite action spaces. In practice, patches are drawn from a finite set of \ac{llm}-generated proposals per region, satisfying this requirement. More fundamentally, the validation phase (Phase 2b) implicitly discretizes the action space: only patches that reduce pressure are accepted, so the effective action set at any state is the finite set of pressure-reducing proposals generated that tick. For infinite content spaces, convergence to approximate equilibria can be established under Lipschitz continuity conditions on pressure functions.
 
 \subsection{The Coordination Algorithm}
 

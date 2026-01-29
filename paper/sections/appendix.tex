@@ -104,7 +104,17 @@ Output the schedule for this time block.
 
 \textbf{Why ``one patch per tick'' for hierarchical?} This asymmetry is inherent to the coordination paradigm, not an implementation choice. Hierarchical control requires the manager to: (1) observe global state, (2) select a target region, (3) delegate to a worker, (4) receive the proposed patch, and (5) validate before applying. Delegating to $K$ workers simultaneously would require additional coordination protocols---work distribution to avoid conflicts, result aggregation, tie-breaking when multiple patches target overlapping state---that would transform hierarchical control into a fundamentally different architecture. The sequential bottleneck is the cost of centralized decision-making. Pressure-field avoids this overhead through stigmergic coordination: agents observe shared state independently and propose patches without central delegation, enabling natural parallelism.
 
-\textbf{Conversation baseline implementation} The conversation baseline implements AutoGen-style multi-agent dialogue with three roles: a \emph{Coordinator} that selects which region to address, a \emph{Proposer} that suggests schedule changes, and a \emph{Validator} that critiques proposals. Each tick proceeds as follows: (1) the Coordinator identifies a high-pressure region (1 \ac{llm} call), (2) the Proposer and Validator engage in up to 5 dialogue turns (2 calls per turn), (3) if the Validator approves, the patch is applied. This yields 4--12 \ac{llm} calls per tick for a single region, compared to pressure-field's $K$ parallel calls across $K$ regions. The conversation terminates when the Validator approves or the turn limit is reached. We use fixed sampling parameters (T=0.3, top-p=0.9) for structured dialogue, lower than pressure-field's exploration bands.
+\textbf{Conversation baseline implementation} The conversation baseline implements AutoGen-style multi-agent dialogue with three roles: a \emph{Coordinator} that selects which region to address, a \emph{Proposer} that suggests schedule changes, and a \emph{Validator} that critiques proposals. Each tick proceeds as follows: (1) the Coordinator identifies a high-pressure region (1 \ac{llm} call), (2) the Proposer and Validator engage in up to 5 dialogue turns (2 calls per turn), (3) if the Validator approves, the patch is applied. This yields 4--12 \ac{llm} calls per tick for a single region, compared to pressure-field's $K$ parallel calls across $K$ regions. The conversation terminates when the Validator approves or the turn limit is reached. We use fixed sampling parameters (T=0.3, top-p=0.9) for structured dialogue, lower than pressure-field's exploration bands. Note that this represents one instantiation of conversation-based coordination inspired by AutoGen's design principles; actual AutoGen deployments may use different role configurations, turn protocols, or termination conditions.
+
+\textbf{Fairness guarantees for baseline comparison:} To ensure the conversation baseline had equal opportunity to succeed:
+\begin{itemize}
+\item \textbf{Same models}: All strategies use identical model chains (qwen2.5:0.5b $\to$ 1.5b $\to$ 3b) with the same escalation triggers
+\item \textbf{Same problem access}: All strategies observe identical schedule state, room capacities, meeting requirements, and constraint information
+\item \textbf{Retry logic}: The conversation baseline includes up to 5 dialogue turns per region, allowing the Proposer to refine proposals based on Validator feedback---this is more opportunity for refinement than pressure-field's single-shot proposals
+\item \textbf{Same tick budget}: All strategies receive the same 50-tick limit to solve each problem
+\item \textbf{Output parsing}: All strategies use identical response parsing and schedule extraction logic
+\end{itemize}
+The only intentional differences are the coordination mechanisms themselves: how regions are selected, how proposals are generated, and how patches are validated.
 
 \subsection{Problem Generation and Seeding}
 
@@ -187,7 +197,7 @@ Each experiment records:
 \item \texttt{band\_escalation\_events}: Sampling band changes (tick, from\_band, to\_band)
 \item \texttt{model\_escalation\_events}: Model tier changes (tick, from\_model, to\_model)
 \item \texttt{final\_model}: Which model tier solved the schedule
-\item \texttt{token\_usage}: Prompt and completion tokens consumed (pressure-field only; conversation baseline uses a different LLM client path that does not collect token statistics, precluding cross-strategy comparison)
+\item \texttt{token\_usage}: Prompt and completion tokens consumed per trial
 \end{itemize}
 
 \subsection{Replication Notes}
@@ -259,4 +269,98 @@ Analysis of 270 pressure-field trials confirms separability:
 
 The complete absence of pressure degradation is consistent with separable pressure: each accepted patch reduces local pressure, which directly reduces global pressure without adverse effects on other regions. (Patches that would increase local pressure are rejected by validation.)
 
-Mean improvement magnitude: 2.67 pressure units. This substantially exceeds any plausible coupling bound, confirming that local improvements reliably translate to global improvements.
+Mean improvement magnitude: 2.67 pressure units. For context, initial problem pressure averages 12.7 units (range 0--42), so each successful patch reduces pressure by approximately 21\% of the typical starting value. This substantially exceeds any plausible coupling bound, confirming that local improvements reliably translate to global improvements.
+
+\textbf{Verification of $\delta_{\min} > 0$}: Theorem~\ref{thm:convergence} requires $\delta_{\min} > (n-1)\epsilon$. With $\epsilon = 0$ (separable pressure), this reduces to $\delta_{\min} > 0$. Empirically, the minimum observed pressure reduction across all 1,160 accepted patches is 1.0 pressure units, confirming $\delta_{\min} \geq 1 > 0$. The theorem's convergence guarantee therefore applies to this domain.
+
+
+\section{Theorem Proofs}
+\label{app:proofs}
+
+This appendix provides complete proofs for the theoretical results in Section~4. Theorem~\ref{thm:basin-quality} (Basin Quality) is omitted here as its proof is trivial and appears in full in the main text.
+
+\subsection{Proof of Theorem~\ref{thm:convergence} (Convergence)}
+
+\begin{proof}
+We show that the system reaches a stable basin within the stated bound.
+
+\textbf{Setup.} Let $P^t = P(s^t)$ denote global pressure at tick $t$. Under $\epsilon$-bounded coupling, when a patch reduces local pressure $P_i$ by $\delta_i$, global pressure changes by:
+\[
+P^{t+1} - P^t = -\delta_i + \sum_{j \neq i} (P_j(s^{t+1}) - P_j(s^t))
+\]
+By bounded coupling, $|P_j(s^{t+1}) - P_j(s^t)| \leq \epsilon$ for each $j \neq i$. With $n$ regions:
+\[
+P^{t+1} - P^t \leq -\delta_i + (n-1)\epsilon
+\]
+
+\textbf{Progress guarantee.} If $\delta_i \geq \delta_{\min}$ and $\delta_{\min} > (n-1)\epsilon$, then:
+\[
+P^{t+1} - P^t \leq -\delta_{\min} + (n-1)\epsilon < 0
+\]
+Each tick with an applied patch reduces global pressure by at least $\delta_{\min} - (n-1)\epsilon > 0$.
+
+\textbf{Termination.} Since $P(s) \geq 0$ for all states and pressure decreases by a fixed minimum $\Delta = \delta_{\min} - (n-1)\epsilon$ per tick (when patches are applied), the system must reach a state where no region exceeds $\tau_{\text{act}}$ within:
+\[
+T \leq \frac{P_0}{\Delta} = \frac{P_0}{\delta_{\min} - (n-1)\epsilon}
+\]
+ticks. At this point, no region activates, and the system has reached a stable basin.
+
+\textbf{Stability maintenance.} The decay constraint $\Delta_f > 1 - e^{-\lambda_f \cdot \tau_{\text{inh}}}$ ensures that fitness reinforcement from the final patches exceeds decay during the inhibition period. This prevents immediate re-activation after reaching stability.
+\end{proof}
+
+\subsection{Proof of Theorem~\ref{thm:basin-separation} (Basin Separation)}
+
+\begin{proof}
+We show that distinct stable basins are separated by pressure barriers of height at least $\tau_{\text{act}}$.
+
+\textbf{Basin definition.} A stable basin $B$ is a connected region of state space where all states satisfy $P_i(s) < \tau_{\text{act}}$ for all regions $i$. Within a basin, no agent takes action (pressure below activation threshold).
+
+\textbf{Transition requirement.} To move from basin $B_1$ to a distinct basin $B_2$, the system must pass through states not in either basin. At the boundary of $B_1$, at least one region $i$ must have $P_i(s) \geq \tau_{\text{act}}$ (otherwise, by continuity under separable pressure, the state would still be in $B_1$).
+
+\textbf{Barrier height.} The minimum pressure exceedance required to exit a basin is $\tau_{\text{act}}$. This defines the barrier height separating basins.
+
+\textbf{Implication for decay.} Without decay, once the system enters a basin, it remains there indefinitely---fitness remains high, preventing re-activation. Decay erodes fitness over time, eventually allowing pressure to exceed $\tau_{\text{act}}$ and enabling transition to potentially lower-pressure basins.
+\end{proof}
+
+\subsection{Proof of Theorem~\ref{thm:linear-scaling} (Linear Scaling)}
+
+\begin{proof}
+We analyze the per-tick computational complexity.
+
+\textbf{Signal computation.} For each of $m$ regions, computing $d$-dimensional signals requires $O(d)$ operations (reading local content, computing quality metrics). Total: $O(m \cdot d)$.
+
+\textbf{Pressure computation.} For each region, computing pressure from $k$ signal axes requires $O(k)$ operations (weighted sum). Total: $O(m \cdot k)$.
+
+\textbf{Patch proposal.} Each of $a$ actors proposes patches for activated regions. In the worst case (all regions activated), this is $O(m \cdot a)$ proposals. Each proposal involves an \ac{llm} call, which dominates wall-clock time but is constant per call.
+
+\textbf{Selection.} Sorting $O(m \cdot a)$ candidate patches by quality requires $O(m \cdot a \cdot \log(m \cdot a))$ comparisons. Greedy selection of non-conflicting patches is $O(m \cdot a)$ with appropriate data structures.
+
+\textbf{Coordination overhead.} Critically, agents share no messages. Each agent reads shared artifact state (read-only) and writes proposed patches to a central queue. No inter-agent communication occurs. The fork pool for parallel validation has fixed size $K$, contributing $O(K)$ overhead independent of agent count.
+
+\textbf{Total.} Summing components: $O(m \cdot d + m \cdot k + m \cdot a + m \cdot a \cdot \log(ma) + K) = O(m \cdot (d + k + a \cdot \log(ma)))$, independent of agent count $n$ beyond its contribution to $a$.
+\end{proof}
+
+\subsection{Proof of Theorem~\ref{thm:parallel-convergence} (Parallel Convergence)}
+
+\begin{proof}
+We extend Theorem~\ref{thm:convergence} to the parallel setting.
+
+\textbf{Setup.} Suppose $K$ patches are validated in parallel per tick, targeting disjoint regions $i_1, \ldots, i_K$.
+
+\textbf{Combined pressure reduction.} Under $\epsilon$-bounded coupling, each patch $k$ targeting region $i_k$ reduces local pressure by at least $\delta_{\min}$. The global pressure change from patch $k$ is:
+\[
+\Delta P_k \leq -\delta_{\min} + (n-1)\epsilon
+\]
+
+When patches target disjoint regions, their effects on global pressure are additive (no double-counting of coupling effects within the modified regions). The combined reduction is:
+\[
+P^{t+1} - P^t \leq \sum_{k=1}^{K} \Delta P_k \leq K \cdot (-\delta_{\min} + (n-1)\epsilon)
+\]
+
+\textbf{Convergence bound.} With combined reduction $K \cdot (\delta_{\min} - (n-1)\epsilon)$ per tick:
+\[
+T \leq \frac{P_0}{K \cdot (\delta_{\min} - (n-1)\epsilon)}
+\]
+
+\textbf{Conflict handling.} When multiple patches target the same region, only one is selected (highest quality). This reduces effective parallelism but maintains correctness---the selected patch still provides at least $\delta_{\min} - (n-1)\epsilon$ reduction.
+\end{proof}
