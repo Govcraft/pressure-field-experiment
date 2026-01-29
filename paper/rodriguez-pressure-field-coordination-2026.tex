@@ -4,13 +4,13 @@
 
 \title[Emergent Coordination via Pressure Fields]{Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay}
 
-\author*[1]{\fnm{Roland R.} \sur{Rodriguez, Jr.}}\email{rrrodzilla@proton.me}
+\author[1]{\fnm{Roland R.} \sur{Rodriguez, Jr.}}\email{rrrodzilla@proton.me}
 
 \affil[1]{\orgname{Independent Researcher}}
 
 \abstract{Current multi-agent LLM frameworks rely on explicit orchestration patterns borrowed from human organizational structures: planners delegate to executors, managers coordinate workers, and hierarchical control flow governs agent interactions. These approaches suffer from coordination overhead that scales poorly with agent count and task complexity. We propose a fundamentally different paradigm inspired by natural coordination mechanisms: agents operate locally on a shared artifact, guided only by pressure gradients derived from measurable quality signals, with temporal decay preventing premature convergence. We formalize this as optimization over a pressure landscape and prove convergence guarantees under mild conditions.
 
-Empirically, on meeting room scheduling across 1350 total trials (270 per strategy), pressure-field coordination achieves $4\times$ higher solve rates than conversation-based coordination and over $30\times$ higher than hierarchical control (48.5\% vs 11.1\% vs 1.5\%; all pairwise comparisons $p < 0.001$). Ablation studies suggest temporal decay is beneficial. On easy problems, pressure-field achieves 86.7\% solve rate compared to 33.3\% for the next-best baseline. Foundation models enable this approach: their broad pretraining and zero-shot reasoning allow quality-improving patches from local pressure signals alone, without domain-specific coordination protocols. This suggests that constraint-driven emergence offers a simpler and more effective foundation for multi-agent AI.}
+Empirically, on meeting room scheduling across 1350 total trials (270 per strategy), pressure-field coordination achieves 4x higher solve rates than conversation-based coordination and over 30x higher than hierarchical control (48.5\% vs 11.1\% vs 1.5\%; all pairwise comparisons p less than 0.001). Ablation studies suggest temporal decay is beneficial. On easy problems, pressure-field achieves 86.7\% solve rate compared to 33.3\% for the next-best baseline. Foundation models enable this approach: their broad pretraining and zero-shot reasoning allow quality-improving patches from local pressure signals alone, without domain-specific coordination protocols. This suggests that constraint-driven emergence offers a simpler and more effective foundation for multi-agent AI.}
 
 \keywords{multi-agent systems \and emergent coordination \and decentralized optimization \and LLM agents \and stigmergy}
 

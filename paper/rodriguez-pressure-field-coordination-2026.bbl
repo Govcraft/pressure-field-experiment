@@ -33,7 +33,7 @@ Dorigo M, Gambardella LM (1997) Ant colony system: A cooperative learning
   approach to the traveling salesman problem. IEEE Transactions on Evolutionary
   Computation 1(1):53--66
 
-\bibitem[{Dorigo et~al(1996)Dorigo, Maniezzo, and Colorni}]{dorigo1996ant}
+\bibitem[{Dorigo et~al.(1996)Dorigo, Maniezzo, and Colorni}]{dorigo1996ant}
 Dorigo M, Maniezzo V, Colorni A (1996) Ant system: Optimization by a colony of
   cooperating agents. IEEE Transactions on Systems, Man, and Cybernetics --
   Part B 26(1):29--41
@@ -47,7 +47,7 @@ Grass{\'e} PP (1959) La reconstruction du nid et les coordinations
 Grosz BJ, Kraus S (1996) Collaborative plans for complex group action.
   Artificial Intelligence 86(2):269--357
 
-\bibitem[{Hong et~al(2023)Hong, Zhuge, Chen, Zheng, Cheng, Zhang, Wang, Wang,
+\bibitem[{Hong et~al.(2023)Hong, Zhuge, Chen, Zheng, Cheng, Zhang, Wang, Wang,
   Yau, Lin, Zhou, Ran, Xiao, Wu, and Schmidhuber}]{hong2023metagpt}
 Hong S, Zhuge M, Chen J, et~al (2023) {MetaGPT}: Meta programming for a
   multi-agent collaborative framework. arXiv preprint arXiv:230800352
@@ -56,7 +56,7 @@ Hong S, Zhuge M, Chen J, et~al (2023) {MetaGPT}: Meta programming for a
 Horling B, Lesser V (2004) A survey of multi-agent organizational paradigms.
   The Knowledge Engineering Review 19(4):281--316
 
-\bibitem[{Li et~al(2023)Li, Hammoud, Itani, Khizbullin, and
+\bibitem[{Li et~al.(2023)Li, Hammoud, Itani, Khizbullin, and
   Ghanem}]{li2023camel}
 Li G, Hammoud HAAK, Itani H, et~al (2023) {CAMEL}: Communicative agents for
   ``mind'' exploration of large language model society. In: Advances in Neural
@@ -74,7 +74,7 @@ Monderer D, Shapley LS (1996) Potential games. Games and Economic Behavior
 Nedi{\'c} A, Ozdaglar A (2009) Distributed subgradient methods for multi-agent
   optimization. IEEE Transactions on Automatic Control 54(1):48--61
 
-\bibitem[{Serugendo et~al(2005)Serugendo, Gleizes, and
+\bibitem[{Serugendo et~al.(2005)Serugendo, Gleizes, and
   Karageorgos}]{serugendo2005selforganisation}
 Serugendo GDM, Gleizes MP, Karageorgos A (2005) Self-organisation in
   multi-agent systems. The Knowledge Engineering Review 20(2):165--189
@@ -83,12 +83,12 @@ Serugendo GDM, Gleizes MP, Karageorgos A (2005) Self-organisation in
 Shoham Y, Leyton-Brown K (2008) Multiagent Systems: Algorithmic,
   Game-Theoretic, and Logical Foundations. Cambridge University Press
 
-\bibitem[{Wu et~al(2023)Wu, Bansal, Zhang, Wu, Zhang, Zhu, Li, Jiang, Zhang,
+\bibitem[{Wu et~al.(2023)Wu, Bansal, Zhang, Wu, Zhang, Zhu, Li, Jiang, Zhang,
   and Wang}]{wu2023autogen}
 Wu Q, Bansal G, Zhang J, et~al (2023) {AutoGen}: Enabling next-gen {LLM}
   applications via multi-agent conversation. arXiv preprint arXiv:230808155
 
-\bibitem[{Yuan et~al(2016)Yuan, Ling, and Yin}]{yuan2016convergence}
+\bibitem[{Yuan et~al.(2016)Yuan, Ling, and Yin}]{yuan2016convergence}
 Yuan K, Ling Q, Yin W (2016) On the convergence of decentralized gradient
   descent. SIAM Journal on Optimization 26(3):1835--1854
 

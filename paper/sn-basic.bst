@@ -1,36 +1,26 @@
 %%
-%% This is file `spbasic.bst',
+%% This is file `sn-basic.bst',
 %% generated with the docstrip utility.
 %%
-%% The original source files were:
-%%
-%% merlin.mbs  (with options: `ay,nat,seq-lab,vonx,nm-rvx,ed-rev,jnrlst,dt-beg,yr-par,yrp-x,yrpp-xsp,note-yr,jxper,jttl-rm,thtit-a,pgsep-c,num-xser,ser-vol,jnm-x,btit-rm,bt-rm,pre-pub,doi,edparxc,blk-tit,in-col,fin-bare,pp,ed,abr,mth-bare,ord,jabr,xand,eprint,url,url-blk,em-x,nfss,')
+%% The original source files were: merlin.mbs
 %% ----------------------------------------
 %%
-%%********************************************************************************%%
-%%                                                                                %%
-%% For Springer medical, life sciences, chemistry, geology, engineering and       %%
-%%   computer science publications.                                               %%
-%% For use with the natbib package (see below). Default is author-year citations. %%
-%%   When citations are numbered, please use \usepackage[numbers]{natbib}.        %%
-%%                                                                                %%
-%%********************************************************************************%%
-%%
-%% Copyright 1994-2004 Patrick W Daly
- % ===============================================================
- % IMPORTANT NOTICE:
- % This bibliographic style (bst) file has been generated from one or
- % more master bibliographic style (mbs) files, listed above.
- %
- % This generated file can be redistributed and/or modified under the terms
+%%**************************************************************************************%%
+%%											%%
+%% For Springer medical, life sciences, chemistry, geology, engineering and		%%
+%%   computer science publications.							%%
+%% For use with the natbib package (see below). Default is author-year citations.	%%
+%% When citations are numbered, please use \documentclass[sn-basic, Numbered]{sn-jnl}.  %%
+%%											%%
+%% Per default the reference list entries are alphabetized.				%%
+%% If the entries in the list should be numbered consecutively comment out the		%%
+%% two lines including SORT (in uppercase).						%% 
+%%**************************************************************************************%%
+ % This file can be redistributed and/or modified under the terms
  % of the LaTeX Project Public License Distributed from CTAN
  % archives in directory macros/latex/base/lppl.txt; either
  % version 1 of the License, or any later version.
- % ===============================================================
- % Name and version information of the main mbs file:
- % \ProvidesFile{merlin.mbs}[2004/02/09 4.13 (PWD, AO, DPC)]
- %   For use with BibTeX version 0.99a or later
- %-------------------------------------------------------------------
+ %
  % This bibliography style file is intended for texts in ENGLISH
  % This is an author-year citation style bibliography. As such, it is
  % non-standard LaTeX, and requires a special package file to function properly.
@@ -49,15 +39,22 @@
  % The \cite command functions as follows:
  %   \citet{key} ==>>                Jones et al. (1990)
  %   \citet*{key} ==>>               Jones, Baker, and Smith (1990)
- %   \citep{key} ==>>                (Jones et al., 1990)
- %   \citep*{key} ==>>               (Jones, Baker, and Smith, 1990)
- %   \citep[chap. 2]{key} ==>>       (Jones et al., 1990, chap. 2)
- %   \citep[e.g.][]{key} ==>>        (e.g. Jones et al., 1990)
+ %   \citep{key} ==>>                (Jones et al. 1990)
+ %   \citep*{key} ==>>               (Jones, Baker, and Smith 1990)
+ %   \citep[chap. 2]{key} ==>>       (Jones et al. 1990, chap. 2)
+ %   \citep[e.g.][]{key} ==>>        (e.g. Jones et al. 1990)
  %   \citep[e.g.][p. 32]{key} ==>>   (e.g. Jones et al., p. 32)
  %   \citeauthor{key} ==>>           Jones et al.
  %   \citeauthor*{key} ==>>          Jones, Baker, and Smith
  %   \citeyear{key} ==>>             1990
  %---------------------------------------------------------------------
+
+FUNCTION {identify.basic.version}
+{ % Put identifying string in the .blg file
+  "sn-basic.bst"
+  " [2024/07/19 v1.1 bibliography style]"
+  * top$
+}
 
 ENTRY
   { address
@@ -238,6 +235,9 @@ FUNCTION {bbl.and}
 { "and"}
 
 FUNCTION {bbl.etal}
+{ "et~al." }
+
+FUNCTION {refbbl.etal}
 { "et~al" }
 
 FUNCTION {bbl.editors}
@@ -438,18 +438,19 @@ FUNCTION {bibinfo.warn}
   if$
 }
 
-FUNCTION {format.eprint}
-{ eprint duplicate$ empty$
-    'skip$
-    { "\eprint"
-      archive empty$
-        'skip$
-        { "[" * archive * "]" * }
-      if$
-      "{" * swap$ * "}" *
-    }
-  if$
-}
+%%Commented on 17th July 2024
+%FUNCTION {format.eprint}
+%{ eprint duplicate$ empty$
+%    'skip$
+%    { "\eprint"
+%      archive empty$
+%        'skip$
+%        { "[" * archive * "]" * }
+%      if$
+%      "{" * swap$ * "}" *
+%    }
+%  if$
+%}
 
 FUNCTION {format.archive}
 {
@@ -458,6 +459,22 @@ FUNCTION {format.archive}
       { archivePrefix ":" *}
   if$           
 }
+
+%%Updated on 17th July 2024
+FUNCTION {format.eprint}
+{ eprint empty$
+     { ""}
+     { archive empty$
+          {"{\href{https://arxiv.org/abs/" eprint * "}" *
+             "{{" * format.archive * eprint * "}}}" *}
+          {"{\href{https://arxiv.org/abs/" eprint * "}" *
+             "{{" * format.archive * eprint * "}}}" *}
+       if$
+     }
+     if$
+}
+
+
 
 FUNCTION {format.primaryClass}
 {
@@ -543,7 +560,7 @@ FUNCTION {format.names}
               if$
               t "others" =
                 {
-                  " " * bbl.etal *
+                  " " * refbbl.etal *
                 }
                 { " " * t * }
               if$
@@ -1226,6 +1243,7 @@ FUNCTION {book}
   format.eprint output
   fin.entry
 }
+
 FUNCTION {booklet}
 { output.bibitem
   format.authors output
@@ -1494,6 +1512,9 @@ FUNCTION {unpublished}
 
 FUNCTION {default.type} { misc }
 READ
+
+EXECUTE {identify.basic.version}
+
 FUNCTION {sortify}
 { purify$
   "l" change.case$
@@ -1792,7 +1813,6 @@ FUNCTION {end.bib}
   "\end{thebibliography}" write$ newline$
 }
 EXECUTE {end.bib}
-%% End of customized bst file
-%%
-%% End of file `spbasic.bst'.
+
+%% End of file `sn-basic.bst'.
 
