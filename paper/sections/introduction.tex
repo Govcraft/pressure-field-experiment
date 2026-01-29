@@ -4,7 +4,7 @@
 
 \section{Introduction}
 
-Multi-agent systems built on large language models address complex task automation~\cite{wu2023autogen,hong2023metagpt,li2023camel}. The dominant paradigm treats agents as organizational units: planners decompose tasks, managers delegate subtasks, and workers execute instructions under hierarchical supervision. This coordination overhead scales poorly with agent count and task complexity.
+Multi-agent systems built on \acp{llm} address complex task automation~\cite{wu2023autogen,hong2023metagpt,li2023camel}. The dominant paradigm treats agents as organizational units: planners decompose tasks, managers delegate subtasks, and workers execute instructions under hierarchical supervision. This coordination overhead scales poorly with agent count and task complexity.
 
 We demonstrate that \emph{implicit} coordination through shared state outperforms explicit hierarchical control---without coordinators, planners, or message passing. Across 1350 total trials on meeting room scheduling (270 per strategy), pressure-field coordination achieves over 30$\times$ higher solve rates than hierarchical control and 4$\times$ higher than conversation-based approaches~\cite{wu2023autogen} (all $p < 0.001$ with large effect sizes). Sequential and random baselines achieve only 0.4\%.
 
@@ -13,7 +13,7 @@ Our approach draws inspiration from natural coordination mechanisms---ant coloni
 Our contributions:
 
 \begin{enumerate}
-\item We formalize \emph{pressure-field coordination} as a role-free, stigmergic alternative to organizational \ac{mas} paradigms. Unlike \ac{gpgp}'s hierarchical message-passing or SharedPlans' intention alignment, pressure-field achieves $O(1)$ coordination overhead through shared artifact state. Foundation models enable this approach: their broad pretraining allows quality-improving patches from local pressure signals without domain-specific coordination protocols.
+\item We formalize \emph{pressure-field coordination} as a role-free, stigmergic alternative to organizational \ac{mas} paradigms. Unlike \ac{gpgp}'s hierarchical message-passing or SharedPlans' intention alignment, pressure-field achieves $O(1)$ coordination overhead through shared artifact state. \Acp{fm} enable this approach: their broad pretraining allows quality-improving patches from local pressure signals without domain-specific coordination protocols.
 
 \item We introduce \emph{temporal decay} as a mechanism for preventing premature convergence. Ablation studies show a 10 percentage point improvement with decay enabled (96.7\% vs 86.7\%), directionally consistent with the theoretical prediction that decay helps escape local minima, though not statistically significant at $n=30$.
 
