@@ -30,11 +30,11 @@ The paper challenges a foundational assumption in multi-agent systems: that expl
 
 This contribution is important for three reasons:
 
-\textbf{(a) Theoretical Integration:} The paper provides the first formal connection between stigmergic coordination (from swarm intelligence) and foundation model capabilities, showing how FMs' broad pretraining solves the action enumeration problem that historically limited stigmergic approaches to discrete, enumerable solution spaces. This extends MAS coordination theory to open-ended artifact refinement tasks.
+\textbf{(a) Theoretical Integration:} The paper provides the first formal connection between stigmergic coordination (from swarm intelligence) and foundation model capabilities, showing how FMs' broad pretraining solves the action enumeration problem that historically limited stigmergic approaches to discrete, enumerable solution spaces. This extends MAS coordination theory to open-ended artifact refinement tasks. We connect to recent work on LLM-based stigmergy (Jimenez Romero et al., 2025; Feng et al., ICML 2025) and stigmergic MARL (Xu et al., IEEE TNNLS 2022; Aina et al., 2025).
 
-\textbf{(b) Architectural Simplification:} Pressure-field coordination eliminates roles (unlike organizational paradigms surveyed by Horling \& Lesser), messages (unlike GPGP), and intention reasoning (unlike SharedPlans and Joint Intentions) while providing formal convergence guarantees through potential game theory. This demonstrates that for an important class of problems, the complexity of traditional MAS architectures is unnecessary.
+\textbf{(b) Architectural Simplification:} Pressure-field coordination eliminates roles (unlike organizational paradigms surveyed by Horling \& Lesser), messages (unlike GPGP), and intention reasoning (unlike SharedPlans and Joint Intentions) while providing formal convergence guarantees through potential game theory. Recent scaling studies provide independent motivation: Kim et al.\ (2025) find coordination overhead degrades performance by 39--70\% on sequential tasks across 180 agent configurations, and Zhang et al.\ (ICLR 2025) show 87\% of inter-agent communication is redundant. This demonstrates that for an important class of problems, the complexity of traditional MAS architectures is unnecessary.
 
-\textbf{(c) FM-MAS Reciprocity:} The paper articulates a bidirectional synthesis: FMs solve the MAS action enumeration problem (enabling stigmergic coordination for unbounded improvement spaces), while MAS coordination mechanisms solve the FM output combination problem (replacing ad-hoc voting with principled pressure-based selection). This reciprocity framework offers design principles for future FM-MAS integration.
+\textbf{(c) FM-MAS Reciprocity:} The paper articulates a bidirectional synthesis: FMs solve the MAS action enumeration problem (enabling stigmergic coordination for unbounded improvement spaces), while MAS coordination mechanisms solve the FM output combination problem (replacing ad-hoc voting with principled pressure-based selection). We connect pressure functions to normative reasoning in MAS (Savarimuthu et al., COINE 2024), showing that pressure gradients encode behavioral expectations analogously to social norms. This reciprocity framework offers design principles for future FM-MAS integration.
 
 \section*{2. What is the evidence you provide to support your claim? Be precise.}
 
@@ -74,38 +74,64 @@ This contribution is important for three reasons:
 
 \section*{3. What papers by other authors make the most closely related contributions, and how is your paper related to them?}
 
-\textbf{Multi-Agent Coordination Frameworks:}
+\textbf{Classic MAS Coordination Theory:}
 \begin{itemize}[nosep]
-\item Horling, B., \& Lesser, V. (2004). A survey of multi-agent organizational paradigms. \textit{The Knowledge Engineering Review}, 19(4), 281--316. --- Surveys organizational paradigms (hierarchies, holarchies, teams, coalitions); our work demonstrates these structures are unnecessary for constraint satisfaction tasks with measurable quality signals.
+\item Horling, B., \& Lesser, V. (2004). A survey of multi-agent organizational paradigms. \textit{The Knowledge Engineering Review}, 19(4), 281--316. --- Surveys nine organizational paradigms; our work demonstrates these structures are unnecessary for constraint satisfaction tasks with measurable quality signals.
 
 \item Decker, K., \& Lesser, V. (1995). Designing a family of coordination algorithms. \textit{Proceedings of ICMAS-95}, 73--80. --- Introduces GPGP with explicit coordination through task structures and commitments; we achieve coordination without any inter-agent messages.
 
 \item Grosz, B. J., \& Kraus, S. (1996). Collaborative plans for complex group action. \textit{Artificial Intelligence}, 86(2), 269--357. --- SharedPlans requires agents to reason about mutual beliefs and intentions; pressure-field eliminates intention reasoning entirely.
+
+\item Amaral, C. J., H\"ubner, J. F., \& Cranefield, S. (2023). Generating and choosing organisations for multi-agent systems. \textit{JAAMAS}, 37(2), 41. --- Automates organizational structure generation, demonstrating even within the organizational paradigm, manual specification is burdensome; we eliminate organizations entirely.
+\end{itemize}
+
+\textbf{Environment-Mediated and Implicit Coordination:}
+\begin{itemize}[nosep]
+\item Park, J. S., et al. (2023). Generative agents: Interactive simulacra of human behavior. \textit{UIST 2023}. --- Demonstrates emergent coordination through environmental co-presence for LLM agents; we formalize this into continuous pressure gradients with convergence guarantees.
+
+\item Agashe, S., et al. (2025). LLM-Coordination: Evaluating and analyzing multi-agent coordination abilities. \textit{NAACL Findings 2025}. --- Shows LLM agents excel at environment comprehension but struggle with Theory of Mind; directly supports our environment-mediated approach.
+
+\item Han, B., et al. (2025). LLM multi-agent systems based on blackboard architecture. --- Agents coordinate through a shared blackboard without direct contact; pressure fields generalize this to continuous gradients.
+
+\item Riedl, M. O. (2025). Emergent coordination in multi-agent language models. --- Information-theoretic framework for coordination with only group-level feedback; precisely the pressure-field paradigm.
 \end{itemize}
 
 \textbf{Foundation Model Multi-Agent Systems:}
 \begin{itemize}[nosep]
-\item Wu, Q., et al. (2023). AutoGen: Enabling next-gen LLM applications via multi-agent conversation. \textit{arXiv:2308.08155}. --- Conversation-based FM coordination through multi-turn dialogue; we compare directly and demonstrate 4$\times$ lower solve rates due to coordination overhead.
+\item Wu, Q., et al. (2023). AutoGen: Enabling next-gen LLM applications via multi-agent conversation. \textit{arXiv:2308.08155}. --- Conversation-based coordination; we compare directly and demonstrate 4$\times$ higher solve rates.
 
-\item Hong, S., et al. (2023). MetaGPT: Meta programming for a multi-agent collaborative framework. \textit{arXiv:2308.00352}. --- Role-based FM coordination with SOPs; our approach eliminates roles and explicit protocols entirely.
+\item Hong, S., et al. (2024). MetaGPT: Meta programming for a multi-agent collaborative framework. \textit{ICLR 2024}. --- Role-based coordination with global message pool (the closest existing approach to environment-mediated coordination); we eliminate roles and SOPs.
 
-\item Li, G., et al. (2023). CAMEL: Communicative agents for ``mind'' exploration of large language model society. \textit{NeurIPS 2023}. --- Studies emergent behaviors in FM agent conversations; we show that for constraint satisfaction, implicit coordination outperforms conversational approaches.
+\item Kim, M., et al. (2025). Towards a science of scaling agent systems. \textit{Google Research}. --- Finds coordination overhead degrades performance by 39--70\% across 180 configurations; quantitative motivation for our $O(1)$ overhead.
+
+\item Zhang, G., et al. (2025). AgentPrune: Cut the crap. \textit{ICLR 2025}. --- Shows 87\% of inter-agent communication is redundant; validates eliminating messages entirely.
 \end{itemize}
 
-\textbf{Stigmergic Coordination:}
+\textbf{Norms and Self-Organization in LLM-MAS:}
 \begin{itemize}[nosep]
-\item Dorigo, M., \& St\"utzle, T. (2004). \textit{Ant Colony Optimization}. MIT Press. --- Classic stigmergic optimization requiring discrete, enumerable action spaces; FMs overcome this limitation through broad pretraining.
+\item Savarimuthu, B. T. R., Ranathunga, S., \& Cranefield, S. (2024). Harnessing the power of LLMs for normative reasoning in MASs. \textit{COINE 2024 (at AAMAS)}. --- Explores LLMs for norm identification and compliance; our pressure functions encode behavioral expectations analogously to norms.
 
-\item Theraulaz, G., \& Bonabeau, E. (1999). A brief history of stigmergy. \textit{Artificial Life}, 5(2), 97--116. --- Theoretical foundations of stigmergy; we extend these principles to FM-based artifact refinement.
+\item Ren, S., et al. (2024). Emergence of social norms in generative agent societies. \textit{IJCAI 2024}. --- Demonstrates emergent norm formation reducing conflicts; parallels our emergent coordination through pressure gradients.
 \end{itemize}
 
-\textbf{Relationship Summary:} Unlike GPGP which requires explicit coordination messages, SharedPlans which requires intention reasoning, and AutoGen which requires multi-turn conversation, pressure-field coordination achieves effective collaboration through shared artifact state alone. We provide the first empirical comparison demonstrating that this implicit approach outperforms explicit coordination for FM-based constraint satisfaction systems.
+\textbf{Stigmergic Coordination and Swarm Intelligence:}
+\begin{itemize}[nosep]
+\item Dorigo, M., et al. (1996, 1997). Ant Colony Optimization. --- Classic stigmergic optimization over discrete spaces; FMs overcome this limitation.
+
+\item Jimenez Romero, C., et al. (2025). Multi-agent systems powered by LLMs: Applications in swarm intelligence. \textit{Frontiers in AI}. --- Directly implements pheromone-based coordination with LLM agents; the most direct precedent for our approach.
+
+\item Feng, S., et al. (2025). Model swarms: Collaborative search to adapt LLM experts via swarm intelligence. \textit{ICML 2025}. --- Applies PSO to LLM adaptation; demonstrates swarm principles work for FM coordination.
+
+\item Xu, Y., et al. (2022). Stigmergic independent reinforcement learning. \textit{IEEE TNNLS}, 33(9). --- Formalizes digital pheromones as communication bridges for RL agents; directly applicable to pressure-field formalization.
+\end{itemize}
+
+\textbf{Relationship Summary:} The paper engages with 48 references spanning classic MAS coordination theory, modern LLM-MAS frameworks, environment-mediated coordination, scaling analysis, norm emergence, swarm intelligence, and game theory. Unlike GPGP which requires explicit coordination messages, SharedPlans which requires intention reasoning, and AutoGen which requires multi-turn conversation, pressure-field coordination achieves effective collaboration through shared artifact state alone. We provide the first empirical comparison demonstrating that this implicit approach outperforms explicit coordination for FM-based constraint satisfaction systems.
 
 \section*{4. Have you published parts of your paper before?}
 
 An earlier version of this paper was posted to arXiv (January 2026) as a preprint. The JAAMAS submission is the first submission to a peer-reviewed venue. No prior conference publication exists.
 
-The arXiv preprint and this submission contain the same core experimental results and theoretical analysis. This submission incorporates additional discussion of FM-MAS reciprocity (Section 7.7) specifically framed for the special issue theme.
+The arXiv preprint and this submission contain the same core experimental results and theoretical analysis. This submission substantially expands the related work to engage with the broader AAMAS community---including environment-mediated coordination, scaling analysis, norm emergence, LLM-based stigmergy, and planning/scheduling literature---and incorporates discussion of FM-MAS reciprocity (Section 7.7) specifically framed for the special issue theme.
 
 \section*{5. Fit with Special Issue Theme}
 

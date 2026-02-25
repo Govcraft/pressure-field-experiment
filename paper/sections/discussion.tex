@@ -8,9 +8,9 @@
 
 Our results contradict the intuition that explicit coordination should outperform implicit coordination. We identify three factors explaining pressure-field's dominance:
 
-\textbf{Coordination overhead harms performance.} Hierarchical systems spend computational budget on coordination rather than problem-solving. The manager-worker protocol requires multiple \ac{llm} calls per patch (planning, delegation, execution), while pressure-field requires only one (patch proposal). This overhead compounds: hierarchical attempts fewer patches per tick, reducing exploration.
+\textbf{Coordination overhead harms performance.} Hierarchical systems spend computational budget on coordination rather than problem-solving. The manager-worker protocol requires multiple \ac{llm} calls per patch (planning, delegation, execution), while pressure-field requires only one (patch proposal). This overhead compounds: hierarchical attempts fewer patches per tick, reducing exploration. This finding aligns with Kim et al.'s~\cite{kim2025scaling} large-scale study of 180 agent configurations, which identifies a \emph{tool-coordination trade-off} where coordination overhead becomes a net cost, and with Zhang et al.'s~\cite{zhang2025agentprune} finding that 87\% of inter-agent communication is redundant.
 
-\textbf{Local greedy decisions are effective for constraint satisfaction.} Meeting room scheduling exhibits locality: fixing a conflict in one time block rarely creates conflicts in distant blocks. This matches pressure-field's locality assumption, making greedy local optimization effective. Hierarchical coordination's global planning provides no benefit for locally-decomposable problems.
+\textbf{Local greedy decisions are effective for constraint satisfaction.} Meeting room scheduling exhibits locality: fixing a conflict in one time block rarely creates conflicts in distant blocks. This matches pressure-field's locality assumption, making greedy local optimization effective. Hierarchical coordination's global planning provides no benefit for locally-decomposable problems. This is consistent with Agashe et al.'s~\cite{agashe2025coordination} finding that \ac{llm} agents excel at environment comprehension over Theory of Mind reasoning---pressure-field coordination leverages the capability \acp{llm} are best at.
 
 \textbf{Parallel validation amplifies pressure-field's advantage.} Pressure-field validates patches for multiple regions simultaneously, applying the highest-scoring patch per region that reduces pressure. Hierarchical validates one patch at a time, requiring multiple ticks to explore alternatives. On problems with many valid solutions, parallel exploration finds solutions faster.
 
@@ -106,7 +106,7 @@ This mechanism proves beneficial for pressure-field: on hard problems, pressure-
 
 \subsection{FM-MAS Reciprocity: Bidirectional Problem Solving}
 
-The intersection of \acp{fm} and \acp{mas} is not merely additive---each paradigm solves fundamental problems that the other cannot address alone. This reciprocity suggests that pressure-field coordination represents a genuine synthesis rather than a simple combination.
+The intersection of \acp{fm} and \acp{mas} is not merely additive---each paradigm solves fundamental problems that the other cannot address alone. This reciprocity, central to the research agenda of integrating foundation models with multi-agent systems~\cite{savarimuthu2024norms,guo2024llmmas_survey}, suggests that pressure-field coordination represents a genuine synthesis rather than a simple combination.
 
 \subsubsection{Foundation Models Solve a MAS Coordination Problem}
 
@@ -130,11 +130,11 @@ This reciprocity suggests design principles for future FM-MAS systems:
 
 \begin{enumerate}
 \item \textbf{Leverage FM coverage, constrain via MAS gradients.} Use \acp{fm} for their broad solution coverage, but use \ac{mas} coordination mechanisms to filter and combine outputs objectively.
-\item \textbf{Prefer stigmergic over explicit coordination.} When \acp{fm} serve as actors, stigmergic coordination avoids the overhead of explicit protocols that FMs may not reliably follow.
-\item \textbf{Design pressure functions as FM-MAS interfaces.} The pressure function is the critical interface: it must capture human intent precisely enough that \ac{fm} outputs reducing pressure are genuinely improvements.
+\item \textbf{Prefer stigmergic over explicit coordination.} When \acp{fm} serve as actors, stigmergic coordination avoids the overhead of explicit protocols that FMs may not reliably follow. Evidence from Jimenez Romero et al.~\cite{jimenez2025swarm} confirms that \acp{llm} can interpret and respond to environmental gradients for collective coordination.
+\item \textbf{Design pressure functions as FM-MAS interfaces.} The pressure function is the critical interface: it must capture human intent precisely enough that \ac{fm} outputs reducing pressure are genuinely improvements. This connects to normative reasoning in \acp{mas}~\cite{savarimuthu2024norms}: the pressure function encodes behavioral expectations analogous to social norms, but through continuous signals rather than explicit rules.
 \end{enumerate}
 
-Our experimental results---pressure-field achieving $4\times$ higher solve rates than conversation baselines---provide empirical support for these principles. The coordination overhead of explicit dialogue exceeds its organizational benefit when objective gradients are available.
+Our experimental results---pressure-field achieving $4\times$ higher solve rates than conversation baselines---provide empirical support for these principles. The coordination overhead of explicit dialogue exceeds its organizational benefit when objective gradients are available. These findings complement the collaborative scaling law discovered by Qian et al.~\cite{qian2025macnet}, which shows logistic growth with diminishing returns from adding agents---pressure-field coordination achieves coordination benefits without the communication overhead that drives those diminishing returns.
 
 \subsection{Societal Implications}
 
