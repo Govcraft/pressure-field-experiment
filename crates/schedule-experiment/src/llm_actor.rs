@@ -139,7 +139,7 @@ impl Default for LlmActorConfig {
             host: "http://localhost:11434".to_string(),
             model: "qwen2.5:1.5b".to_string(),
             sampling: SamplingConfig::balanced(),
-            max_tokens: 256, // Schedules need more tokens than Latin squares
+            max_tokens: 256,
             band: SamplingBand::Balanced,
             randomize_sampling: true,
         }

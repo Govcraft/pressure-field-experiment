@@ -79,8 +79,6 @@ pub struct ProposeForRegion {
     pub pressures: PressureVector,
     /// Current state for this region
     pub state: RegionState,
-    /// Handle to ClaimManager for stigmergic column/value claims (optional for backwards compat)
-    pub claim_manager: Option<acton_reactive::prelude::ActorHandle>,
 }
 
 /// Patch proposal result - sent back to Coordinator.
@@ -101,7 +99,8 @@ pub struct PatchProposal {
 /// Tick trigger - sent to KernelCoordinator to start a tick cycle.
 #[derive(Debug, Clone)]
 pub struct Tick {
-    /// Current timestamp
+    /// Wall-clock timestamp (advisory only - not used for decay/inhibition,
+    /// which are driven by the coordinator's logical tick counter)
     pub now_ms: u64,
 }
 
@@ -179,19 +178,6 @@ pub struct SensorsReady {
 // RegionActor Messages
 // ============================================================================
 
-/// Apply temporal decay to region fitness and confidence.
-///
-/// Broadcast to all RegionActors at the start of each tick.
-#[derive(Debug, Clone)]
-pub struct ApplyDecay {
-    /// Current timestamp for decay calculation
-    pub now_ms: u64,
-    /// Half-life for fitness decay (milliseconds)
-    pub fitness_half_life_ms: u64,
-    /// Half-life for confidence decay (milliseconds)
-    pub confidence_half_life_ms: u64,
-}
-
 /// Query a region's current pressure state.
 ///
 /// Sent to RegionActor, expects PressureResponse.
@@ -199,8 +185,8 @@ pub struct ApplyDecay {
 pub struct QueryPressure {
     /// Correlation ID for this query
     pub correlation_id: String,
-    /// Current timestamp
-    pub now_ms: u64,
+    /// Current logical tick
+    pub now_tick: u64,
 }
 
 /// Response with region's pressure state.
@@ -234,12 +220,12 @@ pub struct RegionApplyPatch {
     pub correlation_id: String,
     /// The patch to apply
     pub patch: Patch,
-    /// Current timestamp
-    pub now_ms: u64,
-    /// Current tick number (for file naming)
+    /// Current logical tick
+    pub now_tick: u64,
+    /// Current tick number (for logging/provenance)
     pub tick: usize,
-    /// Inhibition window after applying (milliseconds)
-    pub inhibit_ms: u64,
+    /// Inhibition window after applying (logical ticks)
+    pub inhibit_ticks: u64,
     /// Minimum pressure reduction required to accept
     pub min_expected_improvement: f64,
 }
@@ -274,37 +260,6 @@ pub struct RefreshContent {
     pub metadata: HashMap<String, serde_json::Value>,
 }
 
-/// Request coordinator to write artifact with proposed patch for validation.
-///
-/// Sent from RegionActor to Coordinator. The coordinator applies the patch
-/// to a copy of the artifact and writes it to disk for external validation.
-#[derive(Debug, Clone)]
-pub struct ValidatePatch {
-    /// Correlation ID for this validation request
-    pub correlation_id: String,
-    /// Region being patched
-    pub region_id: RegionId,
-    /// Proposed new content for the region
-    pub new_content: String,
-    /// Current tick number (for file naming)
-    pub tick: usize,
-}
-
-/// Response with path to written artifact for validation.
-///
-/// Sent from Coordinator back to RegionActor with the file path.
-#[derive(Debug, Clone)]
-pub struct ValidatePatchResponse {
-    /// Correlation ID matching the original request
-    pub correlation_id: String,
-    /// Region being validated
-    pub region_id: RegionId,
-    /// Path to the written artifact file
-    pub artifact_path: std::path::PathBuf,
-    /// Path to the original artifact (for comparison)
-    pub original_path: std::path::PathBuf,
-}
-
 /// Request coordinator to evaluate a patch using clone-based validation.
 ///
 /// Sent from RegionActor to Coordinator. The coordinator clones the artifact,
@@ -316,10 +271,10 @@ pub struct EvaluatePatch {
     pub correlation_id: String,
     /// The patch to evaluate
     pub patch: Patch,
-    /// Current timestamp
-    pub now_ms: u64,
-    /// Inhibition window after applying (milliseconds)
-    pub inhibit_ms: u64,
+    /// Current logical tick
+    pub now_tick: u64,
+    /// Inhibition window after applying (logical ticks)
+    pub inhibit_ticks: u64,
 }
 
 /// Response with patch evaluation result.
@@ -355,95 +310,4 @@ pub struct RegisterRegionActors {
 pub struct SaveArtifact {
     /// Path to write the artifact to
     pub path: std::path::PathBuf,
-}
-
-/// Set the output directory for validation artifacts.
-///
-/// Sent to coordinator to configure where patched artifacts are written for validation.
-#[derive(Debug, Clone)]
-pub struct SetOutputDir {
-    /// Directory to write validation artifacts
-    pub path: std::path::PathBuf,
-}
-
-// ============================================================================
-// ClaimManager Messages - Stigmergic Column/Value Reservations
-// ============================================================================
-
-/// Request to claim multiple column/value pairs atomically for this tick.
-///
-/// Sent by LlmActors to ClaimManager using `envelope.new_envelope()` after
-/// parsing LLM response but before submitting the PatchProposal. This implements
-/// stigmergic coordination by allowing agents to "deposit pheromones" (claims)
-/// that other agents can see.
-///
-/// The message carries all context needed to submit a proposal, so that the
-/// response can include it back - avoiding the need for pending state in LlmActor.
-///
-/// ## Usage Pattern (acton-reactive envelope routing)
-///
-/// ```text
-/// LlmActor ProposeForRegion handler:
-///     let request_envelope = envelope.new_envelope(&claim_manager.reply_address());
-///     request_envelope.send(ClaimBatch { ... }).await;
-///
-/// ClaimManager ClaimBatch handler:
-///     let reply_envelope = envelope.reply_envelope();
-///     reply_envelope.send(ClaimBatchResult { ... }).await;
-///
-/// LlmActor ClaimBatchResult handler:
-///     if result.all_granted { submit proposal }
-/// ```
-#[derive(Debug, Clone)]
-pub struct ClaimBatch {
-    /// Correlation ID for the original ProposeForRegion request
-    pub correlation_id: String,
-    /// Column/value pairs to claim atomically
-    pub claims: Vec<(usize, u8)>,
-    /// Region (row) making the claims
-    pub region_id: RegionId,
-    /// Actor name for the proposal
-    pub actor_name: String,
-    /// The proposed patch (travels with the claim request)
-    pub patch: crate::region::Patch,
-    /// Prompt tokens used (for metrics tracking)
-    pub prompt_tokens: u32,
-    /// Completion tokens used (for metrics tracking)
-    pub completion_tokens: u32,
-}
-
-/// Response to a batch claim request.
-///
-/// Sent by ClaimManager back to the requesting actor via `envelope.reply_envelope()`.
-/// Contains all the context needed to submit the proposal.
-#[derive(Debug, Clone)]
-pub struct ClaimBatchResult {
-    /// Correlation ID matching the original ProposeForRegion request
-    pub correlation_id: String,
-    /// Whether ALL claims were granted (atomic: all or nothing)
-    pub all_granted: bool,
-    /// Actor name for the proposal
-    pub actor_name: String,
-    /// The proposed patch (returned from the claim request)
-    pub patch: crate::region::Patch,
-    /// Prompt tokens used (for metrics tracking)
-    pub prompt_tokens: u32,
-    /// Completion tokens used (for metrics tracking)
-    pub completion_tokens: u32,
-}
-
-/// Reset all claims at the start of a new tick.
-///
-/// Broadcast by coordinator at tick start to clear all reservations,
-/// giving all agents a fresh start for the new tick.
-#[derive(Debug, Clone)]
-pub struct ResetClaims;
-
-/// Notification that ClaimManager is ready.
-///
-/// Broadcast by ClaimManager on start. Includes handle for direct messaging.
-#[derive(Debug, Clone)]
-pub struct ClaimManagerReady {
-    /// The ClaimManager actor's handle for direct message sending
-    pub handle: acton_reactive::prelude::ActorHandle,
 }

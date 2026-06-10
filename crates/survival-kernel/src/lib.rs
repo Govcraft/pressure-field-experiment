@@ -40,13 +40,13 @@ pub use actors::{
 };
 pub use artifact::Artifact;
 pub use config::{KernelConfig, PressureAxisConfig};
-pub use kernel::{AsyncKernelBuilder, KernelResult, TickResult, half_life_decay};
+pub use kernel::{AsyncKernelBuilder, KernelResult, TickResult};
 pub use messages::{
-    ApplyDecay, CoordinatorReady, KernelComplete, MeasureRegion, MeasurementResult,
+    CoordinatorReady, KernelComplete, MeasureRegion, MeasurementResult,
     PatchActorReady, PatchActorsReady, PatchProposal, PressureResponse, ProposeForRegion,
     QueryPressure, RefreshContent, RegionApplyPatch, RegionPatchResult, RegisterRegionActors,
-    SaveArtifact, SensorReady, SensorsReady, SetOutputDir, StopReason, Tick, TickComplete,
-    ValidatePatch, ValidatePatchResponse, WaitForPatchActors, WaitForSensors,
+    SaveArtifact, SensorReady, SensorsReady, StopReason, Tick, TickComplete, WaitForPatchActors,
+    WaitForSensors,
 };
 pub use pressure::{Pressure, PressureVector, Sensor, Signals, measure_pressure_inline};
 pub use region::{Patch, PatchOp, RegionId, RegionState, RegionView};

@@ -13,8 +13,8 @@ use tracing::{info, warn};
 
 use crate::config::PressureAxisConfig;
 use crate::messages::{
-    ApplyDecay, EvaluatePatch, EvaluatePatchResponse, MeasurementResult, PressureResponse,
-    QueryPressure, RefreshContent, RegionApplyPatch, RegionPatchResult,
+    EvaluatePatch, EvaluatePatchResponse, MeasurementResult, PressureResponse, QueryPressure,
+    RefreshContent, RegionApplyPatch, RegionPatchResult,
 };
 use crate::pressure::{Sensor, Signals};
 use crate::region::{RegionId, RegionState, RegionView};
@@ -26,10 +26,10 @@ pub struct PendingValidation {
     pub correlation_id: String,
     /// Proposed new content
     pub new_content: String,
-    /// Timestamp
-    pub now_ms: u64,
-    /// Inhibition window
-    pub inhibit_ms: u64,
+    /// Logical tick at which the patch was proposed
+    pub now_tick: u64,
+    /// Inhibition window (logical ticks)
+    pub inhibit_ticks: u64,
     /// Patch rationale for provenance
     pub rationale: String,
 }
@@ -48,7 +48,7 @@ pub struct RegionActorState {
     pub content: String,
     /// Arbitrary metadata
     pub metadata: HashMap<String, serde_json::Value>,
-    /// Mutable state: fitness, confidence, pressure EMA, inhibition
+    /// Mutable state: pressure EMA, inhibition, provenance
     pub state: RegionState,
     /// Handle to coordinator for sending responses
     pub coordinator: Option<ActorHandle>,
@@ -56,6 +56,8 @@ pub struct RegionActorState {
     pub sensor: Option<Arc<dyn Sensor>>,
     /// Pressure axis configuration for weighted pressure calculation
     pub pressure_axes: Vec<PressureAxisConfig>,
+    /// Smoothing factor for the pressure EMA
+    pub ema_alpha: f64,
     /// Current signals from last measurement
     pub signals: Signals,
     /// Pending validation requests (correlation_id -> validation state)
@@ -77,7 +79,6 @@ impl std::fmt::Debug for RegionActorState {
 /// Actor representing a single region in the artifact.
 ///
 /// Handles:
-/// - `ApplyDecay` - decay fitness/confidence at tick start
 /// - `MeasurementResult` - update signals and pressure EMA
 /// - `QueryPressure` - respond with current pressure state
 /// - `RegionApplyPatch` - validate and apply patches
@@ -97,36 +98,17 @@ pub struct RegionActor {
     pub sensor: Arc<dyn Sensor>,
     /// Pressure axis configuration
     pub pressure_axes: Vec<PressureAxisConfig>,
+    /// Smoothing factor for the pressure EMA
+    pub ema_alpha: f64,
 }
 
 impl RegionActor {
-    /// Create a new RegionActor.
-    pub fn new(
-        region_id: RegionId,
-        kind: String,
-        content: String,
-        metadata: HashMap<String, serde_json::Value>,
-        coordinator: ActorHandle,
-        sensor: Arc<dyn Sensor>,
-        pressure_axes: Vec<PressureAxisConfig>,
-    ) -> Self {
-        Self {
-            region_id,
-            kind,
-            content,
-            metadata,
-            coordinator,
-            sensor,
-            pressure_axes,
-        }
-    }
-
     /// Spawn this region actor in the given runtime.
     ///
     /// The actor will:
-    /// 1. Subscribe to `ApplyDecay` and `QueryPressure` broadcasts
+    /// 1. Subscribe to `QueryPressure` broadcasts
     /// 2. Handle messages and broadcast `PressureResponse` results
-    pub async fn spawn(self, runtime: &mut ActorRuntime, now_ms: u64) -> ActorHandle {
+    pub async fn spawn(self, runtime: &mut ActorRuntime) -> ActorHandle {
         let region_id = self.region_id.clone();
         let region_id_short = format!("{:.8}", region_id);
 
@@ -138,14 +120,14 @@ impl RegionActor {
         actor.model.kind = self.kind;
         actor.model.content = self.content;
         actor.model.metadata = self.metadata;
-        actor.model.state = RegionState::new(now_ms);
+        actor.model.state = RegionState::default();
         actor.model.coordinator = Some(self.coordinator);
         actor.model.sensor = Some(self.sensor);
         actor.model.pressure_axes = self.pressure_axes;
+        actor.model.ema_alpha = self.ema_alpha;
         actor.model.signals = HashMap::new();
 
         // Subscribe to broadcast messages BEFORE starting
-        actor.handle().subscribe::<ApplyDecay>().await;
         actor.handle().subscribe::<QueryPressure>().await;
 
         // Configure handlers
@@ -157,35 +139,8 @@ impl RegionActor {
 
 /// Configure message handlers for the RegionActor.
 fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
-    // Handle ApplyDecay - mutate_on because we modify state
-    actor.mutate_on::<ApplyDecay>(|actor, context| {
-        let msg = context.message();
-
-        // Apply decay to fitness
-        if msg.fitness_half_life_ms > 0 {
-            let dt_ms = msg.now_ms.saturating_sub(actor.model.state.last_updated_ms);
-            if dt_ms > 0 {
-                let lambda = std::f64::consts::LN_2 / msg.fitness_half_life_ms as f64;
-                actor.model.state.fitness *= (-lambda * dt_ms as f64).exp();
-            }
-        }
-
-        // Apply decay to confidence
-        if msg.confidence_half_life_ms > 0 {
-            let dt_ms = msg.now_ms.saturating_sub(actor.model.state.last_updated_ms);
-            if dt_ms > 0 {
-                let lambda = std::f64::consts::LN_2 / msg.confidence_half_life_ms as f64;
-                actor.model.state.confidence *= (-lambda * dt_ms as f64).exp();
-            }
-        }
-
-        actor.model.state.last_updated_ms = msg.now_ms;
-
-        Reply::ready()
-    });
-
     // Handle MeasurementResult - update signals and pressure EMA
-    actor.mutate_on::<MeasurementResult>(|actor, context| {
+    actor.mutate_on_sync::<MeasurementResult>(|actor, context| {
         let msg = context.message();
 
         // Merge new signals into our signal map
@@ -194,7 +149,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
         }
 
         // Update pressure EMA for each axis
-        let alpha = 0.2; // EMA smoothing factor
+        let alpha = actor.model.ema_alpha;
         for axis in &actor.model.pressure_axes {
             if let Some(signal_value) = msg.signals.get(&axis.expr) {
                 let weight = axis
@@ -219,8 +174,6 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
                     .insert(axis.name.clone(), new_ema);
             }
         }
-
-        Reply::ready()
     });
 
     // Handle QueryPressure - respond with current state via broker broadcast
@@ -236,7 +189,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
 
         // Calculate total pressure
         let total_pressure: f64 = state.pressure_ema.values().sum();
-        let is_inhibited = state.is_inhibited(msg.now_ms);
+        let is_inhibited = state.is_inhibited(msg.now_tick);
 
         let response = PressureResponse {
             correlation_id: msg.correlation_id,
@@ -277,8 +230,8 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
             PendingValidation {
                 correlation_id: msg.correlation_id.clone(),
                 new_content: String::new(), // Will be filled by coordinator response
-                now_ms: msg.now_ms,
-                inhibit_ms: msg.inhibit_ms,
+                now_tick: msg.now_tick,
+                inhibit_ticks: msg.inhibit_ticks,
                 rationale: msg.patch.rationale.clone(),
             },
         );
@@ -287,8 +240,8 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
         let evaluate_msg = EvaluatePatch {
             correlation_id: validation_id,
             patch: msg.patch,
-            now_ms: msg.now_ms,
-            inhibit_ms: msg.inhibit_ms,
+            now_tick: msg.now_tick,
+            inhibit_ticks: msg.inhibit_ticks,
         };
 
         Reply::pending(async move {
@@ -348,10 +301,7 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
         );
 
         actor.model.content = msg.new_content.clone();
-        actor.model.state.fitness = (actor.model.state.fitness + 0.03).min(1.0);
-        actor.model.state.confidence = (actor.model.state.confidence + 0.05).min(1.0);
-        actor.model.state.suppress_until_ms = Some(pending.now_ms + pending.inhibit_ms);
-        actor.model.state.last_updated_ms = pending.now_ms;
+        actor.model.state.suppress_until_tick = Some(pending.now_tick + pending.inhibit_ticks);
         actor.model.state.provenance.push(pending.rationale);
 
         let result = RegionPatchResult {
@@ -369,10 +319,9 @@ fn configure_region_actor(actor: &mut ManagedActor<Idle, RegionActorState>) {
     });
 
     // Handle RefreshContent - update content from artifact
-    actor.mutate_on::<RefreshContent>(|actor, context| {
+    actor.mutate_on_sync::<RefreshContent>(|actor, context| {
         let msg = context.message();
         actor.model.content = msg.new_content.clone();
         actor.model.metadata = msg.metadata.clone();
-        Reply::ready()
     });
 }

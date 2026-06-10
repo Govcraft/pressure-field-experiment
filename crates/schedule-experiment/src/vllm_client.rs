@@ -41,8 +41,8 @@ fn model_to_port(model: &str) -> Option<u16> {
     }
 }
 
-/// Default system prompt for Latin Square solving.
-pub const LATIN_SYSTEM_PROMPT: &str = "You solve Latin Square puzzles. When the user writes 'Answer:', your response must be ONLY the complete row as space-separated numbers (e.g., 1 2 3 4 5 6 7). No explanation, no other text.";
+/// Default system prompt for meeting-room scheduling.
+pub const SCHEDULE_SYSTEM_PROMPT: &str = "You are a meeting room scheduler. Output schedules in the exact format requested. No explanations, just the schedule.";
 
 /// vLLM client for chat completions.
 #[derive(Clone)]
@@ -122,36 +122,10 @@ impl VllmClient {
         }
     }
 
-    /// Generate a response using the default Latin Square system prompt.
-    ///
-    /// # Arguments
-    /// * `model` - Model name (e.g., "Qwen/Qwen2.5-0.5B")
-    /// * `prompt` - User prompt
-    /// * `temperature` - Sampling temperature (0.0-1.0)
-    /// * `top_p` - Nucleus sampling parameter (0.0-1.0)
-    /// * `max_tokens` - Maximum tokens to generate
-    pub async fn generate(
-        &self,
-        model: &str,
-        prompt: &str,
-        temperature: f32,
-        top_p: f32,
-        max_tokens: u32,
-    ) -> Result<String> {
-        self.generate_with_system(
-            model,
-            LATIN_SYSTEM_PROMPT,
-            prompt,
-            temperature,
-            top_p,
-            max_tokens,
-        )
-        .await
-    }
-
     /// Generate a response with full token usage tracking.
     ///
-    /// Returns LlmResponse with both content and token counts.
+    /// Uses the default scheduling system prompt. Returns an [`LlmResponse`] with
+    /// both content and token counts.
     pub async fn generate_with_usage(
         &self,
         model: &str,
@@ -162,38 +136,13 @@ impl VllmClient {
     ) -> Result<LlmResponse> {
         self.generate_with_system_and_usage(
             model,
-            LATIN_SYSTEM_PROMPT,
+            SCHEDULE_SYSTEM_PROMPT,
             prompt,
             temperature,
             top_p,
             max_tokens,
         )
         .await
-    }
-
-    /// Generate a response with a custom system prompt.
-    ///
-    /// Used by conversation.rs for agent-specific system prompts.
-    pub async fn generate_with_system(
-        &self,
-        model: &str,
-        system_prompt: &str,
-        user_prompt: &str,
-        temperature: f32,
-        top_p: f32,
-        max_tokens: u32,
-    ) -> Result<String> {
-        let response = self
-            .generate_with_system_and_usage(
-                model,
-                system_prompt,
-                user_prompt,
-                temperature,
-                top_p,
-                max_tokens,
-            )
-            .await?;
-        Ok(response.content)
     }
 
     /// Generate a response with custom system prompt and full token usage tracking.
@@ -297,8 +246,8 @@ mod tests {
 
     #[test]
     fn test_system_prompt_constant() {
-        assert!(LATIN_SYSTEM_PROMPT.contains("Latin Square"));
-        assert!(LATIN_SYSTEM_PROMPT.contains("space-separated numbers"));
+        assert!(SCHEDULE_SYSTEM_PROMPT.contains("scheduler"));
+        assert!(SCHEDULE_SYSTEM_PROMPT.contains("schedule"));
     }
 
     #[test]

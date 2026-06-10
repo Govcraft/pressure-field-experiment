@@ -1,4 +1,4 @@
-//! Results collection and output for Latin Square experiments.
+//! Results collection and output for meeting-room scheduling experiments.
 //!
 //! Captures metrics like:
 //! - Ticks to convergence

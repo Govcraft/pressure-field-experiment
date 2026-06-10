@@ -590,7 +590,7 @@ impl ConversationRunner {
                 prompt,
                 0.3, // Lower temperature for more consistent structured output
                 0.9,
-                512, // Schedules need more tokens than Latin squares
+                512,
             )
             .await
             .context("LLM generation failed")?;

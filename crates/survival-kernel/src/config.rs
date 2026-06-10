@@ -23,8 +23,10 @@ pub struct KernelConfig {
     /// Pressure axis definitions
     pub pressure_axes: Vec<PressureAxisConfig>,
 
-    /// Decay configuration
-    pub decay: DecayConfig,
+    /// Smoothing factor for the per-region pressure EMA (0.0 to 1.0).
+    /// Higher values track new measurements faster; lower values forget
+    /// old measurements more slowly.
+    pub pressure_ema_alpha: f64,
 
     /// Activation thresholds
     pub activation: ActivationConfig,
@@ -52,27 +54,14 @@ pub struct PressureAxisConfig {
     pub kind_weights: HashMap<String, f64>,
 }
 
-/// Decay configuration: how quickly state erodes without reinforcement.
-#[derive(Debug, Clone, Deserialize)]
-pub struct DecayConfig {
-    /// Half-life for fitness decay (milliseconds)
-    pub fitness_half_life_ms: u64,
-
-    /// Half-life for confidence decay (milliseconds)
-    pub confidence_half_life_ms: u64,
-
-    /// Smoothing factor for pressure EMA (0.0 to 1.0)
-    pub ema_alpha: f64,
-}
-
 /// Activation configuration: when to trigger action proposals.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ActivationConfig {
     /// Minimum total weighted pressure to trigger proposals
     pub min_total_pressure: f64,
 
-    /// Inhibition window after patch application (milliseconds)
-    pub inhibit_ms: u64,
+    /// Inhibition window after patch application (logical ticks)
+    pub inhibit_ticks: u64,
 }
 
 /// Selection configuration: how to choose among candidate patches.
@@ -89,18 +78,28 @@ impl Default for KernelConfig {
             max_ticks: 0,        // unlimited
             stable_threshold: 3, // stop after 3 ticks with no patches
             pressure_axes: Vec::new(),
-            decay: DecayConfig {
-                fitness_half_life_ms: 600_000,      // 10 minutes
-                confidence_half_life_ms: 1_800_000, // 30 minutes
-                ema_alpha: 0.2,
-            },
+            pressure_ema_alpha: 0.2,
             activation: ActivationConfig {
                 min_total_pressure: 0.8,
-                inhibit_ms: 30_000,
+                inhibit_ticks: 120,
             },
             selection: SelectionConfig {
                 min_expected_improvement: 0.15,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_has_valid_smoothing_and_inhibition() {
+        let config = KernelConfig::default();
+        // EMA smoothing must be a valid mixing factor.
+        assert!(config.pressure_ema_alpha > 0.0 && config.pressure_ema_alpha <= 1.0);
+        // Inhibition must be a positive number of ticks by default.
+        assert!(config.activation.inhibit_ticks > 0);
     }
 }

@@ -23,11 +23,11 @@ use crate::artifact::Artifact;
 use crate::config::KernelConfig;
 use crate::kernel::TickResult;
 use crate::messages::{
-    ApplyDecay, ClaimManagerReady, CoordinatorReady, EvaluatePatch, EvaluatePatchResponse,
-    MeasureRegion, MeasurementResult, PatchActorReady, PatchActorsReady, PatchProposal,
-    PressureResponse, ProposeForRegion, QueryPressure, RegionApplyPatch, RegionPatchResult,
-    RegisterRegionActors, ResetClaims, SaveArtifact, SensorReady, SensorsReady, SetOutputDir, Tick,
-    TickComplete, ValidatePatch, ValidatePatchResponse, WaitForPatchActors, WaitForSensors,
+    CoordinatorReady, EvaluatePatch, EvaluatePatchResponse, MeasureRegion,
+    MeasurementResult, PatchActorReady, PatchActorsReady, PatchProposal, PressureResponse,
+    ProposeForRegion, QueryPressure, RegionApplyPatch, RegionPatchResult, RegisterRegionActors,
+    SaveArtifact, SensorReady, SensorsReady, Tick, TickComplete, WaitForPatchActors,
+    WaitForSensors,
 };
 use crate::pressure::PressureVector;
 use crate::region::{Patch, RegionId, RegionView};
@@ -55,16 +55,16 @@ struct PendingMeasurements {
     expected_count: usize,
     /// Received measurement results
     results: Vec<MeasurementResult>,
-    /// Timestamp for this tick
-    now_ms: u64,
+    /// Logical tick for this cycle
+    now_tick: u64,
 }
 
 impl PendingMeasurements {
-    fn new(expected_count: usize, now_ms: u64) -> Self {
+    fn new(expected_count: usize, now_tick: u64) -> Self {
         Self {
             expected_count,
             results: Vec::new(),
-            now_ms,
+            now_tick,
         }
     }
 
@@ -80,16 +80,16 @@ struct PendingPressureQueries {
     expected_count: usize,
     /// Received responses
     responses: Vec<PressureResponse>,
-    /// Timestamp for this tick
-    now_ms: u64,
+    /// Logical tick for this cycle
+    now_tick: u64,
 }
 
 impl PendingPressureQueries {
-    fn new(expected_count: usize, now_ms: u64) -> Self {
+    fn new(expected_count: usize, now_tick: u64) -> Self {
         Self {
             expected_count,
             responses: Vec::new(),
-            now_ms,
+            now_tick,
         }
     }
 
@@ -107,8 +107,8 @@ struct PendingProposals {
     proposals: Vec<PatchProposal>,
     /// Regions that were proposed for
     high_pressure_regions: Vec<(RegionId, RegionView, PressureVector)>,
-    /// Timestamp for this tick
-    now_ms: u64,
+    /// Logical tick for this cycle
+    now_tick: u64,
     /// Total pressure at time of proposal (for calculating final pressure after patches)
     total_pressure: f64,
 }
@@ -117,14 +117,14 @@ impl PendingProposals {
     fn new(
         expected_count: usize,
         high_pressure_regions: Vec<(RegionId, RegionView, PressureVector)>,
-        now_ms: u64,
+        now_tick: u64,
         total_pressure: f64,
     ) -> Self {
         Self {
             expected_count,
             proposals: Vec::new(),
             high_pressure_regions,
-            now_ms,
+            now_tick,
             total_pressure,
         }
     }
@@ -151,6 +151,8 @@ struct PendingPatches {
     prompt_tokens: u32,
     /// Total completion tokens from LLM actors this tick
     completion_tokens: u32,
+    /// Number of LLM proposal calls dispatched this tick
+    llm_calls: usize,
 }
 
 impl PendingPatches {
@@ -185,8 +187,6 @@ pub struct KernelCoordinatorState {
     stable_ticks: usize,
     /// Current tick number
     current_tick: usize,
-    /// Output directory for validation artifacts (set via SetOutputDir message)
-    output_dir: Option<std::path::PathBuf>,
     /// History of pressure values for derivative calculation
     pressure_history: Vec<f64>,
     /// History of velocity values for acceleration calculation
@@ -195,8 +195,6 @@ pub struct KernelCoordinatorState {
     pending_actor_waits: Vec<(usize, tokio::sync::oneshot::Sender<usize>)>,
     /// Pending waits for sensors: (expected_count, reply_sender)
     pending_sensor_waits: Vec<(usize, tokio::sync::oneshot::Sender<usize>)>,
-    /// Handle to ClaimManager for stigmergic column/value claims
-    claim_manager: Option<ActorHandle>,
 }
 
 impl Default for KernelCoordinatorState {
@@ -214,12 +212,10 @@ impl Default for KernelCoordinatorState {
             pending_patches: DashMap::new(),
             stable_ticks: 0,
             current_tick: 0,
-            output_dir: None,
             pressure_history: Vec::new(),
             velocity_history: Vec::new(),
             pending_actor_waits: Vec::new(),
             pending_sensor_waits: Vec::new(),
-            claim_manager: None,
         }
     }
 }
@@ -265,12 +261,10 @@ impl Clone for KernelCoordinatorState {
             pending_patches,
             stable_ticks: self.stable_ticks,
             current_tick: self.current_tick,
-            output_dir: self.output_dir.clone(),
             pressure_history: self.pressure_history.clone(),
             velocity_history: self.velocity_history.clone(),
             pending_actor_waits: Vec::new(), // Can't clone oneshot::Sender
             pending_sensor_waits: Vec::new(), // Can't clone oneshot::Sender
-            claim_manager: self.claim_manager.clone(),
         }
     }
 }
@@ -301,12 +295,11 @@ impl std::fmt::Debug for KernelCoordinatorState {
 /// Central coordinator actor for the pressure-field kernel.
 ///
 /// Orchestrates the tick loop with RegionActors:
-/// 1. On Tick: broadcast ApplyDecay to RegionActors
-/// 2. Broadcast MeasureRegion (sensors subscribe via broker)
-/// 3. Query QueryPressure from all RegionActors
-/// 4. On PressureResponse: find high-pressure regions, broadcast ProposeForRegion
-/// 5. On PatchProposal: send RegionApplyPatch to target RegionActors
-/// 6. On RegionPatchResult: update artifact, send TickComplete
+/// 1. On Tick: broadcast MeasureRegion (sensors subscribe via broker)
+/// 2. Query QueryPressure from all RegionActors
+/// 3. On PressureResponse: find high-pressure regions, broadcast ProposeForRegion
+/// 4. On PatchProposal: send RegionApplyPatch to target RegionActors
+/// 5. On RegionPatchResult: update artifact, send TickComplete
 ///
 /// Sensors and patch actors register themselves by broadcasting `SensorReady`
 /// and `PatchActorReady` on start. The coordinator subscribes to these messages.
@@ -341,7 +334,6 @@ impl KernelCoordinator {
         actor.handle().subscribe::<PatchActorReady>().await;
         actor.handle().subscribe::<PatchProposal>().await;
         actor.handle().subscribe::<PressureResponse>().await;
-        actor.handle().subscribe::<ClaimManagerReady>().await;
 
         // Configure handlers before starting
         configure_handlers(&mut actor);
@@ -361,7 +353,7 @@ impl KernelCoordinator {
 /// Configure all message handlers for the coordinator.
 fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
     // Handle sensor self-registration via broker
-    actor.mutate_on::<SensorReady>(|actor, context| {
+    actor.mutate_on_sync::<SensorReady>(|actor, context| {
         // Get ERN from message payload (broker broadcasts don't preserve sender in envelope)
         let sender_ern = &context.message().sensor_ern;
 
@@ -390,12 +382,10 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             let _ = sender.send(current_count);
             debug!(registered = current_count, "Satisfied pending sensor wait");
         }
-
-        Reply::ready()
     });
 
     // Handle patch actor self-registration via broker
-    actor.mutate_on::<PatchActorReady>(|actor, context| {
+    actor.mutate_on_sync::<PatchActorReady>(|actor, context| {
         let msg = context.message();
         let sender_ern = &msg.actor_ern;
 
@@ -435,12 +425,10 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 "Satisfied pending patch actor wait"
             );
         }
-
-        Reply::ready()
     });
 
     // Handle RegionActor registration
-    actor.mutate_on::<RegisterRegionActors>(|actor, context| {
+    actor.mutate_on_sync::<RegisterRegionActors>(|actor, context| {
         let msg = context.message();
         actor.model.region_actors.clear();
         for (region_id, handle) in &msg.actors {
@@ -453,15 +441,6 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             regions = actor.model.region_actors.len(),
             "Registered region actors"
         );
-        Reply::ready()
-    });
-
-    // Handle ClaimManager registration
-    actor.mutate_on::<ClaimManagerReady>(|actor, context| {
-        let handle = context.message().handle.clone();
-        actor.model.claim_manager = Some(handle);
-        debug!("ClaimManager registered for stigmergic coordination");
-        Reply::ready()
     });
 
     // Handle wait for patch actors registration
@@ -554,10 +533,15 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         actor.model.current_tick += 1;
         let tick_num = actor.model.current_tick;
 
-        let Some(config) = actor.model.config.as_ref() else {
+        // Logical clock: inhibition is driven by tick count, not wall-clock
+        // time, so dynamics are deterministic and independent of LLM latency
+        // or machine speed.
+        let now_tick = tick_num as u64;
+
+        if actor.model.config.is_none() {
             warn!("KernelCoordinator: config not initialized");
             return Reply::ready();
-        };
+        }
 
         let Some(artifact) = actor.model.artifact.as_ref() else {
             warn!("KernelCoordinator: artifact not initialized");
@@ -569,13 +553,6 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             regions = actor.model.region_actors.len(),
             "Tick started"
         );
-
-        // Phase 1: Broadcast ApplyDecay to all RegionActors
-        let decay_msg = ApplyDecay {
-            now_ms,
-            fitness_half_life_ms: config.decay.fitness_half_life_ms,
-            confidence_half_life_ms: config.decay.confidence_half_life_ms,
-        };
 
         // Generate correlation ID for measurement phase
         let correlation_id = "tick".create_type_id::<V7>().to_string();
@@ -595,10 +572,10 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let sensor_count = actor.model.registered_sensors.len();
         let expected_count = sensor_count * region_data.len();
 
-        // Track pending measurements
+        // Track pending measurements (logical tick threads through to later phases)
         actor.model.pending_measurements.insert(
             correlation_id.clone(),
-            PendingMeasurements::new(expected_count, now_ms),
+            PendingMeasurements::new(expected_count, now_tick),
         );
 
         trace!(
@@ -606,22 +583,14 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             regions = region_data.len(),
             sensors = sensor_count,
             expected = expected_count,
-            "Starting tick: decay + measurement phase"
+            "Starting tick: measurement phase"
         );
 
         // Get broker for broadcasting
         let broker = actor.broker().clone();
 
-        // Broadcast decay and measurements via broker
+        // Broadcast measurements via broker
         Reply::pending(async move {
-            // Phase 0: Reset claims for stigmergic coordination
-            // Must happen before proposals so all agents start with a clean slate
-            broker.broadcast(ResetClaims).await;
-
-            // Broadcast decay to all region actors via broker
-            // RegionActors subscribe to ApplyDecay
-            broker.broadcast(decay_msg).await;
-
             // Broadcast MeasureRegion to all sensors via broker
             // Sensors subscribe to MeasureRegion and respond with MeasurementResult
             for (rid, region_view) in region_data {
@@ -674,7 +643,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .pending_measurements
             .remove(&correlation_id)
             .unwrap();
-        let now_ms = pending.now_ms;
+        let now_tick = pending.now_tick;
 
         trace!(
             correlation_id = %correlation_id,
@@ -688,7 +657,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
 
         actor.model.pending_pressure_queries.insert(
             query_correlation_id.clone(),
-            PendingPressureQueries::new(expected_count, now_ms),
+            PendingPressureQueries::new(expected_count, now_tick),
         );
 
         // Broadcast QueryPressure to all region actors via broker
@@ -697,7 +666,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         Reply::pending(async move {
             let msg = QueryPressure {
                 correlation_id: query_correlation_id,
-                now_ms,
+                now_tick,
             };
             broker.broadcast(msg).await;
         })
@@ -734,7 +703,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .pending_pressure_queries
             .remove(&correlation_id)
             .unwrap();
-        let now_ms = pending.now_ms;
+        let now_tick = pending.now_tick;
 
         let Some(config) = actor.model.config.as_ref() else {
             return Reply::ready();
@@ -783,6 +752,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 acceleration,
                 prompt_tokens: 0,
                 completion_tokens: 0,
+                llm_calls: 0,
                 is_complete: false,
             };
 
@@ -822,7 +792,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             PendingProposals::new(
                 expected_count,
                 high_pressure_regions.clone(),
-                now_ms,
+                now_tick,
                 total_pressure,
             ),
         );
@@ -849,9 +819,6 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let handles = actor.model.patch_actor_handles.clone();
         let handle_count = handles.len();
 
-        // Get claim_manager handle for stigmergic coordination
-        let claim_manager = actor.model.claim_manager.clone();
-
         if handle_count == 0 {
             warn!("No patch actors registered, skipping proposal phase");
             return Reply::ready();
@@ -872,7 +839,6 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                     signals,
                     pressures,
                     state,
-                    claim_manager: claim_manager.clone(),
                 };
 
                 // Direct send instead of broadcast
@@ -908,7 +874,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             .pending_proposals
             .remove(&correlation_id)
             .unwrap();
-        let now_ms = pending.now_ms;
+        let now_tick = pending.now_tick;
 
         trace!(
             correlation_id = %correlation_id,
@@ -919,6 +885,10 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let Some(config) = actor.model.config.as_ref() else {
             return Reply::ready();
         };
+
+        // Number of LLM proposal calls actually dispatched this tick (round-robin:
+        // one call per high-pressure region).
+        let llm_calls = pending.proposals.len();
 
         // Aggregate token counts before consuming proposals
         let (prompt_tokens, completion_tokens) =
@@ -974,6 +944,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 acceleration,
                 prompt_tokens,
                 completion_tokens,
+                llm_calls,
                 is_complete: false,
             };
 
@@ -987,6 +958,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 applied = 0,
                 prompt_tokens,
                 completion_tokens,
+                llm_calls,
                 "Tick complete - stable (no patches proposed)"
             );
 
@@ -1017,10 +989,11 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                 skipped_count: 0,
                 prompt_tokens,
                 completion_tokens,
+                llm_calls,
             },
         );
 
-        let inhibit_ms = config.activation.inhibit_ms;
+        let inhibit_ticks = config.activation.inhibit_ticks;
         let min_improvement = config.selection.min_expected_improvement;
         let region_actors: HashMap<RegionId, ActorHandle> = actor
             .model
@@ -1044,9 +1017,9 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
                     let msg = RegionApplyPatch {
                         correlation_id: patch_correlation_id.clone(),
                         patch,
-                        now_ms,
+                        now_tick,
                         tick: current_tick,
-                        inhibit_ms,
+                        inhibit_ticks,
                         min_expected_improvement: min_improvement,
                     };
                     region_handle.send(msg).await;
@@ -1202,6 +1175,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             acceleration,
             prompt_tokens: pending.prompt_tokens,
             completion_tokens: pending.completion_tokens,
+            llm_calls: pending.llm_calls,
             is_complete: artifact_complete,
         };
 
@@ -1236,7 +1210,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
     });
 
     // Handle SaveArtifact - write the current artifact state to a file
-    actor.act_on::<SaveArtifact>(|actor, context| {
+    actor.act_on_sync::<SaveArtifact>(|actor, context| {
         let msg = context.message();
 
         if let Some(artifact) = actor.model.artifact.as_ref() {
@@ -1254,110 +1228,6 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             }
         } else {
             warn!("No artifact to save");
-        }
-
-        Reply::ready()
-    });
-
-    // Handle SetOutputDir - configure validation artifact output directory
-    actor.mutate_on::<SetOutputDir>(|actor, context| {
-        let path = context.message().path.clone();
-        // Create the directory if it doesn't exist
-        if let Err(e) = std::fs::create_dir_all(&path) {
-            warn!(path = %path.display(), error = %e, "Failed to create output directory");
-        } else {
-            debug!(path = %path.display(), "Output directory set");
-        }
-        actor.model.output_dir = Some(path);
-        Reply::ready()
-    });
-
-    // Handle ValidatePatch - write artifact with proposed patch for validation
-    actor.act_on::<ValidatePatch>(|actor, context| {
-        let msg = context.message().clone();
-        let region_actors: HashMap<RegionId, ActorHandle> = actor
-            .model
-            .region_actors
-            .iter()
-            .map(|e| (e.key().clone(), e.value().clone()))
-            .collect();
-
-        let Some(output_dir) = actor.model.output_dir.clone() else {
-            warn!("ValidatePatch: output_dir not set");
-            // Send error response
-            if let Some(handle) = region_actors.get(&msg.region_id).cloned() {
-                return Reply::pending(async move {
-                    handle
-                        .send(ValidatePatchResponse {
-                            correlation_id: msg.correlation_id,
-                            region_id: msg.region_id,
-                            artifact_path: std::path::PathBuf::new(),
-                            original_path: std::path::PathBuf::new(),
-                        })
-                        .await;
-                });
-            }
-            return Reply::ready();
-        };
-
-        let Some(artifact) = actor.model.artifact.as_ref() else {
-            warn!("ValidatePatch: artifact not initialized");
-            return Reply::ready();
-        };
-
-        // Get current artifact source
-        let Some(original_source) = artifact.source() else {
-            warn!("ValidatePatch: artifact does not support source()");
-            return Reply::ready();
-        };
-
-        // Get the current content for the region being patched
-        let region_id = msg.region_id.clone();
-        let current_content = match artifact.read_region(region_id.clone()) {
-            Ok(view) => view.content,
-            Err(e) => {
-                warn!(error = %e, "Failed to read region for validation");
-                return Reply::ready();
-            }
-        };
-
-        // Replace the old content with new content in the source
-        let patched_source = original_source.replace(&current_content, &msg.new_content);
-
-        // Write original artifact (once per tick)
-        let original_path = output_dir.join(format!("tick_{}_original.rs", msg.tick));
-        if !original_path.exists()
-            && let Err(e) = std::fs::write(&original_path, &original_source)
-        {
-            warn!(path = %original_path.display(), error = %e, "Failed to write original artifact");
-        }
-
-        // Write patched artifact
-        let region_short = format!("{:.8}", region_id);
-        let artifact_path =
-            output_dir.join(format!("tick_{}_region_{}.rs", msg.tick, region_short));
-
-        if let Err(e) = std::fs::write(&artifact_path, &patched_source) {
-            warn!(path = %artifact_path.display(), error = %e, "Failed to write patched artifact");
-        } else {
-            trace!(path = %artifact_path.display(), "Wrote patched artifact for validation");
-        }
-
-        // Send response to RegionActor
-        let response = ValidatePatchResponse {
-            correlation_id: msg.correlation_id,
-            region_id: region_id.clone(),
-            artifact_path,
-            original_path,
-        };
-
-        if let Some(handle) = region_actors.get(&region_id).cloned() {
-            Reply::pending(async move {
-                handle.send(response).await;
-            })
-        } else {
-            warn!(region = %msg.region_id, "No actor handle for region");
-            Reply::ready()
         }
     });
 

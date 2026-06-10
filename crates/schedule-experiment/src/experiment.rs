@@ -19,7 +19,7 @@ use tracing::{debug, info, warn};
 use acton_reactive::prelude::*;
 use survival_kernel::artifact::Artifact;
 use survival_kernel::config::{
-    ActivationConfig, DecayConfig, KernelConfig, PressureAxisConfig, SelectionConfig,
+    ActivationConfig, KernelConfig, PressureAxisConfig, SelectionConfig,
 };
 use survival_kernel::pressure::Sensor;
 use survival_kernel::{
@@ -162,6 +162,7 @@ impl Strategy {
 struct BaselineRunContext {
     artifact: ScheduleArtifact,
     example_bank: Arc<RwLock<ExampleBank>>,
+    /// Sensor for the Hierarchical manager's region-selection heuristic.
     sensor: CombinedScheduleSensor,
     shared_schedule: SharedSchedule,
 }
@@ -222,7 +223,8 @@ impl ExperimentRunner {
             Arc::new(RwLock::new(ExampleBank::disabled()))
         };
 
-        // Create sensor
+        // Local signal surface: the kernel's activation/EMA field for
+        // pressure-field, and the Hierarchical manager's selection heuristic.
         let sensor = CombinedScheduleSensor::new(shared_schedule.clone());
 
         // For PressureField strategy, use the kernel-based coordination
@@ -295,7 +297,6 @@ impl ExperimentRunner {
         // Build kernel config
         let kernel_config = self.build_kernel_config();
         let max_ticks = kernel_config.max_ticks;
-        let tick_interval_ms = kernel_config.tick_interval_ms;
 
         // Create acton runtime
         let mut runtime = ActonApp::launch_async().await;
@@ -327,7 +328,7 @@ impl ExperimentRunner {
                 host: initial_host.clone(),
                 model: initial_model.clone(),
                 sampling: SamplingConfig::random_in_band(band),
-                max_tokens: 256, // Schedules need more tokens than Latin squares
+                max_tokens: 256,
                 band,
                 randomize_sampling: true,
             };
@@ -402,6 +403,12 @@ impl ExperimentRunner {
         loop {
             current_tick += 1;
 
+            // Pheromone evaporation: example weights decay each tick so stale
+            // examples fall out of prompts (mirrors the baseline strategies).
+            if self.config.decay_enabled {
+                example_bank.read().await.apply_decay();
+            }
+
             let now_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -446,8 +453,34 @@ impl ExperimentRunner {
             // Apply patches regardless (they may have local effects)
             if !result.applied.is_empty() {
                 for patch in &result.applied {
+                    // Capture pre-patch content and grid pressure so successful
+                    // patches can seed the example bank for few-shot learning. The
+                    // kernel only applies patches that reduce pressure, so every
+                    // applied patch is a positive example. Deltas are global grid
+                    // pressure: scheduling an unscheduled meeting must show up as
+                    // an improvement, and unscheduled count is not block-local.
+                    let before_content = artifact
+                        .read_region(patch.region.clone())
+                        .map(|view| view.content)
+                        .ok();
+                    let pressure_before = artifact.total_pressure();
+
                     if let Err(e) = artifact.apply_patch(patch.clone()) {
                         warn!(error = %e, "Failed to apply patch to local artifact");
+                        continue;
+                    }
+
+                    if self.config.examples_enabled
+                        && let Some(before_content) = before_content
+                        && let survival_kernel::region::PatchOp::Replace(after_content) = &patch.op
+                    {
+                        let pressure_after = artifact.total_pressure();
+                        example_bank.write().await.add_example(
+                            before_content,
+                            after_content.clone(),
+                            pressure_before,
+                            pressure_after,
+                        );
                     }
                 }
                 // Update shared schedule
@@ -456,8 +489,11 @@ impl ExperimentRunner {
                 }
             }
 
-            // Apply rejection decay each tick (negative pheromone evaporation)
-            shared_artifact.apply_rejection_decay(0.95, 0.1);
+            // Negative pheromone evaporation, gated with the rest of the decay
+            // machinery so the decay ablation arm disables all evaporation.
+            if self.config.decay_enabled {
+                shared_artifact.apply_rejection_decay(0.95, 0.1);
+            }
 
             // Log rejection stats periodically
             let (rejection_count, total_weight) = shared_artifact.rejection_stats();
@@ -580,8 +616,8 @@ impl ExperimentRunner {
                 break;
             }
 
-            // Wait for the interval before next tick
-            tokio::time::sleep(std::time::Duration::from_millis(tick_interval_ms)).await;
+            // No inter-tick sleep: decay and inhibition run on the logical tick
+            // clock, so wall-clock pacing adds nothing but latency.
         }
 
         // Shutdown runtime
@@ -608,8 +644,7 @@ impl ExperimentRunner {
 
                 let model_at_tick = escalation_events
                     .iter()
-                    .filter(|e| e.tick <= tick)
-                    .next_back()
+                    .rfind(|e| e.tick <= tick)
                     .map(|e| e.to_model.clone())
                     .unwrap_or_else(|| {
                         if self.config.model_chain.is_empty() {
@@ -627,7 +662,7 @@ impl ExperimentRunner {
                     patches_applied: result.applied.len(),
                     empty_cells: 0,
                     violations: 0,
-                    llm_calls: agent_count,
+                    llm_calls: result.llm_calls,
                     duration_ms: 0,
                     model_used: model_at_tick,
                     prompt_tokens: result.prompt_tokens,
@@ -692,7 +727,7 @@ impl ExperimentRunner {
         let total_patch_rejections: HashMap<PatchRejection, usize> = HashMap::new();
 
         // Initial measurement
-        let initial_pressure = self.measure_total_pressure(&ctx.artifact, &ctx.sensor)?;
+        let initial_pressure = self.measure_total_pressure(&ctx.artifact)?;
         pressure_history.push(initial_pressure);
 
         // Model escalation state
@@ -776,6 +811,9 @@ impl ExperimentRunner {
                     _ => true, // Sequential and Random apply unconditionally
                 };
 
+                // Grid pressure before applying, for the example-bank delta.
+                let pressure_before = ctx.artifact.total_pressure();
+
                 if should_apply && ctx.artifact.apply_patch(patch).is_ok() {
                     // Update shared schedule
                     if let Ok(mut schedule) = ctx.shared_schedule.write() {
@@ -784,16 +822,7 @@ impl ExperimentRunner {
 
                     // Add to example bank
                     if self.config.examples_enabled {
-                        let pressure_before =
-                            self.measure_region_pressure(&region_view, &ctx.sensor)?;
-                        let temp_view = survival_kernel::region::RegionView {
-                            id: region_id.clone(),
-                            kind: "time_block".to_string(),
-                            content: new_content.clone(),
-                            metadata: region_view.metadata.clone(),
-                        };
-                        let pressure_after =
-                            self.measure_region_pressure(&temp_view, &ctx.sensor)?;
+                        let pressure_after = ctx.artifact.total_pressure();
 
                         let bank = ctx.example_bank.read().await;
                         bank.add_example(
@@ -809,7 +838,7 @@ impl ExperimentRunner {
             }
 
             // Track tick results
-            let current_pressure = self.measure_total_pressure(&ctx.artifact, &ctx.sensor)?;
+            let current_pressure = self.measure_total_pressure(&ctx.artifact)?;
             pressure_history.push(current_pressure);
             patches_per_tick.push(patches_applied);
 
@@ -963,7 +992,7 @@ impl ExperimentRunner {
 
         // Initial measurement
         let initial_pressure =
-            self.measure_total_pressure(&baseline_ctx.artifact, &baseline_ctx.sensor)?;
+            self.measure_total_pressure(&baseline_ctx.artifact)?;
         pressure_history.push(initial_pressure);
 
         // Model escalation state
@@ -1019,7 +1048,7 @@ impl ExperimentRunner {
 
             // Track tick results
             let current_pressure =
-                self.measure_total_pressure(&baseline_ctx.artifact, &baseline_ctx.sensor)?;
+                self.measure_total_pressure(&baseline_ctx.artifact)?;
             pressure_history.push(current_pressure);
             patches_per_tick.push(patches_applied);
 
@@ -1202,24 +1231,19 @@ impl ExperimentRunner {
             },
         ];
 
-        let decay = DecayConfig {
-            fitness_half_life_ms: if self.config.decay_enabled {
-                5_000
-            } else {
-                u64::MAX
-            },
-            confidence_half_life_ms: if self.config.decay_enabled {
-                10_000
-            } else {
-                u64::MAX
-            },
-            ema_alpha: 0.2,
-        };
-
+        // Inhibition runs on the logical tick clock, so it is deterministic
+        // and independent of LLM latency. Temporal decay (pheromone
+        // evaporation of the example bank and rejected-patch store) is
+        // applied once per tick in the experiment loop, gated on
+        // `decay_enabled`.
         let activation = ActivationConfig {
             min_total_pressure: 0.1,
-            inhibit_ms: if self.config.inhibition_enabled {
-                2_000
+            // A patched region sits out the next tick and becomes eligible
+            // again the tick after. Longer windows starve the field: with 20
+            // regions and a 50-tick budget, freezing a region for a large
+            // fraction of the run prevents iterative refinement of hot blocks.
+            inhibit_ticks: if self.config.inhibition_enabled {
+                2
             } else {
                 0
             },
@@ -1231,7 +1255,7 @@ impl ExperimentRunner {
 
         KernelConfig {
             pressure_axes,
-            decay,
+            pressure_ema_alpha: 0.2,
             activation,
             selection,
             max_ticks: self.config.max_ticks,
@@ -1241,41 +1265,28 @@ impl ExperimentRunner {
     }
 
     /// Measure total pressure across all regions.
-    fn measure_total_pressure(
-        &self,
-        artifact: &ScheduleArtifact,
-        sensor: &CombinedScheduleSensor,
-    ) -> Result<f64> {
-        let mut total = 0.0;
-        for region_id in artifact.region_ids() {
-            let region_view = artifact.read_region(region_id)?;
-            let signals = sensor.measure(&region_view)?;
-
-            // Weighted sum of pressure signals
-            total += signals.get("gap_ratio").unwrap_or(&0.0) * 1.0;
-            total += signals.get("overlap_count").unwrap_or(&0.0) * 2.0;
-            total += signals.get("utilization_variance").unwrap_or(&0.0) * 0.5;
-        }
-        // Add global unscheduled count
-        if let Some(first_region) = artifact.region_ids().first() {
-            let region_view = artifact.read_region(first_region.clone())?;
-            let signals = sensor.measure(&region_view)?;
-            total += signals.get("unscheduled_count").unwrap_or(&0.0) * 1.5;
-        }
-        Ok(total)
+    ///
+    /// Delegates to the single authoritative grid metric so that every strategy
+    /// reports pressure on the same scale (`unscheduled * 1.0 + overlaps * 10.0`).
+    fn measure_total_pressure(&self, artifact: &ScheduleArtifact) -> Result<f64> {
+        Ok(artifact.total_pressure())
     }
 
-    /// Measure pressure for a single region.
-    fn measure_region_pressure(
+    /// Score a region for the Hierarchical manager's selection heuristic.
+    ///
+    /// This is the manager's local view of which block needs attention (gaps,
+    /// overlaps, utilization imbalance) - the same signal surface the kernel's
+    /// sensors provide to pressure-field agents. It is a selection heuristic
+    /// only; reported pressure always uses the grid metric.
+    fn selection_pressure(
         &self,
         region_view: &survival_kernel::region::RegionView,
         sensor: &CombinedScheduleSensor,
     ) -> Result<f64> {
         let signals = sensor.measure(region_view)?;
-        let pressure = signals.get("gap_ratio").unwrap_or(&0.0) * 1.0
+        Ok(signals.get("gap_ratio").unwrap_or(&0.0) * 1.0
             + signals.get("overlap_count").unwrap_or(&0.0) * 2.0
-            + signals.get("utilization_variance").unwrap_or(&0.0) * 0.5;
-        Ok(pressure)
+            + signals.get("utilization_variance").unwrap_or(&0.0) * 0.5)
     }
 
     /// Select the highest-pressure region (for Hierarchical strategy).
@@ -1289,7 +1300,7 @@ impl ExperimentRunner {
 
         for region_id in artifact.region_ids() {
             let region_view = artifact.read_region(region_id.clone())?;
-            let pressure = self.measure_region_pressure(&region_view, sensor)?;
+            let pressure = self.selection_pressure(&region_view, sensor)?;
             if pressure > max_pressure {
                 max_pressure = pressure;
                 selected = region_id.clone();

@@ -419,6 +419,10 @@ impl ScheduleArtifact {
     }
 
     /// Get total pressure (higher = worse).
+    ///
+    /// This is the single authoritative pressure metric for the whole schedule:
+    /// `unscheduled * 1.0 + overlaps * 10.0`. All reported pressure - across every
+    /// strategy - is expressed on this grid scale.
     pub fn total_pressure(&self) -> f64 {
         compute_pressure_from_grid(&self.schedule)
     }
@@ -1180,6 +1184,33 @@ mod tests {
         let pressure = artifact.total_pressure();
         // 3 unscheduled meetings × 1.0 = 3.0
         assert_eq!(pressure, 3.0);
+    }
+
+    #[test]
+    fn test_total_pressure_weights_overlaps() {
+        let mut artifact = sample_artifact();
+
+        // Place meetings 1 and 3 in the same slot. They share attendee 1, so
+        // they double-book that attendee -> one overlap at weight 10.0.
+        let first_region = artifact.region_ids()[0].clone();
+        let (day, start_slot, _end) = artifact.region_metadata(&first_region).unwrap();
+        artifact.schedule.set(0, day, start_slot, Some(1));
+        artifact.schedule.set(1, day, start_slot, Some(3));
+        if let Some(m) = artifact.schedule.meetings.get_mut(&1) {
+            m.scheduled = Some(ScheduledMeeting {
+                room: 0,
+                start: TimeSlot::new(day, start_slot),
+            });
+        }
+        if let Some(m) = artifact.schedule.meetings.get_mut(&3) {
+            m.scheduled = Some(ScheduledMeeting {
+                room: 1,
+                start: TimeSlot::new(day, start_slot),
+            });
+        }
+
+        // One remaining unscheduled meeting (id 2) + one overlap × 10.0.
+        assert_eq!(artifact.total_pressure(), 1.0 + 10.0);
     }
 
     #[test]
