@@ -48,6 +48,28 @@ fn compute_acceleration(current_velocity: f64, velocity_history: &[f64]) -> f64 
         .unwrap_or(0.0)
 }
 
+/// Compute effective activation pressure with one-hop neighbor propagation (ESP).
+///
+/// `effective_i = own_i + κ · Σ_{j ∈ N(i)} own_j`, where N(i) comes from
+/// `Artifact::region_adjacency`. Spillover is computed from the regions' own
+/// pressures (not effective values), so propagation is exactly one hop per
+/// tick. With `kappa == 0.0` or an empty adjacency this is the identity.
+fn propagate_pressure(
+    own: &HashMap<RegionId, f64>,
+    adjacency: &HashMap<RegionId, Vec<RegionId>>,
+    kappa: f64,
+) -> HashMap<RegionId, f64> {
+    own.iter()
+        .map(|(rid, &pressure)| {
+            let spill: f64 = adjacency
+                .get(rid)
+                .map(|neighbors| neighbors.iter().filter_map(|n| own.get(n)).sum())
+                .unwrap_or(0.0);
+            (rid.clone(), pressure + kappa * spill)
+        })
+        .collect()
+}
+
 /// Tracks pending measurements for a tick.
 #[derive(Debug, Clone)]
 struct PendingMeasurements {
@@ -712,10 +734,42 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         // Find high-pressure, non-inhibited regions
         let threshold = config.activation.min_total_pressure;
 
+        // ESP: inter-region pheromone propagation. Activation uses the
+        // effective pressure (own + κ·Σ neighbors), so a hot region recruits
+        // proposals in adjacent regions. Inhibited regions still contribute
+        // spillover (the pheromone is in the slot) but are never dispatched
+        // themselves. Reported total pressure stays the sum of own pressures.
+        let kappa = config.propagation_kappa;
+        let own_pressure: HashMap<RegionId, f64> = pending
+            .responses
+            .iter()
+            .map(|r| (r.region_id.clone(), r.total_pressure))
+            .collect();
+        let effective_pressure = if kappa > 0.0 {
+            let adjacency = actor
+                .model
+                .artifact
+                .as_ref()
+                .map(|a| a.region_adjacency())
+                .unwrap_or_default();
+            propagate_pressure(&own_pressure, &adjacency, kappa)
+        } else {
+            own_pressure
+        };
+
+        let is_activated = |r: &PressureResponse| {
+            !r.is_inhibited
+                && effective_pressure
+                    .get(&r.region_id)
+                    .copied()
+                    .unwrap_or(r.total_pressure)
+                    >= threshold
+        };
+
         let high_pressure_regions: Vec<_> = pending
             .responses
             .iter()
-            .filter(|r| !r.is_inhibited && r.total_pressure >= threshold)
+            .filter(|r| is_activated(r))
             .map(|r| {
                 let pressures: PressureVector = r.state.pressure_ema.clone();
                 (r.region_id.clone(), r.view.clone(), pressures)
@@ -808,7 +862,7 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
         let proposal_data: Vec<_> = pending
             .responses
             .into_iter()
-            .filter(|r| !r.is_inhibited && r.total_pressure >= threshold)
+            .filter(|r| is_activated(r))
             .map(|r| {
                 let pressures: PressureVector = r.state.pressure_ema.clone();
                 (r.region_id, r.view, r.signals, pressures, r.state)
@@ -1287,4 +1341,59 @@ fn configure_handlers(actor: &mut ManagedActor<Idle, KernelCoordinatorState>) {
             Reply::ready()
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rid(name: &str) -> RegionId {
+        name.create_type_id::<V7>()
+    }
+
+    #[test]
+    fn propagation_with_zero_kappa_is_identity() {
+        let (a, b) = (rid("a"), rid("b"));
+        let own: HashMap<RegionId, f64> = [(a.clone(), 1.0), (b.clone(), 0.4)].into();
+        let adjacency: HashMap<RegionId, Vec<RegionId>> =
+            [(a.clone(), vec![b.clone()]), (b.clone(), vec![a.clone()])].into();
+
+        let effective = propagate_pressure(&own, &adjacency, 0.0);
+
+        assert_eq!(effective, own);
+    }
+
+    #[test]
+    fn propagation_spills_exactly_one_hop() {
+        // Chain a - b - c with all pressure concentrated in a.
+        let (a, b, c) = (rid("a"), rid("b"), rid("c"));
+        let own: HashMap<RegionId, f64> =
+            [(a.clone(), 1.0), (b.clone(), 0.0), (c.clone(), 0.0)].into();
+        let adjacency: HashMap<RegionId, Vec<RegionId>> = [
+            (a.clone(), vec![b.clone()]),
+            (b.clone(), vec![a.clone(), c.clone()]),
+            (c.clone(), vec![b.clone()]),
+        ]
+        .into();
+
+        let effective = propagate_pressure(&own, &adjacency, 0.5);
+
+        // a keeps its own pressure (its only neighbor is empty).
+        assert_eq!(effective[&a], 1.0);
+        // b receives κ-weighted spillover from a.
+        assert_eq!(effective[&b], 0.5);
+        // c is two hops from a: no spillover within a single tick.
+        assert_eq!(effective[&c], 0.0);
+    }
+
+    #[test]
+    fn propagation_without_adjacency_keeps_own_pressure() {
+        let a = rid("a");
+        let own: HashMap<RegionId, f64> = [(a.clone(), 0.7)].into();
+        let adjacency = HashMap::new();
+
+        let effective = propagate_pressure(&own, &adjacency, 0.5);
+
+        assert_eq!(effective[&a], 0.7);
+    }
 }

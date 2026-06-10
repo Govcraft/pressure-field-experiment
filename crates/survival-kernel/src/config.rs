@@ -28,6 +28,17 @@ pub struct KernelConfig {
     /// old measurements more slowly.
     pub pressure_ema_alpha: f64,
 
+    /// Inter-region pheromone propagation strength (ESP).
+    ///
+    /// A region's activation pressure is its own pressure plus
+    /// `propagation_kappa` times the sum of its neighbors' pressures, one
+    /// hop per tick, with neighbors defined by `Artifact::region_adjacency`.
+    /// Propagation affects activation only (which regions are dispatched
+    /// for proposals); reported total pressure remains the sum of the
+    /// regions' own pressures. 0.0 disables propagation.
+    #[serde(default)]
+    pub propagation_kappa: f64,
+
     /// Activation thresholds
     pub activation: ActivationConfig,
 
@@ -79,6 +90,7 @@ impl Default for KernelConfig {
             stable_threshold: 3, // stop after 3 ticks with no patches
             pressure_axes: Vec::new(),
             pressure_ema_alpha: 0.2,
+            propagation_kappa: 0.0,
             activation: ActivationConfig {
                 min_total_pressure: 0.8,
                 inhibit_ticks: 120,

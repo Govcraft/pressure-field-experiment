@@ -124,6 +124,11 @@ pub struct ExperimentConfig {
     pub inhibition_enabled: bool,
     /// Whether few-shot examples are enabled
     pub examples_enabled: bool,
+    /// Whether inter-region pheromone propagation (ESP) is enabled.
+    /// Defaults to false when absent so result files predating the
+    /// mechanism deserialize honestly.
+    #[serde(default)]
+    pub propagation_enabled: bool,
     /// Trial number (for repeated experiments)
     pub trial: usize,
     /// Random seed (if reproducible)
@@ -227,12 +232,13 @@ impl GridResults {
 
         for result in &self.results {
             let key = format!(
-                "{}:agents={}:decay={}:inhibit={}:examples={}",
+                "{}:agents={}:decay={}:inhibit={}:examples={}:propagation={}",
                 result.config.strategy,
                 result.config.agent_count,
                 result.config.decay_enabled,
                 result.config.inhibition_enabled,
-                result.config.examples_enabled
+                result.config.examples_enabled,
+                result.config.propagation_enabled
             );
             by_config.entry(key).or_default().push(result);
         }
@@ -372,6 +378,7 @@ mod tests {
                     decay_enabled: true,
                     inhibition_enabled: true,
                     examples_enabled: true,
+                    propagation_enabled: true,
                     trial,
                     seed: Some(trial as u64),
                 },
@@ -397,7 +404,7 @@ mod tests {
 
         results.compute_summary();
 
-        let key = "pressure_field:agents=2:decay=true:inhibit=true:examples=true";
+        let key = "pressure_field:agents=2:decay=true:inhibit=true:examples=true:propagation=true";
         let summary = results.summary.get(key).unwrap();
 
         assert_eq!(summary.trials, 3);
@@ -424,6 +431,7 @@ mod tests {
                     decay_enabled: true,
                     inhibition_enabled: true,
                     examples_enabled: true,
+                    propagation_enabled: true,
                     trial,
                     seed: None,
                 },
@@ -472,6 +480,7 @@ mod tests {
                     decay_enabled: true,
                     inhibition_enabled: true,
                     examples_enabled: true,
+                    propagation_enabled: true,
                     trial,
                     seed: None,
                 },
@@ -520,6 +529,7 @@ mod tests {
                     decay_enabled: true,
                     inhibition_enabled: true,
                     examples_enabled: true,
+                    propagation_enabled: true,
                     trial,
                     seed: None,
                 },
@@ -569,6 +579,7 @@ mod tests {
                     decay_enabled: true,
                     inhibition_enabled: true,
                     examples_enabled: true,
+                    propagation_enabled: true,
                     trial,
                     seed: None,
                 },
@@ -600,6 +611,7 @@ mod tests {
                     decay_enabled: true,
                     inhibition_enabled: true,
                     examples_enabled: true,
+                    propagation_enabled: true,
                     trial,
                     seed: None,
                 },
@@ -628,8 +640,8 @@ mod tests {
         // Should have separate summaries for each strategy
         assert_eq!(results.summary.len(), 2);
 
-        let key_a = "strategy_a:agents=2:decay=true:inhibit=true:examples=true";
-        let key_b = "strategy_b:agents=2:decay=true:inhibit=true:examples=true";
+        let key_a = "strategy_a:agents=2:decay=true:inhibit=true:examples=true:propagation=true";
+        let key_b = "strategy_b:agents=2:decay=true:inhibit=true:examples=true:propagation=true";
 
         let summary_a = results.summary.get(key_a).unwrap();
         let summary_b = results.summary.get(key_b).unwrap();
@@ -728,6 +740,7 @@ mod tests {
                 decay_enabled: true,
                 inhibition_enabled: true,
                 examples_enabled: false,
+                propagation_enabled: false,
                 trial: 0,
                 seed: Some(42),
             },
@@ -778,6 +791,7 @@ mod tests {
                 decay_enabled: true,
                 inhibition_enabled: true,
                 examples_enabled: true,
+                propagation_enabled: true,
                 trial: 0,
                 seed: None,
             },

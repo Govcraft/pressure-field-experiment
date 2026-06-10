@@ -95,7 +95,7 @@ enum Commands {
         output: PathBuf,
     },
 
-    /// Run ablation study (varying decay/inhibition/examples).
+    /// Run ablation study (varying decay/inhibition/examples/propagation).
     Ablation {
         /// Number of trials per configuration
         #[arg(short, long, default_value = "10")]
@@ -377,16 +377,20 @@ async fn main() -> Result<()> {
                 .map(|s| s.trim().to_string())
                 .collect();
 
-            // Ablation configurations: (decay, inhibition, examples)
+            // Ablation configurations: (decay, inhibition, examples, propagation).
+            // The decay/inhibition/examples matrix runs with propagation on
+            // (the full method); `no_propagation` isolates the ESP mechanism
+            // against `full`, and `baseline` disables everything.
             let ablation_configs = vec![
-                (true, true, true, "full"),
-                (false, true, true, "no_decay"),
-                (true, false, true, "no_inhibition"),
-                (true, true, false, "no_examples"),
-                (false, false, true, "no_decay_no_inhibition"),
-                (false, true, false, "no_decay_no_examples"),
-                (true, false, false, "no_inhibition_no_examples"),
-                (false, false, false, "baseline"),
+                (true, true, true, true, "full"),
+                (false, true, true, true, "no_decay"),
+                (true, false, true, true, "no_inhibition"),
+                (true, true, false, true, "no_examples"),
+                (true, true, true, false, "no_propagation"),
+                (false, false, true, true, "no_decay_no_inhibition"),
+                (false, true, false, true, "no_decay_no_examples"),
+                (true, false, false, true, "no_inhibition_no_examples"),
+                (false, false, false, false, "baseline"),
             ];
 
             info!(
@@ -403,10 +407,10 @@ async fn main() -> Result<()> {
             // Initialize GridResults for incremental saves
             let mut grid_results = GridResults::new();
 
-            for (decay, inhibition, examples, name) in &ablation_configs {
+            for (decay, inhibition, examples, propagation, name) in &ablation_configs {
                 info!(
                     config = name,
-                    decay, inhibition, examples, "Running ablation config"
+                    decay, inhibition, examples, propagation, "Running ablation config"
                 );
 
                 let config = ExperimentRunnerConfig {
@@ -421,6 +425,7 @@ async fn main() -> Result<()> {
                     decay_enabled: *decay,
                     inhibition_enabled: *inhibition,
                     examples_enabled: *examples,
+                    propagation_enabled: *propagation,
                     ..Default::default()
                 };
 

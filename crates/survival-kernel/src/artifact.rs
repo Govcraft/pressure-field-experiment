@@ -1,5 +1,7 @@
 //! Artifact trait: the interface for mutable objects under pressure.
 
+use std::collections::HashMap;
+
 use crate::region::{Patch, RegionId, RegionView};
 
 /// An artifact is any mutable object that can be refined through pressure-driven coordination.
@@ -70,6 +72,20 @@ pub trait Artifact: Send + Sync {
     /// Default implementation accepts all patches (backward compatible).
     fn evaluate_patch(&self, _patch: &Patch) -> (bool, f64) {
         (true, 0.0)
+    }
+
+    /// Optional: region adjacency for inter-region pheromone propagation (ESP).
+    ///
+    /// Returns, for each region, the regions adjacent to it in the
+    /// artifact's topology. When non-empty and the kernel's
+    /// `propagation_kappa` is positive, a region's activation pressure
+    /// includes a κ-weighted contribution from its neighbors' pressures,
+    /// so high pressure in one region recruits proposals in adjacent
+    /// regions.
+    ///
+    /// Default implementation returns an empty map (no propagation).
+    fn region_adjacency(&self) -> HashMap<RegionId, Vec<RegionId>> {
+        HashMap::new()
     }
 
     /// Optional: get the total pressure of the artifact.

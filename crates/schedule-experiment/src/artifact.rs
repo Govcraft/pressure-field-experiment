@@ -303,7 +303,7 @@ pub struct ScheduleArtifact {
     /// Schedule identifier for deterministic region IDs.
     schedule_id: String,
     /// Slots per time block (region granularity).
-    _slots_per_block: u8,
+    slots_per_block: u8,
     /// Optional shared schedule for sensor synchronization.
     shared_schedule: Option<SharedSchedule>,
     /// Rejected patches with decay weights (negative pheromones).
@@ -375,7 +375,7 @@ impl ScheduleArtifact {
             region_map,
             region_order,
             schedule_id,
-            _slots_per_block: slots_per_block,
+            slots_per_block,
             shared_schedule: None,
             rejected_patches: Arc::new(RwLock::new(Vec::new())),
             current_tick: Arc::new(RwLock::new(0)),
@@ -1059,6 +1059,32 @@ impl Artifact for ScheduleArtifact {
         // Return actual pressure from grid state
         Some(ScheduleArtifact::total_pressure(self))
     }
+
+    fn region_adjacency(&self) -> HashMap<RegionId, Vec<RegionId>> {
+        // Temporal adjacency within each day: block b neighbors blocks b-1
+        // and b+1 on the same day. Pressure on a hot time block spills onto
+        // the blocks just before and after it, recruiting proposals where
+        // conflicting meetings can most plausibly be moved. No cross-day
+        // edges: there is no scheduling rationale for Friday pressure
+        // recruiting Monday proposals.
+        let blocks_per_day = self.schedule.slots_per_day / self.slots_per_block;
+        let mut adjacency = HashMap::new();
+
+        for day in 0..self.schedule.num_days {
+            for block in 0..blocks_per_day {
+                let mut neighbors = Vec::new();
+                if block > 0 {
+                    neighbors.push(create_region_mti(&self.schedule_id, day, block - 1));
+                }
+                if block + 1 < blocks_per_day {
+                    neighbors.push(create_region_mti(&self.schedule_id, day, block + 1));
+                }
+                adjacency.insert(create_region_mti(&self.schedule_id, day, block), neighbors);
+            }
+        }
+
+        adjacency
+    }
 }
 
 impl fmt::Display for ScheduleArtifact {
@@ -1170,6 +1196,42 @@ mod tests {
         let artifact1 = sample_artifact();
         let artifact2 = sample_artifact();
         assert_eq!(artifact1.region_ids(), artifact2.region_ids());
+    }
+
+    #[test]
+    fn test_region_adjacency_is_within_day_chain() {
+        let artifact = sample_artifact();
+        let adjacency = artifact.region_adjacency();
+
+        // Every region (5 days × 4 blocks) has an adjacency entry.
+        assert_eq!(adjacency.len(), 20);
+
+        for day in 0..5u8 {
+            // First block of the day: only the next block. The absence of a
+            // second neighbor also proves there are no cross-day edges.
+            let first = create_region_mti("test-schedule", day, 0);
+            assert_eq!(
+                adjacency[&first],
+                vec![create_region_mti("test-schedule", day, 1)]
+            );
+
+            // Interior block: previous and next block, same day.
+            let middle = create_region_mti("test-schedule", day, 1);
+            assert_eq!(
+                adjacency[&middle],
+                vec![
+                    create_region_mti("test-schedule", day, 0),
+                    create_region_mti("test-schedule", day, 2),
+                ]
+            );
+
+            // Last block of the day: only the previous block.
+            let last = create_region_mti("test-schedule", day, 3);
+            assert_eq!(
+                adjacency[&last],
+                vec![create_region_mti("test-schedule", day, 2)]
+            );
+        }
     }
 
     #[test]

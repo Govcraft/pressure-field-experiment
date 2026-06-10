@@ -79,6 +79,10 @@ pub struct ExperimentRunnerConfig {
     pub inhibition_enabled: bool,
     /// Enable few-shot examples
     pub examples_enabled: bool,
+    /// Enable inter-region pheromone propagation (ESP): a region's
+    /// activation pressure includes κ-weighted spillover from temporally
+    /// adjacent blocks
+    pub propagation_enabled: bool,
     /// Example bank configuration
     pub example_bank_config: ExampleBankConfig,
 }
@@ -102,6 +106,7 @@ impl Default for ExperimentRunnerConfig {
             decay_enabled: true,
             inhibition_enabled: true,
             examples_enabled: true,
+            propagation_enabled: true,
             example_bank_config: ExampleBankConfig::default(),
         }
     }
@@ -684,6 +689,7 @@ impl ExperimentRunner {
                 decay_enabled: self.config.decay_enabled,
                 inhibition_enabled: self.config.inhibition_enabled,
                 examples_enabled: self.config.examples_enabled,
+                propagation_enabled: self.config.propagation_enabled,
                 trial: ctx.trial,
                 seed: ctx.seed,
             },
@@ -929,6 +935,7 @@ impl ExperimentRunner {
                 decay_enabled: self.config.decay_enabled,
                 inhibition_enabled: self.config.inhibition_enabled,
                 examples_enabled: self.config.examples_enabled,
+                propagation_enabled: self.config.propagation_enabled,
                 trial: run_ctx.trial,
                 seed: run_ctx.seed,
             },
@@ -1170,6 +1177,7 @@ impl ExperimentRunner {
                 decay_enabled: self.config.decay_enabled,
                 inhibition_enabled: self.config.inhibition_enabled,
                 examples_enabled: self.config.examples_enabled,
+                propagation_enabled: self.config.propagation_enabled,
                 trial: ctx.trial,
                 seed: ctx.seed,
             },
@@ -1253,9 +1261,21 @@ impl ExperimentRunner {
             min_expected_improvement: 0.0,
         };
 
+        // ESP propagation strength. With within-day chain adjacency (at most
+        // two neighbors) and an activation threshold of 0.1, κ = 0.5 lets a
+        // hot block (pressure ≥ 0.2) recruit proposals in its idle temporal
+        // neighbors — where conflicting meetings can be moved — while keeping
+        // spillover subordinate to a region's own pressure (κ < 1).
+        let propagation_kappa = if self.config.propagation_enabled {
+            0.5
+        } else {
+            0.0
+        };
+
         KernelConfig {
             pressure_axes,
             pressure_ema_alpha: 0.2,
+            propagation_kappa,
             activation,
             selection,
             max_ticks: self.config.max_ticks,
