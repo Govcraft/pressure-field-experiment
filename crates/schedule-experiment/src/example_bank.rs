@@ -3,25 +3,17 @@
 //! Implements the swarm intelligence mechanism where:
 //! - Successful patches are added as examples (pheromone deposit)
 //! - Example weights decay over time (evaporation)
-//! - Weights are reinforced when examples lead to success (positive feedback)
-//! - Examples are selected by weight for few-shot prompting (trail following)
+//! - Examples are selected by weight for few-shot prompting
 
 use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// A validated example that can be used for few-shot prompting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Example {
-    /// Unique identifier for this example
-    pub id: Uuid,
     /// Tick when this example was created
     pub created_tick: usize,
-    /// Tick when this example was last used
-    pub last_used_tick: usize,
-    /// Number of times this example has been used
-    pub use_count: usize,
     /// Original row content before the patch
     pub before: String,
     /// Row content after the successful patch
@@ -30,7 +22,7 @@ pub struct Example {
     pub pressure_before: f64,
     /// Pressure after the patch
     pub pressure_after: f64,
-    /// Pheromone weight (starts at 1.0, decays over time, reinforced on use)
+    /// Pheromone weight (starts at 1.0, decays over time)
     pub weight: f64,
     /// Row index context (for relevance matching)
     pub row_context: Option<usize>,
@@ -59,10 +51,7 @@ impl Example {
             .collect();
 
         Self {
-            id: Uuid::new_v4(),
             created_tick: tick,
-            last_used_tick: tick,
-            use_count: 0,
             before,
             after,
             pressure_before,
@@ -96,8 +85,6 @@ pub struct ExampleBankConfig {
     pub max_examples: usize,
     /// Decay factor applied each tick (e.g., 0.95 = 5% decay per tick)
     pub decay_factor: f64,
-    /// Reinforcement added when an example is used successfully
-    pub reinforcement: f64,
     /// Minimum weight before example is evicted
     pub eviction_threshold: f64,
     /// Number of examples to include in prompts
@@ -111,7 +98,6 @@ impl Default for ExampleBankConfig {
         Self {
             max_examples: 50,
             decay_factor: 0.95,
-            reinforcement: 0.3,
             eviction_threshold: 0.1,
             prompt_examples: 3,
             enabled: true,
@@ -208,30 +194,6 @@ impl ExampleBank {
         *tick += 1;
     }
 
-    /// Reinforce an example that led to a successful outcome.
-    pub fn reinforce(&self, example_id: Uuid) {
-        if !self.config.enabled {
-            return;
-        }
-
-        let tick = *self.current_tick.read().unwrap();
-        let mut examples = self.examples.write().unwrap();
-
-        if let Some(example) = examples.iter_mut().find(|e| e.id == example_id) {
-            example.weight += self.config.reinforcement;
-            example.weight = example.weight.min(2.0); // Cap at 2x initial weight
-            example.last_used_tick = tick;
-            example.use_count += 1;
-        }
-
-        // Re-sort by weight
-        examples.sort_by(|a, b| {
-            b.weight
-                .partial_cmp(&a.weight)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-    }
-
     /// Get the top examples for few-shot prompting.
     ///
     /// Returns examples sorted by weight, limited to `prompt_examples`.
@@ -299,7 +261,6 @@ impl ExampleBank {
             },
             max_weight: examples.iter().map(|e| e.weight).fold(0.0, f64::max),
             current_tick: tick,
-            total_uses: examples.iter().map(|e| e.use_count).sum(),
         }
     }
 
@@ -320,7 +281,6 @@ pub struct ExampleBankStats {
     pub avg_weight: f64,
     pub max_weight: f64,
     pub current_tick: usize,
-    pub total_uses: usize,
 }
 
 impl Clone for ExampleBank {
@@ -391,27 +351,6 @@ mod tests {
         // After second decay: 0.09 < 0.2 threshold
         bank.apply_decay();
         assert_eq!(bank.get_examples_for_prompt().len(), 0);
-    }
-
-    #[test]
-    fn test_reinforcement() {
-        let bank = ExampleBank::new(ExampleBankConfig {
-            reinforcement: 0.5,
-            decay_factor: 0.9,
-            ..Default::default()
-        });
-
-        bank.add_example("_ _".to_string(), "1 2".to_string(), 2.0, 0.0);
-
-        let examples = bank.get_examples_for_prompt();
-        let id = examples[0].id;
-
-        // Reinforce
-        bank.reinforce(id);
-
-        let examples = bank.get_examples_for_prompt();
-        assert!((examples[0].weight - 1.5).abs() < 0.001);
-        assert_eq!(examples[0].use_count, 1);
     }
 
     #[test]
