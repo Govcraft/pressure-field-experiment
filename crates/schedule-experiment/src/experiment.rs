@@ -83,6 +83,10 @@ pub struct ExperimentRunnerConfig {
     /// activation pressure includes κ-weighted spillover from temporally
     /// adjacent blocks
     pub propagation_enabled: bool,
+    /// Enable environment-to-agent escalation (ASU): sampling-band and model
+    /// escalation when the field stalls. Disable for an escalation-off arm that
+    /// holds the base model and Exploitation band for the full tick budget.
+    pub escalation_enabled: bool,
     /// Example bank configuration
     pub example_bank_config: ExampleBankConfig,
 }
@@ -107,6 +111,7 @@ impl Default for ExperimentRunnerConfig {
             inhibition_enabled: true,
             examples_enabled: true,
             propagation_enabled: true,
+            escalation_enabled: true,
             example_bank_config: ExampleBankConfig::default(),
         }
     }
@@ -515,7 +520,9 @@ impl ExperimentRunner {
             tick_results.push(result);
 
             // Check for escalation (progressive: band first, then model)
-            if ticks_without_progress >= self.config.band_escalation_interval {
+            if self.config.escalation_enabled
+                && ticks_without_progress >= self.config.band_escalation_interval
+            {
                 if current_band_level < 2 {
                     // Escalate sampling band first
                     let old_band = match current_band_level {
@@ -856,7 +863,8 @@ impl ExperimentRunner {
             }
 
             // Check for model escalation
-            if zero_velocity_ticks >= self.config.escalation_threshold
+            if self.config.escalation_enabled
+                && zero_velocity_ticks >= self.config.escalation_threshold
                 && current_model_idx + 1 < self.config.model_chain.len()
             {
                 let old_model = current_model.clone();
@@ -1067,7 +1075,8 @@ impl ExperimentRunner {
             }
 
             // Check for model escalation
-            if zero_velocity_ticks >= self.config.escalation_threshold
+            if self.config.escalation_enabled
+                && zero_velocity_ticks >= self.config.escalation_threshold
                 && current_model_idx + 1 < self.config.model_chain.len()
             {
                 let old_model = current_model.clone();

@@ -33,6 +33,15 @@ struct Cli {
     /// Model escalation chain (comma-separated, e.g., "qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b")
     #[arg(long, default_value = "qwen2.5:1.5b,qwen2.5:7b,qwen2.5:14b")]
     model_chain: String,
+
+    /// Stalled-tick threshold that triggers sampling-band and model escalation.
+    #[arg(long, default_value = "21")]
+    escalation_threshold: usize,
+
+    /// Disable environment-to-agent escalation (ASU): hold the base model and
+    /// Exploitation band for the full tick budget. Used for the escalation-off arm.
+    #[arg(long)]
+    no_escalation: bool,
 }
 
 #[derive(Subcommand)]
@@ -192,6 +201,8 @@ async fn main() -> Result<()> {
                 model_chain,
                 generator_config,
                 max_ticks,
+                escalation_threshold: cli.escalation_threshold,
+                escalation_enabled: !cli.no_escalation,
                 ..Default::default()
             };
 
@@ -306,6 +317,8 @@ async fn main() -> Result<()> {
                     model_chain: model_chain.clone(),
                     generator_config,
                     max_ticks,
+                    escalation_threshold: cli.escalation_threshold,
+                    escalation_enabled: !cli.no_escalation,
                     ..Default::default()
                 };
 
@@ -422,6 +435,8 @@ async fn main() -> Result<()> {
                     model_chain: model_chain.clone(),
                     generator_config: generator_config.clone(),
                     max_ticks,
+                    escalation_threshold: cli.escalation_threshold,
+                    escalation_enabled: !cli.no_escalation,
                     decay_enabled: *decay,
                     inhibition_enabled: *inhibition,
                     examples_enabled: *examples,
