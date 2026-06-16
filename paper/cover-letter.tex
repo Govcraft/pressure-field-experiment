@@ -5,41 +5,29 @@
 \usepackage{enumitem}
 \setlength{\parskip}{0.8em}
 
-\signature{Roland R. Rodriguez, Jr.}
+\signature{Rolando Rene Rodriguez, Jr.}
 \address{}
 
 \begin{document}
 
-\begin{letter}{Prof.\ Stephen Cranefield, Dr.\ Shuyue Hu,\\
+\begin{letter}{H. Van Dyke Parunak\\
+Editor, \emph{Autonomous Agents and Multi-Agent Systems}\\
+Springer Nature\\[0.3em]
+\emph{cc:} Prof.\ Stephen Cranefield, Dr.\ Shuyue Hu,\\
 Prof.\ Bastin Tony Roy Savarimuthu, Dr.\ Surangika Ranathunga\\
-Guest Editors, Special Issue: ``When Foundation Models Meet Multi-Agent Systems''\\
-Journal of Autonomous Agents and Multi-Agent Systems}
+Guest Editors, Special Issue: ``When Foundation Models Meet Multi-Agent Systems''}
 
-\opening{Dear Guest Editors,}
+\opening{Dear Dr Parunak,}
 
-I am pleased to submit ``Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay'' for your special issue. This paper demonstrates that foundation model capabilities and MAS coordination mechanisms are \emph{mutually enabling}: FMs solve the action enumeration problem that limited stigmergic approaches to discrete spaces, while MAS pressure gradients provide principled criteria for combining FM outputs---replacing ad-hoc voting with quality-based selection. Section~7.7 explicitly articulates this FM-MAS reciprocity, directly addressing the special issue's call to explore how FMs and MAS can serve as solutions to each other's challenges.
+Please find attached the revised manuscript and a point-by-point response for Submission ID f265ac80-65ad-483a-bcfc-21d010e52041, prepared in response to your decision of 25 April 2026 inviting major revision.
 
-\textbf{Connections to the AAMAS Community.}
-The manuscript engages deeply with the MAS literature across multiple dimensions:
-\begin{itemize}[nosep,topsep=2pt]
-\item \emph{Classic MAS coordination theory}: We position pressure-field coordination against Horling \& Lesser's organizational paradigms, GPGP's commitment protocols, SharedPlans/Joint Intentions, and Malone \& Crowston's coordination framework---showing how artifact refinement with measurable quality signals enables architectural simplification.
-\item \emph{Norms and self-organization}: We connect pressure functions to the emerging literature on norm emergence in LLM-based agent societies, including your own work on normative reasoning for MAS (Savarimuthu et al., COINE 2024) and norm violation detection (He et al., COINE 2024), as well as Amaral et al.'s work on generating organizations for MAS (JAAMAS 2023).
-\item \emph{Environment-mediated and implicit coordination}: A new subsection surveys the growing body of work on coordination beyond explicit message passing---Park et al.'s generative agents, Agashe et al.'s LLM-Coordination Benchmark (showing LLMs excel at environment comprehension over Theory of Mind), blackboard architectures, implicit signaling, and Riedl's information-theoretic emergence framework.
-\item \emph{Scaling and communication overhead}: New coverage of Kim et al.'s study of 180 agent configurations (finding coordination overhead degrades performance by 39--70\% on sequential tasks), Zhang et al.'s AgentPrune (87\% communication cost reduction), and Qian et al.'s collaborative scaling law---quantitative motivation for pressure-field's $O(1)$ communication overhead.
-\item \emph{LLM agents for planning and scheduling}: New subsection contextualizing our meeting room scheduling evaluation within Valmeekam et al.'s planning limitations, Abgaryan et al.'s LLM scheduling, Gong et al.'s MindAgent benchmark, and Abdelnabi et al.'s multi-party negotiation.
-\item \emph{Modern swarm intelligence}: Expanded coverage of LLM-based stigmergy including Jimenez Romero et al.'s pheromone-based LLM agents, Feng et al.'s Model Swarms (ICML 2025), stigmergic RL (Xu et al., IEEE TNNLS), and SwarmBench evaluation of LLM swarm intelligence.
-\item \emph{FM+MAS surveys}: The paper now cites and positions itself within three major surveys (Guo et al./IJCAI, Tran et al., Pallagani et al./ICAPS) that map the LLM multi-agent landscape.
-\end{itemize}
+\textbf{Reframing.}
+The revision recasts the contribution as an instantiation of the symmetric-stigmergic schema you formalize in \emph{Insects and Agents: Extending the Metaphor} (MABS25). Foundation-model agents are deployed stigmergically, coordinating only through a shared artifact, and the paper maps each primitive of the schema concretely: the environment state $es_i$ is a region's pressure moving average, inhibition window, and provenance; the agent adjacency $aa(t)$ emerges from a two-stage validation gate; the environment-to-agent arrow $ASU$, absent from classic asymmetric stigmergy, is realized as band and model escalation when the field stalls; and the two pheromone stores realize $ESD$ as evaporation. The method uses the three-operator vocabulary (aggregate, propagate, evaporate) of \emph{Agents, Pheromones, and Mean-Field Models} (AAMAS11), and the related work is rebuilt as a single lineage from digital pheromones to language-model agents.
 
-The bibliography includes 48 references, with the majority from 2023--2025 and spanning venues including AAMAS, IJCAI, ICLR, ICML, NeurIPS, ACL, NAACL, JAAMAS, and COINE.
+\textbf{Your six points.}
+Each is addressed substantively. The novel terminology is dropped for pheromone and stigmergy vocabulary, and the title changes accordingly. Pheromone propagation over the domain's temporal structure (the $ESP$ operator, one hop per tick over time-block adjacency) is now implemented in the kernel and ablated, answering the impoverished-structure concern directly. The manuscript is cut from 80 to 52 pages. The small problem scale is acknowledged plainly as a stated limitation rather than worked around. And on accurate reporting: a code audit found a system-prompt confound in the baselines and a pressure-metric mismatch across strategies, both now fixed, so every result derives from a complete regenerated 1350-trial grid on one authoritative metric, with each claim scoped or accompanied by a confidence interval.
 
-\textbf{Empirical Results.}
-Across 1350 trials on meeting room scheduling---a representative resource allocation problem with soft constraints: pressure-field achieves 30$\times$ higher solve rates than hierarchical control (48.5\% vs 1.5\%), 4$\times$ higher than conversation-based approaches (48.5\% vs 11.1\%), all comparisons highly significant ($p < 0.001$, Cohen's $h > 1.0$). On medium and hard problems, only pressure-field achieves non-zero solve rates. These results challenge the assumption that explicit coordination outperforms implicit coordination.
-
-\textbf{Theoretical Results.}
-The paper provides convergence guarantees under pressure alignment (Theorem~1), $O(1)$ coordination overhead (Theorem~4), and proves temporal decay is necessary to escape local minima (Theorem~3).
-
-This work has not been published in a peer-reviewed venue. An arXiv preprint of this manuscript exists (January 2026).
+The work fits the special issue ``When Foundation Models Meet Multi-Agent Systems'' through a bidirectional mechanism: foundation models supply the open-ended actions classic stigmergy could not enumerate, and symmetric-stigmergic coordination supplies the pressure-based criterion that combines those proposals and escalates model capability. The point-by-point response treats each item with pointers into the revised manuscript.
 
 \closing{Sincerely,}
 

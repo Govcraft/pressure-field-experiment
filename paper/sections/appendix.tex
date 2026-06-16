@@ -4,12 +4,13 @@
 %% Note: \appendix command is handled by \begin{appendices} in main document
 
 \section{Experimental Protocol}
+\label{app:protocol}
 
 This appendix provides complete reproducibility information for all experiments.
 
 \subsection{Hardware and Software}
 
-\textbf{Hardware:} NVIDIA RTX 4070 8GB \ac{gpu}, AMD Ryzen 9 7940HS, 64GB RAM
+\textbf{Hardware:} NVIDIA RTX PRO 5000 Laptop \ac{gpu} (Blackwell, 24GB), Intel Core Ultra 9 275HX, 128GB RAM
 
 \textbf{Software:}
 \begin{itemize}
@@ -18,40 +19,22 @@ This appendix provides complete reproducibility information for all experiments.
 \item Models: \texttt{qwen2.5:0.5b}, \texttt{qwen2.5:1.5b}, \texttt{qwen2.5:3b}
 \end{itemize}
 
+The environment runtime that ticks the logical clock, evaporates the pheromone stores, propagates activation, dispatches proposals, and serializes writes is implemented by a component named \texttt{KernelCoordinator}.
+
 \subsection{Model Configuration}
 
-Models are served via Ollama with a system prompt configured for schedule optimization:
+Models are served via Ollama with a fixed system prompt:
 
 \begin{lstlisting}
-You optimize meeting room schedules. Given a schedule with gaps or conflicts,
-propose ONE change: move, swap, or reschedule a meeting to reduce gaps,
-overlaps, and utilization variance. Return ONLY your proposed change
-in the format: MOVE meeting_id TO room day start_time
+You are a meeting room scheduler. Output schedules in the exact format
+requested. No explanations, just the schedule.
 \end{lstlisting}
 
-For multi-model setups (model escalation), models share a single Ollama instance with automatic routing based on model name.
+A patch is the model's proposed schedule for one time block, parsed from a per-room listing; applying it rewrites that block only, and any meeting displaced by the rewrite returns to the unscheduled pool. For multi-model setups (model escalation), models share a single Ollama instance with automatic routing based on model name.
 
 \subsection{Sampling Diversity}
 
-The experiment framework overrides default sampling parameters with three exploration bands per \ac{llm} call:
-
-\begin{table}[htbp]
-\centering
-\small
-\begin{tabular}{@{}lcc@{}}
-\toprule
-\textbf{Band} & \textbf{Temperature} & \textbf{Top-p} \\
-\midrule
-Exploitation & 0.15--0.35 & 0.80--0.90 \\
-Balanced & 0.35--0.55 & 0.85--0.95 \\
-Exploration & 0.55--0.85 & 0.90--0.98 \\
-\bottomrule
-\end{tabular}
-\caption{Sampling parameter ranges. Each \acs{llm} call randomly samples from one band.}
-\label{tab:sampling}
-\end{table}
-
-This diversity prevents convergence to local optima and enables exploration of the solution space.
+Pheromone-field \ac{llm} calls sample temperature and top-p within one of three bands (Table~\ref{tab:bands}); the band escalates with stagnation as described in Section~\ref{sec:escalation}. This diversity prevents convergence to local optima.
 
 \subsection{Baseline Implementation Details}
 
@@ -88,7 +71,7 @@ Output the schedule for this time block.
 
 \textbf{Region selection per strategy:}
 \begin{itemize}
-\item \textbf{Pressure-field}: Multiple agents select regions in parallel based on pressure gradients
+\item \textbf{Pheromone-field}: Multiple agents select regions in parallel based on pressure gradients
 \item \textbf{Hierarchical}: Always selects the single highest-pressure region
 \item \textbf{Sequential}: Round-robin through regions in fixed order
 \item \textbf{Random}: Uniform random region selection
@@ -96,20 +79,20 @@ Output the schedule for this time block.
 
 \textbf{Patch validation per strategy:}
 \begin{itemize}
-\item \textbf{Pressure-field}: Validates all patches; applies only those reducing pressure
+\item \textbf{Pheromone-field}: Validates all patches; applies only those reducing pressure
 \item \textbf{Hierarchical}: Validates single patch; applies only if pressure reduces
 \item \textbf{Sequential/Random}: No validation; applies any syntactically valid patch
 \end{itemize}
 
-\textbf{Why ``one patch per tick'' for hierarchical?} This asymmetry is inherent to the coordination paradigm, not an implementation choice. Hierarchical control requires the manager to: (1) observe global state, (2) select a target region, (3) delegate to a worker, (4) receive the proposed patch, and (5) validate before applying. Delegating to $K$ workers simultaneously would require additional coordination protocols---work distribution to avoid conflicts, result aggregation, tie-breaking when multiple patches target overlapping state---that would transform hierarchical control into a fundamentally different architecture. The sequential bottleneck is the cost of centralized decision-making. Pressure-field avoids this overhead through stigmergic coordination: agents observe shared state independently and propose patches without central delegation, enabling natural parallelism.
+\textbf{Why ``one patch per tick'' for hierarchical?} The asymmetry is inherent to the paradigm, not an implementation choice; the rationale is given with the baselines in Section~\ref{sec:experiments}. Operationally, the hierarchical controller observes global state, selects a target region, delegates to a worker, receives the proposed patch, and validates before applying, all within one tick.
 
-\textbf{Conversation baseline implementation} The conversation baseline implements AutoGen-style multi-agent dialogue with three roles: a \emph{Coordinator} that selects which region to address, a \emph{Proposer} that suggests schedule changes, and a \emph{Validator} that critiques proposals. Each tick proceeds as follows: (1) the Coordinator identifies a high-pressure region (1 \ac{llm} call), (2) the Proposer and Validator engage in up to 5 dialogue turns (2 calls per turn), (3) if the Validator approves, the patch is applied. This yields 4--12 \ac{llm} calls per tick for a single region, compared to pressure-field's $K$ parallel calls across $K$ regions. The conversation terminates when the Validator approves or the turn limit is reached. We use fixed sampling parameters (T=0.3, top-p=0.9) for structured dialogue, lower than pressure-field's exploration bands. Note that this represents one instantiation of conversation-based coordination inspired by AutoGen's design principles; actual AutoGen deployments may use different role configurations, turn protocols, or termination conditions.
+\textbf{Conversation baseline implementation} The conversation baseline implements AutoGen-style multi-agent dialogue with three roles: a \emph{Coordinator} that selects which region to address, a \emph{Proposer} that suggests schedule changes, and a \emph{Validator} that critiques proposals. Each tick proceeds as follows: (1) the Coordinator identifies a high-pressure region (1 \ac{llm} call), (2) the Proposer and Validator engage in up to 5 dialogue turns (2 calls per turn), (3) if the Validator approves, the patch is applied. This yields 4--12 \ac{llm} calls per tick for a single region, compared to pheromone-field's concurrent proposals across the distinct high-pressure regions of that tick. The conversation terminates when the Validator approves or the turn limit is reached. We use fixed sampling parameters (T=0.3, top-p=0.9) for structured dialogue, lower than pheromone-field's exploration bands. Note that this represents one instantiation of conversation-based coordination inspired by AutoGen's design principles; actual AutoGen deployments may use different role configurations, turn protocols, or termination conditions.
 
 \textbf{Fairness guarantees for baseline comparison:} To ensure the conversation baseline had equal opportunity to succeed:
 \begin{itemize}
-\item \textbf{Same models}: All strategies use identical model chains (qwen2.5:0.5b $\to$ 1.5b $\to$ 3b) with the same escalation triggers
+\item \textbf{Same models}: All strategies use the identical model chain (qwen2.5:0.5b $\to$ 1.5b $\to$ 3b) with the same model-escalation trigger (21 stalled ticks). Band escalation is part of the pheromone-field mechanism only; the conversation baseline uses fixed sampling (T=0.3, top-p=0.9) suited to structured dialogue
 \item \textbf{Same problem access}: All strategies observe identical schedule state, room capacities, meeting requirements, and constraint information
-\item \textbf{Retry logic}: The conversation baseline includes up to 5 dialogue turns per region, allowing the Proposer to refine proposals based on Validator feedback---this is more opportunity for refinement than pressure-field's single-shot proposals
+\item \textbf{Retry logic}: The conversation baseline includes up to 5 dialogue turns per region, allowing the Proposer to refine proposals based on Validator feedback---this is more opportunity for refinement than pheromone-field's single-shot proposals
 \item \textbf{Same tick budget}: All strategies receive the same 50-tick limit to solve each problem
 \item \textbf{Output parsing}: All strategies use identical response parsing and schedule extraction logic
 \end{itemize}
@@ -124,7 +107,7 @@ Each trial generates its problem from a seed:
 \text{seed} = \text{trial} \times 1000 + \text{agent\_count}
 \]
 
-Trial 5 with 2 agents yields seed 5002, producing identical meeting configurations whether evaluated with pressure-field, conversation, or hierarchical coordination.
+Trial 5 with 2 agents yields seed 5002, producing identical meeting configurations whether evaluated with pheromone-field, conversation, or hierarchical coordination.
 
 The seed governs all stochastic generation:
 \begin{itemize}
@@ -137,54 +120,24 @@ The seed governs all stochastic generation:
 
 \subsection{Experiment Commands}
 
-\textbf{Main Grid (Strategy Comparison):}
+All experiments run with the default 50-tick budget; the CLI strategy key \texttt{pressure\_field} is the project's historical name for the pheromone-field strategy.
+
+\textbf{Main Grid (Strategy Comparison):} all five strategies, \{1, 2, 4\} agents, \{easy, medium, hard\}, by default:
 \begin{lstlisting}
-schedule-experiment --host http://localhost:11434 \
-  grid --trials 30 \
-  --strategies pressure_field,sequential,random,hierarchical,conversation \
-  --agents 1,2,4 --difficulties easy,medium,hard \
-  --max-ticks 50
+schedule-experiment \
+  --model-chain qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b \
+  grid --trials 30 --output results/main-grid.json
 \end{lstlisting}
 
-\textbf{Ablation Study:}
+\textbf{Ablation Study (9 arms):}
 \begin{lstlisting}
-schedule-experiment --host http://localhost:11434 \
-  ablation --trials 30 --agents 2 --difficulty easy --max-ticks 50
+schedule-experiment \
+  --model-chain qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b \
+  ablation --trials 30 --agents 2 --difficulty easy \
+  --output results/ablation.json
 \end{lstlisting}
 
-\textbf{Scaling Analysis:}
-\begin{lstlisting}
-schedule-experiment --host http://localhost:11434 \
-  grid --trials 30 \
-  --strategies pressure_field \
-  --agents 1,2,4 --difficulties easy \
-  --max-ticks 50
-\end{lstlisting}
-
-\textbf{Band and Model Escalation:}
-\begin{lstlisting}
-# Full escalation chain enabled by default
-# Band escalation: Exploitation -> Balanced -> Exploration (7 ticks each)
-# Model escalation: 0.5b -> 1.5b -> 3b (after 21 ticks at high pressure)
-schedule-experiment --host http://localhost:11434 \
-  grid --trials 30 --agents 2 --difficulties medium \
-  --max-ticks 100
-\end{lstlisting}
-
-\textbf{Difficulty Scaling:}
-\begin{lstlisting}
-# Easy: 3 rooms, 20 meetings, 70% pre-scheduled
-schedule-experiment --host http://localhost:11434 \
-  grid --trials 30 --agents 2 --difficulties easy --max-ticks 50
-
-# Medium: 5 rooms, 40 meetings, 50% pre-scheduled
-schedule-experiment --host http://localhost:11434 \
-  grid --trials 30 --agents 2 --difficulties medium --max-ticks 50
-
-# Hard: 5 rooms, 60 meetings, 30% pre-scheduled
-schedule-experiment --host http://localhost:11434 \
-  grid --trials 30 --agents 2 --difficulties hard --max-ticks 100
-\end{lstlisting}
+The scaling analysis (Section~\ref{sec:scaling}) and difficulty breakdown (Section~\ref{sec:difficulty}) are slices of the main grid, not separate runs, so they inherit the grid's seeds and budgets.
 
 \subsection{Metrics Collected}
 
@@ -192,7 +145,7 @@ Each experiment records:
 \begin{itemize}
 \item \texttt{solved}: Boolean indicating all meetings scheduled with zero overlaps
 \item \texttt{total\_ticks}: Iterations to solve (or max if unsolved)
-\item \texttt{pressure\_history}: Pressure value at each tick (gaps + overlaps + util\_var + unscheduled)
+\item \texttt{pressure\_history}: Reported pressure at each tick ($1.0 \cdot \text{unscheduled} + 10.0 \cdot \text{overlaps}$, the one authoritative metric)
 \item \texttt{band\_escalation\_events}: Sampling band changes (tick, from\_band, to\_band)
 \item \texttt{model\_escalation\_events}: Model tier changes (tick, from\_model, to\_model)
 \item \texttt{final\_model}: Which model tier solved the schedule
@@ -203,24 +156,22 @@ Each experiment records:
 
 Each configuration runs 30 independent trials with different random seeds to ensure reliability. Results report mean solve rates and tick counts across trials.
 
-\subsection{Estimated Runtime}
+\subsection{Measured Runtime}
+
+Table~\ref{tab:runtime} reports wall-clock time for the two experiment campaigns on the hardware of Section~\ref{app:protocol}. The main grid (1350 trials) and the nine-arm ablation (270 trials) together took just under 100 hours of \acs{gpu} time. Per-trial cost concentrates on the harder instances, where pressure stagnation escalates proposals to the larger models in the chain.
 
 \begin{table}[htbp]
 \centering
 \small
 \begin{tabular}{@{}lccc@{}}
 \toprule
-\textbf{Experiment} & \textbf{Configurations} & \textbf{Trials} & \textbf{Est.\ Time} \\
+\textbf{Experiment} & \textbf{Configurations} & \textbf{Trials each} & \textbf{Wall time} \\
 \midrule
-Main Grid & 45 & 30 & 5 hours \\
-Ablation & 5 & 30 & 1 hour \\
-Scaling & 3 & 30 & 45 min \\
-Difficulty & 15 & 30 & 2.5 hours \\
-\midrule
-\textbf{Total} & & & \textbf{$\sim$9 hours} \\
+Main Grid & 45 & 30 & 58.9 h \\
+Ablation & 9 & 30 & 41.6 h \\
 \bottomrule
 \end{tabular}
-\caption{Estimated runtime for all experiments on NVIDIA RTX 4070 8GB \acs{gpu}.}
+\caption{Measured wall time on the NVIDIA RTX PRO 5000 \acs{gpu} (24GB). The scaling and difficulty analyses are slices of the main grid.}
 \label{tab:runtime}
 \end{table}
 
@@ -228,7 +179,7 @@ Difficulty & 15 & 30 & 2.5 hours \\
 \section{Pressure Alignment Verification}
 \label{app:coupling}
 
-This appendix verifies that the meeting scheduling domain satisfies the alignment condition (Definition~2) required for convergence (Theorem~1).
+This appendix verifies that the meeting scheduling domain satisfies the alignment condition required for convergence (Lemma~\ref{thm:convergence}).
 
 \subsection{Per-Region Pressure Components}
 
@@ -254,112 +205,42 @@ For the alignment condition, we need $|P_j(s') - P_j(s)| \leq \epsilon$ for all 
 \item It has \emph{zero effect} on any other region $j$'s pressure, since $j$'s components depend only on meetings within $j$'s time slots.
 \end{enumerate}
 
-\textbf{Note on attendee constraints}: While the same attendee may have meetings in multiple time blocks, our overlap sensor counts overlaps \emph{within each block independently}. Moving a meeting from region $i$ to region $j$ may create or resolve overlaps in region $j$, but this is a local effect on $j$'s pressure, not a coupling effect where modifying region $i$ affects region $j$ through some indirect mechanism.
+\textbf{Note on cross-region movement}: A patch rewrites exactly one block, so no single action modifies two regions. A meeting crosses blocks in two steps through the unscheduled pool: one patch displaces it (changing only the evicting region's components and the global unscheduled term, which belongs to no region), and a later patch on another region places it. Each step changes only its own region's per-region pressure, so $\epsilon = 0$ holds for the actual action set. The acceptance gate closes the remaining gap: because it evaluates the total metric $P$, including the unscheduled term, a patch that trades an overlap for pool meetings is accepted exactly when the total strictly decreases, so alignment holds by construction as well as by separability.
 
 \subsection{Empirical Validation}
 
-Analysis of 270 pressure-field trials confirms separability:
+Analysis of the pheromone-field trials confirms separability:
 \begin{itemize}
-\item Total tick-to-tick transitions analyzed: 9,873
-\item Transitions with pressure improvement: 1,160 (11.7\%)
-\item Transitions with pressure degradation: 0 (0.0\%)
-\item Transitions with no change: 8,713 (88.3\%)
+\item Total tick-to-tick transitions analyzed: $9{,}856$
+\item Transitions with pressure improvement: $1{,}102$
+\item Transitions with pressure degradation: $2$
+\item Transitions with no change: $8{,}752$
 \end{itemize}
 
-The complete absence of pressure degradation is consistent with separable pressure: each accepted patch reduces local pressure, which directly reduces global pressure without adverse effects on other regions. (Patches that would increase local pressure are rejected by validation.)
+The near-total absence of pressure degradation ($2$ of $9{,}856$ transitions, $0.02\%$) is consistent with separable pressure: each accepted patch reduces local pressure, which directly reduces total pressure without adverse effects on other regions, because patches that would increase local pressure are rejected by validation.
 
-Mean improvement magnitude: 2.67 pressure units. For context, initial problem pressure averages 12.7 units (range 0--42), so each successful patch reduces pressure by approximately 21\% of the typical starting value. This substantially exceeds any plausible coupling bound, confirming that local improvements reliably translate to global improvements.
+Mean improvement magnitude is $2.59$ pressure units against a mean initial pressure of $12.8$ units, so each accepted patch removes a substantial fraction of the typical starting pressure. This exceeds any plausible coupling bound, confirming that local improvements translate to global improvements.
 
-\textbf{Verification of $\delta_{\min} > 0$}: Theorem~\ref{thm:convergence} requires $\delta_{\min} > (n-1)\epsilon$. With $\epsilon = 0$ (separable pressure), this reduces to $\delta_{\min} > 0$. Empirically, the minimum observed pressure reduction across all 1,160 accepted patches is 1.0 pressure units, confirming $\delta_{\min} \geq 1 > 0$. The theorem's convergence guarantee therefore applies to this domain.
+\textbf{Verification of $\delta_{\min} > 0$}: Lemma~\ref{thm:convergence} requires $\delta_{\min} > (n-1)\epsilon$. With $\epsilon = 0$ (separable pressure), this reduces to $\delta_{\min} > 0$. Empirically, the minimum observed pressure reduction across accepted patches is $1.0$ pressure units, confirming $\delta_{\min} > 0$. The convergence guarantee therefore applies to this domain.
 
 
-\section{Theorem Proofs}
+\section{Proof of the Convergence Lemma}
 \label{app:proofs}
 
-This appendix provides complete proofs for the theoretical results in Section~4. Theorem~\ref{thm:basin-quality} (Basin Quality) is omitted here as its proof is trivial and appears in full in the main text.
-
-\subsection{Proof of Theorem~\ref{thm:convergence} (Convergence)}
+This appendix proves Lemma~\ref{thm:convergence} (Termination of Aligned Descent) from Section~\ref{sec:theoretical-analysis}.
 
 \begin{proof}
-We show that the system reaches a stable basin within the stated bound.
-
-\textbf{Setup.} Let $P^t = P(s^t)$ denote global pressure at tick $t$. Under $\epsilon$-bounded coupling, when a patch reduces local pressure $P_i$ by $\delta_i$, global pressure changes by:
+Let $P^t = P(s^t)$ denote total pressure at tick $t$. Under $\epsilon$-bounded coupling, when a patch reduces a region's own pressure by $\delta_i$, the total changes by
 \[
-P^{t+1} - P^t = -\delta_i + \sum_{j \neq i} (P_j(s^{t+1}) - P_j(s^t))
+P^{t+1} - P^t = -\delta_i + \sum_{j \neq i} (P_j(s^{t+1}) - P_j(s^t)),
 \]
-By bounded coupling, $|P_j(s^{t+1}) - P_j(s^t)| \leq \epsilon$ for each $j \neq i$. With $n$ regions:
+and bounded coupling gives $|P_j(s^{t+1}) - P_j(s^t)| \leq \epsilon$ for each of the $n-1$ other regions, so
 \[
-P^{t+1} - P^t \leq -\delta_i + (n-1)\epsilon
+P^{t+1} - P^t \leq -\delta_i + (n-1)\epsilon.
 \]
-
-\textbf{Progress guarantee.} If $\delta_i \geq \delta_{\min}$ and $\delta_{\min} > (n-1)\epsilon$, then:
+If $\delta_i \geq \delta_{\min}$ and $\delta_{\min} > (n-1)\epsilon$, then each productive tick lowers the total by at least $\delta_{\min} - (n-1)\epsilon > 0$. Since $P(s) \geq 0$ for all states, a non-negative quantity decreasing by this fixed positive amount per productive tick reaches a state where no region exceeds $\tau_{\text{act}}$ within
 \[
-P^{t+1} - P^t \leq -\delta_{\min} + (n-1)\epsilon < 0
+T \leq \frac{P_0}{\delta_{\min} - (n-1)\epsilon}
 \]
-Each tick with an applied patch reduces global pressure by at least $\delta_{\min} - (n-1)\epsilon > 0$.
-
-\textbf{Termination.} Since $P(s) \geq 0$ for all states and pressure decreases by a fixed minimum $\Delta = \delta_{\min} - (n-1)\epsilon$ per tick (when patches are applied), the system must reach a state where no region exceeds $\tau_{\text{act}}$ within:
-\[
-T \leq \frac{P_0}{\Delta} = \frac{P_0}{\delta_{\min} - (n-1)\epsilon}
-\]
-ticks. At this point, no region activates, and the system has reached a stable basin.
-
-\textbf{Stability maintenance.} The decay constraint $\Delta_f > 1 - e^{-\lambda_f \cdot \tau_{\text{inh}}}$ ensures that fitness reinforcement from the final patches exceeds decay during the inhibition period. This prevents immediate re-activation after reaching stability.
-\end{proof}
-
-\subsection{Proof of Theorem~\ref{thm:basin-separation} (Basin Separation)}
-
-\begin{proof}
-We show that distinct stable basins are separated by pressure barriers of height at least $\tau_{\text{act}}$.
-
-\textbf{Basin definition.} A stable basin $B$ is a connected region of state space where all states satisfy $P_i(s) < \tau_{\text{act}}$ for all regions $i$. Within a basin, no agent takes action (pressure below activation threshold).
-
-\textbf{Transition requirement.} To move from basin $B_1$ to a distinct basin $B_2$, the system must pass through states not in either basin. At the boundary of $B_1$, at least one region $i$ must have $P_i(s) \geq \tau_{\text{act}}$ (otherwise, by continuity under separable pressure, the state would still be in $B_1$).
-
-\textbf{Barrier height.} The minimum pressure exceedance required to exit a basin is $\tau_{\text{act}}$. This defines the barrier height separating basins.
-
-\textbf{Implication for decay.} Without decay, once the system enters a basin, it remains there indefinitely---fitness remains high, preventing re-activation. Decay erodes fitness over time, eventually allowing pressure to exceed $\tau_{\text{act}}$ and enabling transition to potentially lower-pressure basins.
-\end{proof}
-
-\subsection{Proof of Theorem~\ref{thm:linear-scaling} (Linear Scaling)}
-
-\begin{proof}
-We analyze the per-tick computational complexity.
-
-\textbf{Signal computation.} For each of $m$ regions, computing $d$-dimensional signals requires $O(d)$ operations (reading local content, computing quality metrics). Total: $O(m \cdot d)$.
-
-\textbf{Pressure computation.} For each region, computing pressure from $k$ signal axes requires $O(k)$ operations (weighted sum). Total: $O(m \cdot k)$.
-
-\textbf{Patch proposal.} Each of $a$ actors proposes patches for activated regions. In the worst case (all regions activated), this is $O(m \cdot a)$ proposals. Each proposal involves an \ac{llm} call, which dominates wall-clock time but is constant per call.
-
-\textbf{Selection.} Sorting $O(m \cdot a)$ candidate patches by quality requires $O(m \cdot a \cdot \log(m \cdot a))$ comparisons. Greedy selection of non-conflicting patches is $O(m \cdot a)$ with appropriate data structures.
-
-\textbf{Coordination overhead.} Critically, agents share no messages. Each agent reads shared artifact state (read-only) and writes proposed patches to a central queue. No inter-agent communication occurs. The fork pool for parallel validation has fixed size $K$, contributing $O(K)$ overhead independent of agent count.
-
-\textbf{Total.} Summing components: $O(m \cdot d + m \cdot k + m \cdot a + m \cdot a \cdot \log(ma) + K) = O(m \cdot (d + k + a \cdot \log(ma)))$, independent of agent count $n$ beyond its contribution to $a$.
-\end{proof}
-
-\subsection{Proof of Theorem~\ref{thm:parallel-convergence} (Parallel Convergence)}
-
-\begin{proof}
-We extend Theorem~\ref{thm:convergence} to the parallel setting.
-
-\textbf{Setup.} Suppose $K$ patches are validated in parallel per tick, targeting disjoint regions $i_1, \ldots, i_K$.
-
-\textbf{Combined pressure reduction.} Under $\epsilon$-bounded coupling, each patch $k$ targeting region $i_k$ reduces local pressure by at least $\delta_{\min}$. The global pressure change from patch $k$ is:
-\[
-\Delta P_k \leq -\delta_{\min} + (n-1)\epsilon
-\]
-
-When patches target disjoint regions, their effects on global pressure are additive (no double-counting of coupling effects within the modified regions). The combined reduction is:
-\[
-P^{t+1} - P^t \leq \sum_{k=1}^{K} \Delta P_k \leq K \cdot (-\delta_{\min} + (n-1)\epsilon)
-\]
-
-\textbf{Convergence bound.} With combined reduction $K \cdot (\delta_{\min} - (n-1)\epsilon)$ per tick:
-\[
-T \leq \frac{P_0}{K \cdot (\delta_{\min} - (n-1)\epsilon)}
-\]
-
-\textbf{Conflict handling.} When multiple patches target the same region, only one is selected (highest quality). This reduces effective parallelism but maintains correctness---the selected patch still provides at least $\delta_{\min} - (n-1)\epsilon$ reduction.
+ticks; at that point no actor is dispatched.
 \end{proof}

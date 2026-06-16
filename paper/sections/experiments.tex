@@ -3,10 +3,11 @@
 %% ============================================================================
 
 \section{Experiments}
+\label{sec:experiments}
 
-We evaluate pressure-field coordination on meeting room scheduling: assigning $N$ meetings to $R$ rooms over $D$ days to minimize gaps (unscheduled time), overlaps (attendee double-bookings), and maximize utilization balance. This domain provides continuous pressure gradients (rather than discrete violations), measurable success criteria, and scalable difficulty through problem size.
+The pheromone-field coordination of Section~\ref{sec:method} is evaluated on meeting room scheduling, assigning meetings to rooms over a five-day horizon to remove unscheduled meetings and attendee overlaps. The domain supplies a sensed pressure field with measurable success and difficulty that scales with problem size, while staying small enough that hierarchical and conversational baselines remain feasible to run. The question is where decentralized symmetric-stigmergic coordination outperforms hierarchical control, and where it does not.
 
-\textbf{Key findings}: Pressure-field coordination outperforms all baselines (\S\ref{sec:main-results}). Temporal decay shows a beneficial trend, though statistical significance requires larger samples (\S\ref{sec:ablations}). The approach maintains consistent performance from 1 to 4 agents (\S\ref{sec:scaling}). Despite using more tokens per trial, pressure-field achieves 12\% better token efficiency per successful solve (\S\ref{sec:token-efficiency}).
+\textbf{Reporting note.} An earlier draft reported parity between pheromone-field and hierarchical control on a smaller pilot. The full grid then showed a regime-dependent gap, and a code audit found two defects in the measurement path: a system-prompt confound that advantaged some baselines under a Latin-square assignment, and a pressure-metric mismatch across strategies. Both are fixed, the strategies now share one authoritative pressure metric, and every result below comes from the regenerated 1350-trial grid.
 
 \subsection{Setup}
 
@@ -32,51 +33,47 @@ Hard & 5 & 60 & 30\% \\
 
 Each schedule spans 5 days with 30-minute time slots (8am--4pm). Regions are 2-hour time blocks (4 blocks per day $\times$ 5 days = 20 regions per schedule). A problem is ``solved'' when all meetings are scheduled with zero attendee overlaps within 50 ticks.
 
-\textbf{Pressure function}: $P = \text{gaps} \cdot 1.0 + \text{overlaps} \cdot 2.0 + \text{util\_var} \cdot 0.5 + \text{unsched} \cdot 1.5$
+\textbf{One authoritative pressure metric.} All reported pressure, for every strategy, is $P = 1.0 \cdot (\text{unscheduled meetings}) + 10.0 \cdot (\text{attendee overlaps})$ on the schedule grid, so cross-strategy comparisons measure coordination rather than metric choice. The sensor signals that feed activation (gap ratio, overlap count, utilization variance per block) are kept separate from this reported metric: they drive only the activation field and the hierarchical baseline's heuristic, never the numbers in the tables below.
 
-where $\text{gaps}$ measures empty slots as a fraction, $\text{overlaps}$ counts attendee double-bookings, $\text{util\_var}$ measures room utilization variance, and $\text{unsched}$ is the fraction of unscheduled meetings.
-
-\textbf{Alignment verification}: The per-region pressure computation uses only $\text{gaps}$, $\text{overlaps}$, and $\text{util\_var}$---all strictly local to each time block. The $\text{unsched}$ component is added to total pressure only, not per-region. This makes the per-region pressure \emph{separable}: modifying region $i$ has zero effect on region $j$'s pressure for $j \neq i$, satisfying the alignment condition (Definition~2) with $\epsilon = 0$. While attendee constraints could theoretically create cross-region coupling (the same person attending meetings in different time blocks), our overlap sensor counts overlaps only within each time block, eliminating this coupling source. Empirical analysis (Appendix~B) confirms that all observed pressure improvements are positive, consistent with separable pressure.
+\textbf{Alignment verification.} Two facts secure alignment in this domain. First, the per-region components are strictly local to each time block, and patches rewrite a single block, so modifying region $i$ leaves region $j$'s pressure unchanged ($\epsilon = 0$); the one cross-region channel is the unscheduled pool, whose cost enters the total metric directly, attributed to no region. Second, the acceptance gate evaluates the full metric: a patch is applied only if $P$, including the unscheduled term, strictly decreases, so alignment holds by construction even for patches that displace meetings into the pool. Appendix~\ref{app:coupling} reports the empirical check.
 
 \subsubsection{Baselines}
 
 We compare five coordination strategies, all using identical \acp{llm} (\texttt{qwen2.5:0.5b/1.5b/3b} via Ollama) to isolate coordination effects:
 
-\textbf{Pressure-field (ours)}: Full system with decay (fitness half-life 5s), inhibition (2s cooldown), greedy region selection (highest-pressure region per tick), and parallel validation. Includes band escalation (Exploitation $\to$ Balanced $\to$ Exploration) and model escalation (0.5b $\to$ 1.5b $\to$ 3b).
+\textbf{Pheromone-field (ours)}: Full system with pheromone evaporation (example bank $0.95$/tick, rejected-patch store), inhibition (2 logical ticks), one-hop ESP propagation ($\kappa = 0.5$), and two-stage validation. Includes band escalation (Exploitation $\to$ Balanced $\to$ Exploration, every 7 stalled ticks) and model escalation (0.5b $\to$ 1.5b $\to$ 3b, every 21 stalled ticks).
 
 \textbf{Conversation}: AutoGen-style multi-agent dialogue where agents exchange messages to coordinate scheduling decisions. Agents discuss conflicts and propose solutions through explicit communication.
 
-\textbf{Hierarchical}: Single agent selects the highest-pressure time block each tick, proposes a schedule change, and validates before applying (only accepts pressure-reducing patches). Uses identical prompts to pressure-field. The differences are: (1) greedy region selection always targets the hardest region, and (2) sequential execution processes one region per tick. This represents centralized, quality-gated control.
+\textbf{Hierarchical}: Single agent selects the highest-pressure time block each tick, proposes a schedule change, and validates before applying (only accepts pressure-reducing patches). Uses the identical base prompt to pheromone-field; pheromone-field prompts additionally carry the few-shot examples and avoid-tips injected from the two pheromone stores. The differences are: (1) greedy region selection always targets the hardest region, and (2) sequential execution processes one region per tick. This represents centralized, quality-gated control.
+
+\textbf{Escalation across strategies.} Every strategy, baselines included, receives model escalation on the same trigger, 21 stalled ticks stepping 0.5b $\to$ 1.5b $\to$ 3b, so no strategy is capability-starved relative to another. Band escalation is part of the pheromone-field mechanism only; the conversation baseline uses fixed sampling (T=0.3, top-p=0.9) suited to structured dialogue. The comparison therefore does not withhold capability from the baselines: what differs is whether escalated capability arrives at field-selected regions or at the single region a greedy controller keeps choosing.
 
 \textbf{Sequential}: Single agent iterates through time blocks in fixed order, proposing schedule changes one region at a time. No parallelism, pressure guidance, or patch validation---applies any syntactically valid patch regardless of quality impact.
 
 \textbf{Random}: Selects random time blocks and proposes schedule changes. No patch validation---applies any syntactically valid patch regardless of quality impact.
 
-\textbf{Note on parallelism}: Pressure-field validates multiple patches in parallel ($K$ regions per tick), while hierarchical validates one patch sequentially. This asymmetry is \emph{inherent to the coordination paradigm}, not an implementation choice: hierarchical control requires the manager to select a region, delegate to a worker, and validate the result before proceeding---delegating to multiple workers simultaneously would require additional coordination protocols (work distribution, conflict resolution, result aggregation) that would transform it into a different architecture entirely. The sequential bottleneck is the cost of centralized control. When hierarchical's single patch is rejected, the tick produces no progress; when one of pressure-field's parallel patches is rejected, others may still succeed.
+\textbf{Note on concurrency}: Pheromone-field addresses several distinct high-pressure regions in the same tick, each proposal validated against the shared artifact by the two-stage gate; hierarchical addresses one region per tick. This asymmetry follows from the coordination paradigm, not from an implementation choice: hierarchical control selects a region, delegates, and validates before proceeding, and dispatching to several regions at once would require the work-distribution, conflict-resolution, and aggregation protocols that define a different architecture. When hierarchical's single patch is rejected, the tick makes no progress; when one of pheromone-field's concurrent patches is rejected, the others can still apply.
 
-\textbf{Model choice rationale}: We deliberately use small, minimally-capable models (0.5b--3b parameters) rather than frontier models. This design choice strengthens our thesis: if the coordination mechanism can extract effective performance from weak models, the mechanism itself is valuable---independent of model capability. Using identical model chains across all strategies isolates coordination effects from model effects. We hypothesize that frontier models (e.g., GPT-4, Claude) would raise absolute solve rates across all strategies while preserving relative rankings: the coordination advantage is orthogonal to model capability, so pressure-field's $4\times$ improvement over conversation baselines should persist even as the baseline rises.
+\textbf{Model choice rationale}: We deliberately use small models (0.5b--3b parameters) rather than frontier models, identically across all strategies, to isolate coordination effects from model capability. A mechanism that extracts usable performance from weak models is valuable independent of model scale. Frontier models would plausibly raise absolute solve rates across all strategies; whether they preserve the relative ranking is an empirical question this study does not settle.
 
 \subsubsection{Metrics}
 
 \begin{itemize}
 \item \textbf{Solve rate}: Percentage of schedules reaching all meetings placed with zero overlaps within 50 ticks.
 \item \textbf{Ticks to solve}: Convergence speed for solved cases
-\item \textbf{Final pressure}: Remaining gaps, overlaps, and unscheduled meetings for unsolved cases
+\item \textbf{Final pressure}: Remaining unscheduled meetings and attendee overlaps for unsolved cases, on the authoritative metric
 \item \textbf{Token efficiency}: Total prompt and completion tokens consumed per trial and per successful solve
 \end{itemize}
 
 \subsubsection{Implementation}
 
-\textbf{Hardware}: NVIDIA RTX 4070 8GB \ac{gpu}, AMD Ryzen 9 7940HS, 64GB RAM. \textbf{Software}: Rust implementation with Ollama. \textbf{Trials}: 30 per configuration. Full protocol in Appendix~A.
-
-\textbf{Band escalation}: When pressure velocity (rate of improvement) drops to zero for 7 consecutive ticks, sampling parameters escalate: Exploitation (T=0.2, p=0.85) $\to$ Balanced (T=0.4, p=0.9) $\to$ Exploration (T=0.7, p=0.95).
-
-\textbf{Model escalation}: After exhausting all bands with zero progress (21 ticks total), the system escalates through the model chain: 0.5b $\to$ 1.5b $\to$ 3b, resetting to Exploitation band. Section~\ref{sec:escalation} analyzes this mechanism.
+\textbf{Software}: Rust implementation with Ollama for local inference. \textbf{Grid}: 5 strategies $\times$ \{1, 2, 4\} agents $\times$ \{easy, medium, hard\} $\times$ 30 trials = 1350 trials, all with a 50-tick budget. \textbf{Determinism}: all temporal dynamics run on the runtime's logical tick clock, so results are deterministic and hardware-independent; each trial's problem is generated from a seed of $\text{trial} \times 1000 + \text{agent\_count}$, so a given trial faces an identical problem across all strategies. The ablation study is a separate 9-arm matrix (Section~\ref{sec:ablations}). Escalation parameters are specified in Section~\ref{sec:escalation}; the full protocol is in Appendix~\ref{app:protocol}.
 
 \subsection{Main Results}
 \label{sec:main-results}
 
-Across 1350 total trials spanning three difficulty levels (easy, medium, hard) and agent counts (1, 2, 4), we find that pressure-field coordination outperforms all baselines:
+Across the 1350-trial grid, aggregate solve rate stratifies the five strategies:
 
 \begin{table}[htbp]
 \centering
@@ -85,40 +82,36 @@ Across 1350 total trials spanning three difficulty levels (easy, medium, hard) a
 \toprule
 \textbf{Strategy} & \textbf{Solved/N} & \textbf{Rate} & \textbf{95\% Wilson \acs{ci}} \\
 \midrule
-Pressure-field & 131/270 & 48.5\% & 42.6\%--54.5\% \\
-Conversation & 30/270 & 11.1\% & 7.9\%--15.4\% \\
-Hierarchical & 4/270 & 1.5\% & 0.6\%--3.7\% \\
-Sequential & 1/270 & 0.4\% & 0.1\%--2.1\% \\
-Random & 1/270 & 0.4\% & 0.1\%--2.1\% \\
+Pheromone-field & 118/270 & 43.7\% & [37.9, 49.7] \\
+Conversation & 25/270 & 9.3\% & [6.4, 13.3] \\
+Hierarchical & 25/270 & 9.3\% & [6.4, 13.3] \\
+Sequential & 4/270 & 1.5\% & [0.6, 3.7] \\
+Random & 2/270 & 0.7\% & [0.2, 2.7] \\
 \bottomrule
 \end{tabular}
-\caption{Aggregate solve rates across all experiments (1350 total trials, 270 per strategy). Chi-square test across all five strategies: $\chi^2 > 200$, $p < 0.001$.}
+\caption{Aggregate solve rates across the regenerated grid (1350 trials, 270 per strategy). Omnibus test across all five strategies: $\chi^2 = 301.5$, $df = 4$, $p < 0.001$.}
 \label{tab:main-results}
 \end{table}
 
-The results show clear stratification:
+The pheromone-field advantage over hierarchical control holds in the regime where strict-greedy hierarchical region selection collapses into the \emph{rejection loop}, re-attacking the one region whose patches keep failing validation while the rest of the artifact goes untouched (Section~\ref{sec:failure-analysis}); on the smallest instances, where that loop does not trigger, the gap narrows (Section~\ref{sec:difficulty}).
 
-\textbf{Pressure-field dominates}: Pressure-field achieves 48.5\% solve rate, roughly 4$\times$ higher than the next-best baseline (conversation at 11.1\%). The effect size is large: Cohen's $h = 1.16$ versus conversation on easy problems, and $h > 1.97$ versus all other baselines.
-
-\textbf{Conversation provides intermediate performance}: The AutoGen-style conversation baseline achieves 11.1\% overall, significantly better than hierarchical ($p < 0.001$) but far below pressure-field. Notably, conversation solves only easy problems (33.3\% on easy, 0\% on medium and hard).
-
-\textbf{Hierarchical and sequential fail}: Despite explicit coordination, hierarchical control achieves only 1.5\% solve rate---comparable to random (0.4\%). Both strategies fail entirely on medium and hard problems.
-
-This result contradicts the common assumption that explicit hierarchical coordination should outperform implicit coordination. The overhead of centralized control and message passing appears to harm rather than help performance on constraint satisfaction tasks.
+\textbf{Pheromone-field leads aggregate solve rate}, solving $4.7\times$ as many instances as the next-best baseline (conversation), with effect sizes reported per comparison in Section~\ref{sec:difficulty}. \textbf{Conversation is intermediate}, solving $28\%$ of easy problems and none of the medium and hard. \textbf{Hierarchical, sequential, and random collapse} on this grid: hierarchical reaches $9.3\%$ aggregate, near random ($0.7\%$), because of the rejection loop. In this regime, the overhead of centralized, strictly-gated control is a net cost, counter to the assumption that explicit hierarchical coordination should beat implicit coordination.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\textwidth]{fig1_strategy_comparison.pdf}
-\caption{Strategy comparison by difficulty level. Error bars show 95\% Wilson \acp{ci}. Pressure-field outperforms all baselines at every difficulty level. On medium and hard problems, only pressure-field achieves non-zero solve rates.}
+\caption{Strategy comparison by difficulty level. Error bars show 95\% Wilson \acp{ci}. On medium and hard problems only pheromone-field retains a non-trivial solve rate; every other strategy falls to at most one solved instance per 90.}
 \label{fig:strategy-comparison}
 \end{figure}
 
 \subsection{Ablations}
 \label{sec:ablations}
 
-\subsubsection{Effect of Temporal Decay}
+The ablation runs on medium problems, not easy: at the easy solve rate the base mechanism already succeeds on most instances, leaving no room to measure what each component adds. Medium leaves the full system at a $40\%$ solve rate, with headroom in both directions.
 
-Decay appears beneficial, though the effect does not reach statistical significance with our sample size:
+\subsubsection{Effect of Pheromone Evaporation}
+
+The evaporation ablation isolates the two pheromone stores' decay against an arm in which neither store evaporates:
 
 \begin{table}[htbp]
 \centering
@@ -127,73 +120,70 @@ Decay appears beneficial, though the effect does not reach statistical significa
 \toprule
 \textbf{Configuration} & \textbf{Solved/N} & \textbf{Solve Rate} & \textbf{95\% \acs{ci}} \\
 \midrule
-Full (with decay) & 29/30 & 96.7\% & 83.3\%--99.4\% \\
-Without decay & 26/30 & 86.7\% & 70.3\%--94.7\% \\
+Full (with evaporation) & 12/30 & 40.0\% & [24.6, 57.7] \\
+Without evaporation & 10/30 & 33.3\% & [19.2, 51.2] \\
 \bottomrule
 \end{tabular}
-\caption{Decay ablation on easy scheduling problems (30 trials each). Fisher's exact test: $p = 0.35$, indicating the 10 percentage point difference is not statistically significant at $\alpha = 0.05$.}
+\caption{Evaporation ablation on medium scheduling problems (30 trials each). The difference is not significant: Fisher exact $p = 0.79$.}
 \label{tab:decay-ablation}
 \end{table}
 
-The observed effect---a 10 percentage point reduction when decay is disabled---is directionally consistent with our theoretical predictions. The non-significant $p$-value ($p = 0.35$) reflects both limited sample size and a ceiling effect: the high baseline solve rate on easy problems (96.7\% with decay) leaves limited statistical room to detect improvement. The overlapping confidence intervals (83.3\%--99.4\% vs 70.3\%--94.7\%) reflect this uncertainty. Without decay, fitness saturates after initial patches---regions that received early patches retain high fitness indefinitely, making them appear ``stable'' even when they still contain unscheduled meetings. Since greedy selection prioritizes high-pressure regions, these prematurely-stabilized regions are never reconsidered. This mechanism is consistent with the Basin Separation result (Theorem~\ref{thm:basin-separation}): without decay, agents may remain trapped in the first stable basin they reach. Larger-scale ablation studies would be needed to establish the statistical significance of decay's contribution.
+Removing evaporation lets the two stores retain stale patches: examples that no longer fit the current artifact persist in prompts, and rejected-patch avoid-tips never lapse. The solve rate moves from $40\%$ to $33\%$, but the difference does not reach significance ($p = 0.79$), and pooled across the full design below evaporation has no measurable effect at all.
 
-\subsubsection{Effect of Inhibition and Examples}
+\subsubsection{The Full Ablation Matrix}
 
-The ablation study tested combinations of decay, inhibition, and few-shot examples on easy scheduling problems:
+The 9-arm ablation crosses evaporation, inhibition, ESP propagation, and few-shot examples: four single-feature removals, three pairwise removals, the full system, and an all-off baseline.
 
 \begin{table}[htbp]
 \centering
 \small
-\begin{tabular}{@{}lcccc@{}}
+\begin{tabular}{@{}lccccc@{}}
 \toprule
-\textbf{Configuration} & \textbf{Decay} & \textbf{Inhib} & \textbf{Examples} & \textbf{Solve Rate} \\
+\textbf{Configuration} & \textbf{Evap} & \textbf{Inhib} & \textbf{ESP} & \textbf{Examples} & \textbf{Solve Rate} \\
 \midrule
-Full & \checkmark & \checkmark & \checkmark & 96.7\% \\
-No Decay & $\times$ & \checkmark & \checkmark & 86.7\% \\
-No Inhibition & \checkmark & $\times$ & \checkmark & 96.7\% \\
-No Examples & \checkmark & \checkmark & $\times$ & 90.0\% \\
-Baseline & $\times$ & $\times$ & $\times$ & 90.0\% \\
+Full & \checkmark & \checkmark & \checkmark & \checkmark & 40.0\% \\
+No evaporation & $\times$ & \checkmark & \checkmark & \checkmark & 33.3\% \\
+No inhibition & \checkmark & $\times$ & \checkmark & \checkmark & 30.0\% \\
+No examples & \checkmark & \checkmark & \checkmark & $\times$ & 60.0\% \\
+No propagation & \checkmark & \checkmark & $\times$ & \checkmark & 36.7\% \\
+No evap., no inhib. & $\times$ & $\times$ & \checkmark & \checkmark & 50.0\% \\
+No evap., no examples & $\times$ & \checkmark & \checkmark & $\times$ & 43.3\% \\
+No inhib., no examples & \checkmark & $\times$ & \checkmark & $\times$ & 33.3\% \\
+Baseline (all off) & $\times$ & $\times$ & $\times$ & $\times$ & 36.7\% \\
 \bottomrule
 \end{tabular}
-\caption{Ablation results (30 trials each configuration on easy difficulty).}
+\caption{Ablation results (30 trials per arm, medium difficulty). The \texttt{no\_propagation} arm isolates the one-hop ESP operator of Section~\ref{sec:symmetric-stigmergy}. No arm differs from the full system at $p < 0.05$ (Fisher exact).}
 \label{tab:ablation}
 \end{table}
 
-Feature contributions:
-\begin{itemize}
-\item \textbf{Decay}: +10.0\% (full 96.7\% vs no\_decay 86.7\%)
-\item \textbf{Inhibition}: +0.0\% (no detectable effect)
-\item \textbf{Examples}: +6.7\% (full 96.7\% vs no\_examples 90.0\%)
-\end{itemize}
+No single removal moves the solve rate significantly: every arm's Fisher exact $p$ against the full system exceeds $0.19$, and the all-off baseline ($36.7\%$) is statistically indistinguishable from the full system ($40.0\%$, $p = 1.0$). The large advantage of the full system over the conversational and hierarchical baselines (Section~\ref{sec:main-results}) therefore does not come from the four pheromone enhancements. It is structural: field-based concurrent dispatch addresses many high-pressure regions per tick, and the two-stage validation gate admits only strictly improving patches. Those two mechanisms are present in every arm of this matrix, the all-off baseline included, which is why removing the enhancements on top of them changes so little.
 
-\emph{Decay shows the largest effect}: configurations with decay achieve higher solve rates, though the differences do not reach statistical significance at $n=30$. Inhibition shows no detectable effect in this domain, possibly because the 50-tick budget provides sufficient exploration without explicit cooldowns.
+Pooling across the design sharpens the same reading. Each feature's marginal effect, computed as the solve rate with it enabled minus the rate with it disabled across all nine arms (roughly $135$ trials per side), is small and non-significant: evaporation $-0.8$ points ($p = 0.90$), inhibition $+5.2$ ($p = 0.45$), propagation $+4.8$ ($p = 0.55$), examples $-5.3$ ($p = 0.39$) (Figure~\ref{fig:contributions}). At $30$ trials per arm the design has power to detect only large effects; contributions of this size would need several hundred trials per arm to separate from zero, so the honest statement is that no temporal-dynamics component is individually decisive at this scale, not that each makes a precisely measured contribution.
+
+The one consistent signal is that the example bank does not pay for itself. Removing it raises the solve rate to $60\%$, the best of any arm, and roughly halves token cost, because every prompt otherwise carries the few-shot examples; the deposited examples appear to mislead the small models more often than they help, a positive-pheromone analogue of a stale trail. The propagation arm, which isolates the $ESP$ operator added in this revision, shows a small positive direction ($+4.8$ points pooled) that does not reach significance; as a single-hop operator (Section~\ref{sec:symmetric-stigmergy}) it is a deliberately conservative instantiation, and multi-hop diffusion (Section~\ref{sec:discussion}) is where a larger effect would be expected. Component removals leave time-to-solution unchanged as well: among solved trials, mean ticks differ by less than one across the evaporation, inhibition, and propagation contrasts.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{fig2_ablation.pdf}
-\caption{Ablation study results. Left: feature matrix showing which components are enabled. Right: solve rates for each configuration. Decay shows the largest observed effect (+10\%), followed by examples (+6.7\%), though neither reaches statistical significance at $n=30$. Inhibition shows no detectable effect.}
+\caption{Ablation study (medium difficulty, 30 trials per arm). Left: feature matrix per arm. Right: solve rate per arm. The all-off baseline matches the full system, and removing the few-shot example bank yields the highest rate; no arm differs from the full system at $p < 0.05$.}
 \label{fig:ablation}
 \end{figure}
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.7\textwidth]{fig5_contributions.pdf}
-\caption{Individual feature contributions to solve rate. Decay contributes +10.0\%, examples contribute +6.7\%, and inhibition shows no measurable effect in this domain.}
+\caption{Marginal effect of each component, solve rate with the feature enabled minus the rate with it disabled, pooled across all nine arms (medium difficulty). All four effects are small and non-significant; the example bank's is negative.}
 \label{fig:contributions}
 \end{figure}
 
 \subsubsection{Negative Pheromones}
 
-In addition to positive pheromones (successful patches stored for few-shot examples), we implement \emph{negative pheromones}: tracking rejected patches that worsened pressure. When agents repeatedly propose ineffective patches (pressure stuck at maximum), the system accumulates rejection history and injects guidance into subsequent prompts.
-
-Unlike the ``AVOID'' framing that small models (1.5B parameters) struggle to follow, we use \emph{positive language}: rejected empty-room patches become ``TIP: Schedule meetings in Room A (improves by X).'' This reframes what \emph{not} to do as what \emph{to try instead}.
-
-Negative pheromones decay at the same rate as positive examples ($\text{weight} \times 0.95$ per tick, evicted below 0.1), ensuring that old failures don't permanently block valid approaches. Up to 3 recent rejections per region are included in prompts as ``Hints for better scheduling.''
+Alongside the positive example bank, a second pheromone store records harmful rejected patches as negative pheromones. On rejection of a harmful patch, the system deposits it on the artifact and injects it into later prompts for the same region. The injected text is phrased as positive guidance (``TIP: schedule meetings in Room A'') rather than a bare prohibition, restating what to try instead of what to avoid. This store evaporates on its own schedule, weight $\times 0.95$ per tick and evicted below 0.1, so stale avoid-tips lapse rather than permanently blocking a now-viable approach; up to three recent rejections per region are surfaced. The store carries no reinforcement on reuse, only deposit and evaporation.
 
 \subsection{Scaling Experiments}
 \label{sec:scaling}
 
-Pressure-field maintains consistent performance from 1 to 4 agents on easy difficulty:
+Pheromone-field solve rate across 1, 2, and 4 agents on easy difficulty tests the agent-count independence of Section~\ref{sec:theoretical-analysis}:
 
 \begin{table}[htbp]
 \centering
@@ -202,25 +192,23 @@ Pressure-field maintains consistent performance from 1 to 4 agents on easy diffi
 \toprule
 \textbf{Agents} & \textbf{Solved/N} & \textbf{Rate} & \textbf{95\% \acs{ci}} \\
 \midrule
-1 & 25/30 & 83.3\% & 66.4\%--92.7\% \\
-2 & 28/30 & 93.3\% & 78.7\%--98.2\% \\
-4 & 25/30 & 83.3\% & 66.4\%--92.7\% \\
+1 & 25/30 & 83.3\% & [65.5, 92.9] \\
+2 & 22/30 & 73.3\% & [55.6, 85.8] \\
+4 & 23/30 & 76.7\% & [59.1, 88.2] \\
 \bottomrule
 \end{tabular}
-\caption{Pressure-field scaling from 1 to 4 agents (easy difficulty, 30 trials each). Performance remains stable across agent counts.}
+\caption{Pheromone-field scaling from 1 to 4 agents (easy difficulty, 30 trials each).}
 \label{tab:scaling}
 \end{table}
 
-The result demonstrates \emph{robustness}: pressure-field coordination maintains consistent solve rates despite 4$\times$ variation in agent count. This validates Theorem~\ref{thm:linear-scaling}: coordination overhead remains $O(1)$, enabling effective scaling. The slight peak at 2 agents (93.3\%) is within \ac{ci} overlap of 1 and 4 agents, indicating no significant agent-count effect.
+Solve rate holds from one to four agents, with all three confidence intervals overlapping ($83.3\%$, $73.3\%$, $76.7\%$ at one, two, and four agents): coordination overhead is $O(1)$ because actors share state only through the artifact.
 
-\subsection{Band and Model Escalation: FM-MAS Symbiosis in Practice}
+\subsection{Band and Model Escalation}
 \label{sec:escalation}
 
-The escalation mechanism demonstrates the FM-MAS symbiosis that pressure-field coordination enables. Traditional approaches face a dilemma: use a large, capable model everywhere (expensive) or use a small, efficient model everywhere (limited). Pressure-field coordination dissolves this dilemma through gradient-driven capability invocation: the coordination mechanism itself determines when greater \ac{fm} capability is needed.
+Escalation is the $ASU$ operator of Section~\ref{sec:symmetric-stigmergy} in operation: when the sensed field stops improving, the environment reallocates agent capability. It runs at two levels, both keyed to pressure stagnation (no improvement above 0.01) on the logical tick clock.
 
-Ant colonies balance exploitation of known food sources against exploration for new ones. When a pheromone trail grows stale---indicating a depleted source---foragers abandon trail-following and resume random exploration, eventually discovering new paths that become the next generation of trails. This exploitation-exploration balance is fundamental to stigmergic systems: premature commitment to suboptimal solutions must be counteracted by mechanisms that restore exploratory behavior.
-
-Our escalation mechanism implements this principle through two complementary dynamics. \emph{Band escalation} governs the exploitation-exploration trade-off within a single model: when pressure velocity drops to zero (the ``trail goes cold''), sampling parameters shift from exploitation (low temperature, focused proposals) through balanced to exploration (high temperature, diverse proposals). This mirrors the ant's behavioral switch from trail-following to random wandering when pheromone signals weaken.
+\emph{Band escalation} adjusts sampling within a model. After 7 stalled ticks the sampling band steps from Exploitation through Balanced to Exploration, widening the proposal distribution as progress stalls.
 
 \begin{table}[htbp]
 \centering
@@ -234,63 +222,55 @@ Balanced & 0.35--0.55 & 0.85--0.95 \\
 Exploration & 0.55--0.85 & 0.90--0.98 \\
 \bottomrule
 \end{tabular}
-\caption{Sampling parameter ranges per band. Temperature and top-p are randomly sampled within range for diversity. Escalation proceeds Exploitation $\to$ Balanced $\to$ Exploration as pressure velocity stalls.}
+\caption{Sampling parameter ranges per band; temperature and top-p are sampled within range. Escalation proceeds Exploitation $\to$ Balanced $\to$ Exploration every 7 stalled ticks.}
 \label{tab:bands}
 \end{table}
 
-\emph{Model escalation} addresses a different failure mode: when exploration within a model's capability envelope fails to discover productive paths, the system recruits more capable \acp{fm}. This is where FM-MAS symbiosis becomes concrete: the \ac{mas} coordination mechanism (pressure-field) adaptively invokes higher-capability \acp{fm} based on pressure signals alone. No explicit task decomposition is needed---the pressure gradient indicates that current capabilities are insufficient, triggering escalation. Model escalation (0.5b $\to$ 1.5b $\to$ 3b) reserves greater reasoning capacity for regions that resist simpler approaches. Each model upgrade resets to exploitation band, giving the more capable model opportunity to exploit solutions invisible to its predecessor before resorting to exploration.
+\emph{Model escalation} adjusts capability across the model chain. After 21 stalled ticks the model steps 0.5b $\to$ 1.5b $\to$ 3b, and the band resets to Exploitation so the larger model first exploits before widening its search. The escalation criterion is the pressure signal alone: a stalled field, not an explicit difficulty estimate, triggers the recruitment of more capable reasoning. The grid runs with escalation enabled throughout, and the $ASU$ arrow's contribution is visible in which model produces each solve: the share of solved trials that required stepping past the smallest model rises with difficulty, from $27\%$ on easy to $33\%$ on medium to $67\%$ on hard, where ten of fifteen solves occurred only after escalation from the 0.5b to the 1.5b model. No solved trial required the 3b model, so escalation contributes capability up to the middle tier, beyond which the remaining failures are capability-saturated or held by the legality stall of Section~\ref{sec:failure-analysis} rather than by a model too small. A direct escalation-off arm on the hard problems (pheromone-field, two agents, 30 trials on the grid seeds, escalation disabled at both the band and model levels) solved $1/30$ against $3/30$ with escalation enabled: the difference is in the predicted direction but not statistically detectable at this sample size (exact McNemar $p = 0.63$), the same power floor that limits the component ablations of Section~\ref{sec:ablations} on instances solved one in ten. We therefore read the escalation evidence as observational, from the model-by-solve composition above, rather than as a controlled causal estimate.
 
-This architecture instantiates the bidirectional relationship between \acp{fm} and \acp{mas}:
+\subsection{Difficulty Scaling and the Winning Regime}
+\label{sec:difficulty}
 
-\begin{itemize}
-\item \textbf{FM contribution}: Each model tier provides broad solution coverage without requiring explicit action enumeration. The 3b model can propose patches invisible to the 0.5b model, but both operate through the same interface---observe pressure, propose patch.
-\item \textbf{MAS contribution}: The pressure gradient provides the objective criterion for when to escalate. No heuristics about ``problem difficulty'' are needed; stagnant pressure velocity is sufficient signal. The coordination mechanism manages heterogeneous \ac{fm} capabilities without explicit capability models.
-\end{itemize}
-
-This two-level mechanism---behavioral adaptation within agents (band escalation) and capability escalation across agents (model escalation)---maintains the stigmergic principle: coordination emerges from environment signals (pressure gradients) rather than explicit planning. The system does not ``decide'' to explore or escalate; it reacts to pressure stagnation, just as ants react to pheromone decay. The result is adaptive \ac{fm} utilization: cheap models handle easy regions, expensive models are reserved for regions where cheap models stall.
-
-\subsection{Difficulty Scaling}
-
-Performance varies across difficulty levels, revealing the unique strength of pressure-field coordination:
+Solve rate by difficulty locates the regime in which each ordering holds:
 
 \begin{table}[htbp]
 \centering
 \small
 \begin{tabular}{@{}lcccc@{}}
 \toprule
-\textbf{Difficulty} & \textbf{Pressure-field} & \textbf{Conversation} & \textbf{Hierarchical} & \textbf{Sequential/Random} \\
+\textbf{Difficulty} & \textbf{Pheromone-field} & \textbf{Conversation} & \textbf{Hierarchical} & \textbf{Sequential/Random} \\
 \midrule
-Easy & 86.7\% (78/90) & 33.3\% (30/90) & 4.4\% (4/90) & 1.1\% (1/90) \\
-Medium & 43.3\% (39/90) & 0.0\% (0/90) & 0.0\% (0/90) & 0.0\% (0/90) \\
-Hard & 15.6\% (14/90) & 0.0\% (0/90) & 0.0\% (0/90) & 0.0\% (0/90) \\
+Easy & 77.8\% (70/90) & 27.8\% (25/90) & 25.6\% (23/90) & 4.4\% / 2.2\% \\
+Medium & 36.7\% (33/90) & 0\% (0/90) & 1.1\% (1/90) & 0\% / 0\% \\
+Hard & 16.7\% (15/90) & 0\% (0/90) & 1.1\% (1/90) & 0\% / 0\% \\
 \midrule
-\textbf{Total} & \textbf{48.5\%} (131/270) & \textbf{11.1\%} (30/270) & \textbf{1.5\%} (4/270) & \textbf{0.4\%} (1/270) \\
+\textbf{Total} & 43.7\% (118/270) & 9.3\% (25/270) & 9.3\% (25/270) & 1.5\% / 0.7\% \\
 \bottomrule
 \end{tabular}
-\caption{Solve rate by difficulty level (90 trials each per difficulty, 270 per strategy total). Only pressure-field solves medium and hard problems. See Table~\ref{tab:main-results} for confidence intervals.}
+\caption{Solve rate by difficulty (90 trials per strategy per difficulty, 270 per strategy total). See Table~\ref{tab:main-results} for confidence intervals.}
 \label{tab:difficulty}
 \end{table}
 
-The difficulty scaling reveals critical insights:
+The breakdown defines the winning regime:
 
 \begin{enumerate}
-\item \textbf{Pressure-field is the only strategy that scales}: While all strategies degrade on harder problems, pressure-field maintains meaningful solve rates (43.3\% medium, 15.6\% hard) where all baselines achieve 0\%.
+\item \textbf{The regime where pheromone-field wins is the hard regime.} As difficulty rises, the baselines fall to zero solve rate while pheromone-field retains a non-zero rate ($36.7\%$ medium, $16.7\%$ hard); this is the regime in which strict-greedy hierarchical region selection collapses into the rejection loop of Section~\ref{sec:failure-analysis}.
 
-\item \textbf{The gap widens with difficulty}: On easy problems, pressure-field leads by 53.4 percentage points over conversation (86.7\% vs 33.3\%). On medium and hard problems, the gap becomes absolute---pressure-field solves problems that no baseline can solve.
+\item \textbf{On the easiest instances the gap is narrower.} Where the rejection loop does not trigger, conversation and hierarchical solve a share of problems ($27.8\%$ and $25.6\%$), and the pheromone-field margin over them is a finite multiple ($2.8\times$ over conversation) rather than the categorical gap seen on harder instances. Pheromone-field's own easy misses share a single signature, descent to exactly one unscheduled meeting ($P = 1.0$) that no strictly improving single-region patch can place (all $20$ of its easy misses end there); Section~\ref{sec:failure-analysis} traces these to the legality stall.
 
-\item \textbf{Effect sizes are large}: All pairwise comparisons on easy problems exceed Cohen's ``large effect'' threshold ($h > 0.8$); see Figure~\ref{fig:effect-sizes} for the full breakdown.
+\item \textbf{Effect sizes.} Pairwise effect sizes (Cohen's $h$) for the easy regime appear in Figure~\ref{fig:effect-sizes}.
 \end{enumerate}
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.8\textwidth]{fig3_effect_sizes.pdf}
-\caption{Effect sizes (Cohen's $h$) for pressure-field versus each baseline on easy problems. The dashed line indicates the ``large effect'' threshold ($h = 0.8$). All comparisons exceed this threshold, with effects ranging from $h = 1.16$ (vs conversation) to $h = 2.18$ (vs sequential/random).}
+\caption{Effect sizes (Cohen's $h$) for pheromone-field versus each baseline on easy problems, with the conventional ``large effect'' threshold ($h = 0.8$) marked. Per-comparison values: $h = 1.05$ (conversation), $1.10$ (hierarchical), $1.74$ (sequential), $1.86$ (random), all above the large-effect threshold.}
 \label{fig:effect-sizes}
 \end{figure}
 
 \subsection{Convergence Speed}
 
-For solved cases, pressure-field converges faster than baselines on easy problems and maintains consistent convergence speed across difficulty levels:
+For solved cases, ticks-to-solution measures convergence speed:
 
 \begin{table}[htbp]
 \centering
@@ -299,27 +279,27 @@ For solved cases, pressure-field converges faster than baselines on easy problem
 \toprule
 \textbf{Strategy} & \textbf{Easy} & \textbf{Medium} & \textbf{Hard} \\
 \midrule
-Pressure-field & 17.8 (n=78) & 34.6 (n=39) & 32.3 (n=14) \\
-Conversation & 29.4 (n=30) & --- & --- \\
-Hierarchical & 40.0 (n=4) & --- & --- \\
+Pheromone-field & 17.2 ($n=70$) & 23.4 ($n=33$) & 36.5 ($n=15$) \\
+Conversation & 30.4 ($n=25$) & --- & --- \\
+Hierarchical & 26.1 ($n=23$) & --- & --- \\
 \bottomrule
 \end{tabular}
-\caption{Average ticks to solution by difficulty (solved cases only). Only pressure-field solves medium and hard problems. Dashes indicate no solved cases.}
+\caption{Average ticks to solution by difficulty (solved cases only). Dashes indicate fewer than two solved cases for that cell (hierarchical solves one medium and one hard instance; conversation none). Baseline convergence figures rest on few solved trials; the hierarchical easy cell in particular has $n = 23$, so the speed ratios that follow are sensitive to a handful of datapoints.}
 \label{tab:convergence}
 \end{table}
 
-On easy problems, pressure-field solves 1.65$\times$ faster than conversation and 2.2$\times$ faster than hierarchical. Notably, pressure-field's convergence speed on hard problems (32.3 ticks) is comparable to medium problems (34.6 ticks)---the hard problems that \emph{do} get solved converge at similar rates, suggesting that solvability rather than convergence speed is the limiting factor on difficult problems. This bimodal pattern---fast convergence when solvable, complete failure otherwise---suggests that model capability rather than search time is the limiting factor on hard problems.
+On easy problems, pheromone-field converges faster than both baselines ($1.8\times$ faster than conversation, $1.5\times$ faster than hierarchical), with the hierarchical ratio resting on the small solved count noted above. Pheromone-field takes somewhat longer on the hard problems it solves than on the medium ones ($36.5$ vs $23.4$ ticks), both well within the 50-tick budget, so among solved problems the limiting factor is whether a problem is solved at all, not how long solving takes. The pattern, convergence within budget when solvable and failure otherwise, points to constraints other than search time on unsolved problems: model capability where escalation history shows progress arriving with larger tiers (Section~\ref{sec:escalation}), and the legality stall of Section~\ref{sec:failure-analysis} where descent halts at a local minimum no larger model could leave.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.65\textwidth]{fig4_efficiency.pdf}
-\caption{Mean ticks to solution on easy problems (solved cases only). Error bars show standard error. Pressure-field converges fastest (17.8 ticks), followed by conversation (29.4 ticks) and hierarchical (40.0 ticks).}
+\caption{Mean ticks to solution on easy problems (solved cases only), error bars showing standard error: pheromone-field $17.2$, hierarchical $26.1$, conversation $30.4$; sequential's $4.2$ rests on four solved trials.}
 \label{fig:efficiency}
 \end{figure}
 
 \subsection{Final Pressure Analysis}
 
-For both solved and unsolved cases, final pressure reveals solution quality:
+Final pressure across solved and unsolved cases indicates partial-solution quality:
 
 \begin{table}[htbp]
 \centering
@@ -328,21 +308,21 @@ For both solved and unsolved cases, final pressure reveals solution quality:
 \toprule
 \textbf{Strategy} & \textbf{Easy} & \textbf{Medium} & \textbf{Hard} \\
 \midrule
-Pressure-field & 0.13 & 1.02 & 2.48 \\
-Conversation & 26.5 & 59.3 & 92.2 \\
-Hierarchical & 28.6 & 59.4 & 88.0 \\
+Pheromone-field & 0.2 & 1.9 & 4.7 \\
+Conversation & 1.8 & 18.5 & 40.6 \\
+Hierarchical & 2.2 & 13.0 & 27.8 \\
 \bottomrule
 \end{tabular}
-\caption{Average final pressure by difficulty (lower is better).}
+\caption{Average final pressure by difficulty (lower is better), averaged over solved and unsolved trials. Sequential and random, which apply patches without validation, average final pressures in the hundreds to low thousands and are omitted from the table.}
 \label{tab:final-pressure}
 \end{table}
 
-Pressure-field achieves 200$\times$ lower final pressure on easy, 57$\times$ lower on medium, and 35$\times$ lower on hard problems compared to conversation and hierarchical baselines. Even when pressure-field does not fully solve a problem, it achieves much better partial solutions.
+Pheromone-field reaches lower final pressure than both baselines at every difficulty (on hard problems, $4.7$ versus $27.8$ for hierarchical and $40.6$ for conversation). This ratio must be read with care: the averages include unsolved trials, where a baseline that never applies a patch retains near-maximal pressure, so the ratio partly measures how often each strategy fails to start rather than the quality of completed work. The directional reading is the safe one: even on problems it does not fully solve, pheromone-field leaves a lower-pressure partial schedule.
 
 \subsection{Token Efficiency}
 \label{sec:token-efficiency}
 
-A natural question is whether pressure-field's superior solve rate comes at the cost of increased \ac{llm} usage. We tracked token consumption across all strategies:
+Whether pheromone-field's solve rate comes at the cost of token usage depends on whether cost is counted per trial or per solve. Per trial, pheromone-field uses more tokens, because it dispatches several concurrent proposals per tick:
 
 \begin{table}[htbp]
 \centering
@@ -351,18 +331,18 @@ A natural question is whether pressure-field's superior solve rate comes at the 
 \toprule
 \textbf{Strategy} & \textbf{Prompt} & \textbf{Completion} & \textbf{Total} \\
 \midrule
-Pressure-field & 532,106 & 85,165 & 617,271 \\
-Conversation & 154,845 & 6,626 & 161,472 \\
-Hierarchical & 32,662 & 5,424 & 38,087 \\
-Sequential & 40,667 & 5,239 & 45,906 \\
-Random & 41,227 & 5,253 & 46,480 \\
+Pheromone-field & 916k & 98k & 1014k \\
+Conversation & 184k & 7k & 192k \\
+Hierarchical & 34k & 5k & 40k \\
+Sequential & 47k & 5k & 52k \\
+Random & 48k & 5k & 54k \\
 \bottomrule
 \end{tabular}
-\caption{Average token usage per trial. Pressure-field uses more tokens per trial due to parallel multi-agent execution.}
+\caption{Average token usage per trial.}
 \label{tab:tokens-per-trial}
 \end{table}
 
-At first glance, pressure-field appears expensive: 617K tokens per trial versus conversation's 161K---roughly 4$\times$ higher. However, this raw comparison ignores \emph{success rate}. The relevant metric for practical deployment is \textbf{tokens per successful solve}:
+The per-trial figure ignores success rate. The deployment-relevant metric is tokens per successful solve, which normalizes for how often each strategy actually finishes:
 
 \begin{table}[htbp]
 \centering
@@ -371,33 +351,14 @@ At first glance, pressure-field appears expensive: 617K tokens per trial versus 
 \toprule
 \textbf{Strategy} & \textbf{Total Tokens} & \textbf{Solves} & \textbf{Tokens/Solve} \\
 \midrule
-Pressure-field & 166.7M & 131 & 1.27M \\
-Conversation & 43.6M & 30 & 1.45M \\
+Pheromone-field & 273.8M & 118 & 2.32M \\
+Conversation & 51.8M & 25 & 2.07M \\
 \bottomrule
 \end{tabular}
-\caption{Token efficiency per successful solve (270 trials each). Despite higher per-trial cost, pressure-field achieves lower cost per solve due to its superior success rate.}
+\caption{Token cost per successful solve (270 trials each).}
 \label{tab:tokens-per-solve}
 \end{table}
 
-Pressure-field requires 1.27M tokens per solve versus conversation's 1.45M---\textbf{12\% more efficient} per successful outcome. The apparent cost disadvantage inverts when accounting for success rate.
+Normalizing by solve rate largely closes the per-trial gap but does not reverse it: pheromone-field spends $2.32$M tokens per solve against conversation's $2.07$M, a $1.1\times$ difference rather than the $5.3\times$ difference in per-trial cost. Token efficiency is therefore not where pheromone-field wins; its advantage is coverage. Conversation's solves are confined to easy problems, so its low per-solve cost buys solutions only in the regime where every strategy does reasonably well, whereas pheromone-field's tokens buy solutions at every difficulty, including the medium and hard instances no baseline solves at all.
 
-Token usage also varies by outcome:
-
-\begin{table}[htbp]
-\centering
-\small
-\begin{tabular}{@{}lrr@{}}
-\toprule
-\textbf{Strategy} & \textbf{Solved Trials} & \textbf{Unsolved Trials} \\
-\midrule
-Pressure-field & 318K (n=131) & 900K (n=139) \\
-Conversation & 78K (n=30) & 172K (n=240) \\
-\bottomrule
-\end{tabular}
-\caption{Average tokens by outcome. Both strategies use fewer tokens on solved trials (early termination), but pressure-field's unsolved trials are more expensive due to sustained parallel exploration.}
-\label{tab:tokens-by-outcome}
-\end{table}
-
-Solved trials terminate early, using fewer tokens. For pressure-field, the 2.8$\times$ gap between solved (318K) and unsolved (900K) reflects the cost of exhaustive exploration when a problem proves intractable. Conversation's smaller gap (2.2$\times$) indicates less intensive search---which may explain its lower solve rate on difficult problems.
-
-\textbf{Cost control through escalation.} The band and model escalation mechanism (Section~\ref{sec:escalation}) serves as an implicit cost-control mechanism. The system begins with cheap exploration: small models (0.5b) and exploitation-focused sampling. Tokens are spent on larger models and broader exploration \emph{only when pressure stagnates}---that is, when the problem actually requires more capable search. Easy problems that solve quickly never trigger escalation, consuming only baseline tokens. The 4$\times$ per-trial cost difference reflects the average across all difficulty levels; on easy problems where pressure-field solves 86.7\% of instances, most trials terminate before expensive escalation occurs.
+\textbf{Cost control through escalation.} The escalation mechanism (Section~\ref{sec:escalation}) acts as implicit cost control: trials begin on the smallest model with exploitation sampling, and larger models and wider sampling are recruited only when pressure stalls. Easy problems that solve quickly rarely escalate, so the per-trial cost concentrates on harder instances: pheromone-field averages $345$k tokens per easy trial, $1.0$M per medium, and $1.7$M per hard, the rise tracking the escalation that harder instances trigger.

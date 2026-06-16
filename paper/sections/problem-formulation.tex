@@ -3,78 +3,32 @@
 %% ============================================================================
 
 \section{Problem Formulation}
+\label{sec:problem-formulation}
 
-We formalize artifact refinement as a dynamical system over a pressure landscape rather than an optimization problem with a target state. The system evolves through local actions and continuous decay, settling into stable basins that represent acceptable artifact states.
+Artifact refinement is decentralized descent on a sensed quality field, with agents acting only on local signals. The mapping of the elements below onto the symmetric-stigmergic primitives follows in Section~\ref{sec:symmetric-stigmergy}.
 
-\subsection{State Space}
+\subsection{Artifact, Regions, and Signals}
 
-An \emph{artifact} consists of $n$ regions with content $c_i \in \mathcal{C}$ for $i \in \{1, \ldots, n\}$, where $\mathcal{C}$ is an arbitrary content space (strings, \ac{ast} nodes, etc.). Each region also carries auxiliary state $h_i \in \mathcal{H}$ representing confidence, fitness, and history. Regions are passive subdivisions of the artifact; agents are active proposers that observe regions and generate patches.
+An \emph{artifact} is partitioned into $n$ \emph{regions} with content $c_i \in \mathcal{C}$ for $i \in \{1, \ldots, n\}$, where $\mathcal{C}$ is an arbitrary content space (schedule grids, strings, \ac{ast} nodes). In the scheduling domain a region is a within-day time block. Each region also carries auxiliary state $es_i$ consisting of a per-axis pressure exponential moving average, an inhibition window expressed in logical ticks, and a provenance log of applied and rejected patches. Regions are passive subdivisions; agents are active proposers that observe a region and generate candidate patches. A patch rewrites the content of a single region and nothing else; in the scheduling domain a meeting displaced by the rewrite returns to a global pool of unscheduled meetings, from which any region's agent may later place it. That pool is the only channel through which content crosses region boundaries.
 
-The full system state is:
+A \emph{signal function} $\sigma: \mathcal{C} \to \mathbb{R}^d$ maps content to measurable features and is \emph{local}: $\sigma(c_i)$ depends only on region $i$. Signals such as gaps, overlaps, and utilization feed the activation field that selects which regions receive proposals, and the hierarchical baseline's heuristic; they are distinct from the reported quality metric.
+
+\subsection{One Pressure Metric}
+
+All reported pressure uses a single metric, identical across every coordination strategy, so that cross-strategy comparisons measure coordination and not metric choice. On the schedule grid,
 \[
-s = ((c_1, h_1), \ldots, (c_n, h_n)) \in (\mathcal{C} \times \mathcal{H})^n
+P(s) = 1.0 \cdot (\text{unscheduled meetings}) + 10.0 \cdot (\text{attendee overlaps}),
 \]
+and the artifact is solved when $P(s) = 0$, that is, every meeting is placed with no double-booking. The overlap term is attributed to the block where the overlap occurs, so region pressure $p_i$ is region $i$'s overlap contribution; the unscheduled term is a property of the artifact as a whole, attributed to no region, and the total pressure is the unscheduled term plus $\sum_{i=1}^{n} p_i$. Low-pressure regions are valleys where the artifact satisfies its quality constraints. Patches are accepted only if they strictly decrease the total $P(s)$, evaluated over the whole artifact, so a patch that fixes an overlap by displacing meetings into the pool is accepted exactly when the trade pays: an overlap costs ten times an unscheduled meeting.
 
-\subsection{Pressure Landscape}
+\subsection{Pheromone Stores and Evaporation}
 
-A \emph{signal function} $\sigma: \mathcal{C} \to \mathbb{R}^d$ maps content to measurable features. Signals are \emph{local}: $\sigma(c_i)$ depends only on region $i$.
+Two pheromone stores carry information across ticks, each evaporating once per logical tick and gated by a single decay-ablation flag. A \emph{positive store} deposits each applied patch into an example bank as a few-shot example; its weight starts at $1.0$, decays by a factor of $0.95$ per tick, and the example is evicted below weight $0.1$. A \emph{negative store} deposits each harmful rejected patch on the artifact and injects it into later prompts for the same region as an avoid-tip, evaporating on its own schedule. The positive store propagates successful patterns across the agent population; the negative store steers proposals away from patterns the artifact has already rejected. Neither store reinforces on reuse: under uniform per-tick evaporation, weight-ranked selection reduces to recency-ranked selection.
 
-A \emph{pressure function} $\phi: \mathbb{R}^d \to \mathbb{R}_{\geq 0}$ maps signals to scalar ``badness.'' We consider $k$ pressure axes with weights $\mathbf{w} \in \mathbb{R}^k_{>0}$. The \emph{region pressure} is:
-\[
-P_i(s) = \sum_{j=1}^k w_j \phi_j(\sigma(c_i))
-\]
+\subsection{Inhibition}
 
-The \emph{artifact pressure} is:
-\[
-P(s) = \sum_{i=1}^n P_i(s)
-\]
-
-This defines a landscape over artifact states. Low-pressure regions are ``valleys'' where the artifact satisfies quality constraints.
-
-\subsection{System Dynamics}
-
-The system evolves in discrete time steps (ticks). Each tick consists of four phases:
-
-\textbf{Phase 1: Decay.} Auxiliary state erodes toward a baseline. For fitness $f_i$ and confidence $\gamma_i$ components of $h_i$:
-\[
-f_i^{t+1} = f_i^t \cdot e^{-\lambda_f}, \quad \gamma_i^{t+1} = \gamma_i^t \cdot e^{-\lambda_\gamma}
-\]
-where $\lambda_f, \lambda_\gamma > 0$ are decay rates. Decay ensures that stability requires continuous reinforcement.
-
-\textbf{Phase 2: Proposal.} For each region $i$ where pressure exceeds activation threshold ($P_i > \tau_{\text{act}}$) and the region is not inhibited, \emph{each actor} $a_k: \mathcal{C} \times \mathcal{H} \times \mathbb{R}^d \to \mathcal{C}$ proposes a content transformation in parallel. Each actor observes only local state $(c_i, h_i, \sigma(c_i))$---actors do not communicate or coordinate their proposals.
-
-\textbf{Phase 3: Validation.} When multiple patches are proposed, each is validated on an independent \emph{fork} of the artifact. Forks are created by cloning artifact state; validation proceeds in parallel across forks. This addresses a fundamental resource constraint: a single artifact cannot be used to test multiple patches simultaneously without cloning.
-
-\textbf{Phase 4: Reinforcement.} Regions where actions were applied receive fitness and confidence boosts, and enter an inhibition period preventing immediate re-modification. Inhibition allows changes to propagate through the artifact and forces agents to address other high-pressure regions, preventing oscillation around local fixes.
-\[
-f_i^{t+1} = \min(f_i^t + \Delta_f, 1), \quad \gamma_i^{t+1} = \min(\gamma_i^t + \Delta_\gamma, 1)
-\]
-
-\subsection{Stable Basins}
-
-\begin{definition}[Stability]
-A state $s^*$ is \emph{stable} if, under the system dynamics with no external perturbation:
-\begin{enumerate}
-\item All region pressures are below activation threshold: $P_i(s^*) < \tau_{\text{act}}$ for all $i$
-\item Decay is balanced by residual fitness: the system remains in a neighborhood of $s^*$
-\end{enumerate}
-\end{definition}
-
-The central questions are:
-\begin{enumerate}
-\item \textbf{Existence}: Under what conditions do stable basins exist?
-\item \textbf{Quality}: What is the pressure $P(s^*)$ of states in stable basins?
-\item \textbf{Convergence}: From initial state $s_0$, does the system reach a stable basin? How quickly?
-\item \textbf{Decentralization}: Can stability be achieved with purely local decisions?
-\end{enumerate}
+A region that receives an applied patch enters an \emph{inhibition window} of two logical ticks, during which it is not dispatched. Inhibition lets the applied change settle and forces agents toward other high-pressure regions, preventing oscillation around a single fix. All temporal dynamics, evaporation and inhibition alike, run on a single logical tick counter rather than wall-clock time, so the system is deterministic and hardware-independent.
 
 \subsection{The Locality Constraint}
 
-The constraint distinguishing our setting from centralized optimization: agents observe only local state. An actor at region $i$ sees $(c_i, h_i, \sigma(c_i))$ but not:
-\begin{itemize}
-\item Other regions' content $c_j$ for $j \neq i$
-\item Global pressure $P(s)$
-\item Other agents' actions
-\end{itemize}
-
-This rules out coordinated planning. Stability must emerge from local incentives aligned with global pressure reduction.
+The constraint that distinguishes this setting from centralized optimization is that agents observe only local state. An actor dispatched to region $i$ sees $(c_i, es_i, \sigma(c_i))$ and the pool of unscheduled meetings that fit its block, but not other regions' content $c_j$ for $j \neq i$, the total pressure $P(s)$, or other agents' in-flight proposals. The acceptance rule of the previous subsection is evaluated by the environment runtime, never by an agent: the runtime compares $P(s)$ before and after a candidate patch the way a physical substrate enforces its own consistency, while the agents that propose patches remain local. This rules out coordinated planning: coordination must emerge from local actions aligned with global pressure reduction through the shared artifact.

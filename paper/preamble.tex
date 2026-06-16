@@ -16,6 +16,7 @@
 \usepackage{textcomp}%
 \usepackage{manyfoot}%
 \usepackage{booktabs}%
+\usepackage{tabularx}%
 %% algorithm packages removed - using custom environment
 %% \usepackage{algorithm}%
 %% \usepackage{algorithmicx}%
@@ -75,6 +76,7 @@
 %% Theorem environments (using template styles)
 \theoremstyle{thmstyleone}%
 \newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}{Lemma}[section]
 \theoremstyle{definition}
 \newtheorem{definition}{Definition}[section]
 
@@ -104,6 +106,11 @@
   \end{minipage}%
   \end{figure}%
 }
+
+%% Greppable placeholder for results invalidated by the code audit and pending
+%% the 1350-trial grid rerun + 9-arm ablation. Every number must be \pending{...}
+%% until the rerun lands; do NOT carry forward any pre-audit figure.
+\newcommand{\pending}[1]{\textbf{[PENDING: #1]}}
 
 %% Required to prevent maketitle tabular bug with halt-on-error
 \raggedbottom

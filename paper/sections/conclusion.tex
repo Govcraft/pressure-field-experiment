@@ -4,20 +4,6 @@
 
 \section{Conclusion}
 
-We presented pressure-field coordination, a decentralized approach to \acp{mas} that achieves coordination through shared state and local pressure gradients rather than explicit orchestration.
+We instantiated the symmetric-stigmergic schema of Parunak~\cite{parunak2025insects} in a foundation-model multi-agent system, mapping a full artifact-refinement loop onto its primitives and realizing the environment-to-agent arrow that classic asymmetric stigmergy lacks. The system places reasoning agents at the symmetric-stigmergy point of the modeling continuum, between ant-like agents and belief-desire-intention agents: each actor brings open-ended reasoning to a single patch, yet the actors coordinate only through the shared field, holding no beliefs or intentions about one another. Foundation models supply the action proposals that classic stigmergy could not enumerate, and the symmetric schema supplies the objective, pressure-based criterion for combining those proposals and for escalating capability when the field stalls.
 
-Our theoretical analysis establishes convergence guarantees under pressure alignment conditions, with coordination overhead independent of agent count. Empirically, on meeting room scheduling across 1350 total trials (270 per strategy), we find:
-
-\begin{enumerate}
-\item \textbf{Implicit coordination outperforms explicit coordination}. Pressure-field achieves 48.5\% aggregate solve rate---nearly half of all problems solved through local pressure-following alone, with no coordinator, no message passing, and no explicit task delegation. The gap versus hierarchical control ($30\times$) and conversation-based coordination ($4\times$) is both large and highly significant (all $p < 0.001$).
-
-\item \textbf{Pressure-field is the only strategy that scales to harder problems}. On medium and hard problems, pressure-field achieves 43.3\% and 15.6\% solve rates respectively, while all baselines achieve 0\%.
-
-\item \textbf{Temporal decay shows beneficial effects}. Ablation studies observe a 10 percentage point improvement with decay enabled, consistent with theoretical predictions about escaping local minima, though larger samples would be needed to establish statistical significance.
-\end{enumerate}
-
-This work demonstrates that implicit coordination can outperform explicit coordination for constraint satisfaction tasks. Pressure-field achieves this with simpler architecture: no coordinator agent, no explicit message passing, just shared state and local pressure gradients.
-
-\Acp{fm}' zero-shot capabilities eliminate the need for domain-specific action representations; pressure-field coordination eliminates the need for complex multi-agent protocols; together they enable simple \acp{mas}.
-
-These results suggest that for domains with measurable quality signals and locally-decomposable structure, implicit coordination through shared state offers not just a simpler but a more effective alternative to explicit hierarchical control. More broadly, this work demonstrates the bidirectional value of integrating \acp{fm} with classical \ac{mas} coordination theory: stigmergy~\cite{grasse1959stigmergie}, self-organization~\cite{serugendo2005selforganisation}, and organizational paradigms~\cite{horling2004survey} provide principled coordination mechanisms that complement \ac{fm} capabilities, while \acp{fm} provide the universal actor capability that makes these mechanisms practical for open-ended tasks.
+The empirical contribution is a scoped one. On meeting room scheduling across a regenerated 1350-trial grid, decentralized symmetric-stigmergic coordination outperforms hierarchical control in the regime where strict-greedy control collapses into the rejection loop, and the advantage narrows on the smallest instances where that loop does not trigger. The collapse is instructive because the baseline shares the system's model-escalation trigger and collapses anyway: the rejection loop is a selection pathology that capability escalation alone cannot cure, and escaping it takes both field-based dispatch, so progress continues where the artifact yields, and the escalation arrow, so capability rises where it does not. On the theoretical side, the one guarantee this coordination admits is that aligned local descent terminates, in productive ticks bounded by initial pressure rather than by the size of the state space.

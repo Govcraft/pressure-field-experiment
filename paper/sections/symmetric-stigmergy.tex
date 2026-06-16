@@ -1,0 +1,54 @@
+%% ============================================================================
+%% SYMMETRIC-STIGMERGIC FORMALIZATION (NEW)
+%% ============================================================================
+
+\section{Symmetric-Stigmergic Formalization}
+\label{sec:symmetric-stigmergy}
+
+The coordination mechanism of Section~\ref{sec:problem-formulation} instantiates the symmetric-stigmergic schema of Parunak~\cite{parunak2025insects}, with foundation-model agents playing the role of stigmergic actors. Classic stigmergy is asymmetric: agents change the environment, but the environment does not change agent state~\cite{grasse1959stigmergie,parunak1997ant}. The symmetric extension adds the reverse arrow, so that the environment also updates agent state, and adds agent-side analogues of the environment's update, dynamics, and propagation operators. Each primitive maps to a concrete element of the system, some realized and some left null by design, and the result classifies on the schema's modeling continuum (Figure~3 of~\cite{parunak2025insects}).
+
+\subsection{Mapping the Schema}
+
+Table~\ref{tab:stigmergy-mapping} states the correspondence. The environment $E(t)$ is the set of time-block regions of the schedule artifact; each region carries state $es_i$ consisting of a per-axis pressure exponential moving average, an inhibition window, and a provenance log. The agent set $A(t)$ is the pool of LLM actors, each with state $as_i$ (model identifier and sampling band) and a location $al_i$ (the high-pressure region it is dispatched to this tick). Agents never read each other directly: the agent adjacency relation $aa(t)$ is realized entirely through the shared artifact by a two-stage validation gate. A patch is first evaluated against a clone of the artifact, then re-evaluated against the now-current artifact, so two agents may both pass initial evaluation yet the second is rejected because the first has already changed the shared state.
+
+A runtime ticks the logical clock, evaporates the pheromone stores, propagates activation one hop, dispatches proposals round-robin over the pressure-activated regions, and serializes writes under a fixed acceptance rule (strict pressure decrease, re-checked against current artifact state). Every rule is content-blind: the runtime never chooses what to propose, never reasons about the schedule globally, and never distinguishes one agent from another. It is the analogue of the pheromone substrate, not of a manager. A physical pheromone field is itself a consistency-enforcing medium, since two ants cannot deposit on the same point and physics serializes them, and the two-stage re-evaluation is optimistic concurrency control playing that role; placing the aggregate, evaporate, and propagate operators in a central runtime is the standard digital-pheromone infrastructure~\cite{parunak2011mean}, with the environment carrying mediation responsibilities as a first-class component~\cite{weyns2007environment}. The hierarchical baseline, by contrast, centralizes a reasoner that makes content decisions: coordination by a manager rather than by a rule.
+
+\begin{table}[htbp]
+\centering
+\caption{Symmetric-stigmergic primitives~\cite{parunak2025insects} and their realization in this system. Null entries are design choices, stated as such.}
+\label{tab:stigmergy-mapping}
+\begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
+\toprule
+Primitive & Schema role & This system \\
+\midrule
+$A(t)$ & Agents with state $as_i$, location $al_i$ & LLM actor pool; $as_i$ = (model, sampling band); $al_i$ = assigned region \\
+$E(t)$ & Environment locations with state $es_i$ & Time-block regions; $es_i$ = pressure EMA + inhibition window + provenance \\
+$ea(t)$ & Environment adjacency & Within-day temporal chain: block $b$ adjacent to $b{\pm}1$; no cross-day edges \\
+$aa(t)$ & Agent adjacency & Emergent: two-stage validation gate on the shared artifact \\
+$AL$ & $A(t) \to E$ & Round-robin dispatch to current high-pressure regions \\
+$AM$ & $AL(t) \to AL(t{+}1)$ & Re-dispatch each tick from the updated pressure field \\
+$ESU$ & $as_i \to es_j$ (deposit) & Applied patch lowers region pressure; logged in $es$ \\
+$ESD$ & Environment dynamics & Pheromone evaporation of two stores (below) \\
+$ESP$ & Environment propagation & One-hop activation spillover along $ea(t)$ (below) \\
+$ASU$ & $es_i \to as_j$ (env $\to$ agent) & Band and model escalation on pressure stagnation \\
+$ASD$ & Agent dynamics & Per-band randomized sampling (temperature, top-$p$) \\
+$ASP$ & $as_i \to N(as_j)$ & Example bank (environment-mediated): deposit on applied patch, evaporate, weight-ranked reuse \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Two pheromone stores realize the environment-dynamics operator $ESD$ as evaporation, following pheromone evaporation~\cite{dorigo1996ant} and the $ESD$ operator~\cite{parunak2011mean}. A positive store deposits each applied patch into an example bank as a few-shot example; its weight decays by a factor of $0.95$ per logical tick and the example is evicted below weight $0.1$. A negative store deposits each harmful rejected patch on the artifact and injects it into later prompts as an avoid-tip, with its own independent evaporation. Both stores evaporate once per logical tick, gated by a single decay-ablation flag. Because the schedule is the modified task structure that agents sense, the pressure field is a sematectonic field rather than a deposited marker, and it is exactly the environment state $es_i$ of the schema, not a separate quantity.
+
+The agent-state-update operator $ASU$ is realized as escalation driven by pressure stagnation, where stagnation means no pressure improvement above $0.01$. The sampling band escalates every $7$ stalled ticks (Exploitation $\to$ Balanced $\to$ Exploration); the model escalates every $21$ stalled ticks (qwen2.5 0.5b $\to$ 1.5b $\to$ 3b), resetting the band. This is the environment acting on agent capability: the sensed field, through its own lack of progress, reallocates reasoning capacity. The agent-state-propagation operator $ASP$ is realized by the example bank: an applied patch propagates as a few-shot example available to subsequent proposals across the population. The realization is mediated rather than direct: the bank is carried by the environment, and what spreads is deposited content, not agent state itself, since no agent's model tier or sampling band propagates to another. Under uniform per-tick evaporation, weight-ranked selection is recency-ranked; the bank carries no use-count reinforcement and follows no regional-similarity trail, so we claim deposit-and-evaporate propagation only, not positive-feedback trail-following.
+
+\subsection{Environment Propagation Along the Temporal Chain}
+
+The environment-propagation operator $ESP$ addresses the intrinsic structure of the scheduling domain: adjacent time blocks are where a conflicting meeting can be shifted. The environment adjacency $ea(t)$ links each within-day time block to its immediate temporal neighbors, with no edges across days. Each tick the environment runtime computes an effective activation pressure
+\[
+g_i = p_i + \kappa \sum_{j \in N(i)} p_j, \qquad \kappa = 0.5,
+\]
+from regions' own pressures $p_j$, applied exactly one hop per tick. A high-pressure block thus recruits proposals in its idle temporal neighbors without those neighbors being individually above threshold. Because patches are strictly within-block, a meeting moves between blocks in two steps through the unscheduled pool: the hot block's own agent evicts a conflicting meeting (accepted because an overlap costs ten times an unscheduled meeting), and a recruited neighbor, seeing the meeting among the unscheduled candidates for its block, places it. The spillover affects only activation, which regions receive LLM proposals; the reported pressure metric is computed from regions' own state and is unaffected. Inhibited regions contribute spillover but are not themselves dispatched. This is single-application propagation, one hop per tick from own pressures, not multi-hop accumulated diffusion. The operator is flag-gated, and Section~\ref{sec:experiments} reports a no-propagation ablation arm against the full system.
+
+\subsection{Position on the Modeling Continuum}
+
+The system classifies on the continuum of Figure~3 of~\cite{parunak2025insects}, which spans equation-based mean-field models~\cite{parunak2011mean}, classic stigmergy, and belief-desire-intention agents~\cite{bratman1987intentions,raogeorgeff1995bdi}, at the symmetric-stigmergy point between stigmergic agents and BDI agents. Each LLM actor brings BDI-grade reasoning to a single patch proposal, yet the actors are deployed stigmergically: they hold no beliefs, desires, or intentions about one another and coordinate only through the sensed field. Of the two arrows that asymmetric stigmergy lacks, $ASU$ is realized directly, the environment updating agent capability when the field stalls, and $ASP$ only in environment-mediated form, so the placement at the intermediate point rests chiefly on $ASU$.

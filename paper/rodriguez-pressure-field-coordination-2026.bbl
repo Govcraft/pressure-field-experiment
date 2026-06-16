@@ -1,21 +1,10 @@
-\begin{thebibliography}{48}
+\begin{thebibliography}{45}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{{#1}}
 \providecommand{\urlprefix}{URL }
 \providecommand{\doi}[1]{\url{https://doi.org/#1}}
 \providecommand{\eprint}[2][]{\url{#2}}
  \bibcommenthead
-
-\bibitem[{Abdelnabi et~al.(2024)Abdelnabi, Gomaa, Sivber, and
-  Fritz}]{abdelnabi2024negotiation}
-Abdelnabi S, Gomaa A, Sivber S, et~al (2024) Cooperation, competition, and
-  maliciousness: {LLM}-stakeholders interactive negotiation. In: Advances in
-  Neural Information Processing Systems (NeurIPS), Datasets and Benchmarks
-  Track, \doi{10.48550/arXiv.2309.17234}
-
-\bibitem[{Abgaryan et~al.(2024)}]{abgaryan2024schedule}
-Abgaryan A, et~al (2024) {LLMs} can schedule. arXiv preprint arXiv:240806993
-  \doi{10.48550/arXiv.2408.06993}
 
 \bibitem[{Agashe et~al.(2025)Agashe, Fan et~al.}]{agashe2025coordination}
 Agashe S, Fan Y, et~al (2025) {LLM-Coordination}: Evaluating and analyzing
@@ -33,46 +22,71 @@ Amaral CJ, H{\"u}bner JF, Cranefield S (2023) Generating and choosing
   organisations for multi-agent systems. Autonomous Agents and Multi-Agent
   Systems 37(2):41. \doi{10.1007/s10458-023-09623-8}
 
+\bibitem[{Babaoglu et~al.(2006)Babaoglu, Canright, Deutsch, Di~Caro, Ducatelle,
+  Gambardella, Ganguly, Jelasity, Montemanni, Montresor, and
+  Urnes}]{babaoglu2006patterns}
+Babaoglu O, Canright G, Deutsch A, et~al (2006) Design patterns from biology
+  for distributed computing. ACM Transactions on Autonomous and Adaptive
+  Systems 1(1):26--66. \doi{10.1145/1152934.1152937}
+
+\bibitem[{Bonabeau et~al.(1998)Bonabeau, Henaux, Gu{\'e}rin, Snyers, Kuntz, and
+  Theraulaz}]{bonabeau1998iata}
+Bonabeau E, Henaux F, Gu{\'e}rin S, et~al (1998) Routing in telecommunications
+  networks with ant-like agents. In: Intelligent Agents for Telecommunication
+  Applications (IATA 1998), LNCS, vol 1437. Springer, pp 60--71,
+  \doi{10.1007/BFb0053944}
+
+\bibitem[{Bratman(1987)}]{bratman1987intentions}
+Bratman ME (1987) Intention, Plans, and Practical Reason. Harvard University
+  Press, Cambridge, MA
+
+\bibitem[{Brueckner(2000)}]{brueckner2000return}
+Brueckner SA (2000) Return from the ant: Synthetic ecosystems for manufacturing
+  control. PhD thesis, Humboldt University Berlin, Department of Computer
+  Science
+
+\bibitem[{Brueckner et~al.(2009)Brueckner, Parunak, and
+  Hilscher}]{brueckner2009saso}
+Brueckner SA, Parunak HVD, Hilscher R (2009) Swarming polyagents executing
+  hierarchical task networks. In: Third IEEE International Conference on
+  Self-Adaptive and Self-Organizing Systems (SASO 2009). IEEE, pp 51--60,
+  \doi{10.1109/SASO.2009.21}
+
 \bibitem[{Buscemi et~al.(2025)}]{buscemi2025implicit}
 Buscemi A, et~al (2025) When numbers start talking: Implicit numerical
   coordination among {LLM}-based agents. arXiv preprint arXiv:260103846
   \doi{10.48550/arXiv.2601.03846}
 
-\bibitem[{Chen et~al.(2024)Chen, Su, Zuo, Yang, Yuan, Chan, Yu, Lu, Hung, Qian,
-  Qin, Cong, Xie, Liu, Sun, and Zhou}]{chen2024agentverse}
-Chen W, Su Y, Zuo J, et~al (2024) {AgentVerse}: Facilitating multi-agent
-  collaboration and exploring emergent behaviors. In: Proceedings of the
-  Twelfth International Conference on Learning Representations (ICLR),
-  \doi{10.48550/arXiv.2308.10848}
+\bibitem[{Camazine et~al.(2001)Camazine, Deneubourg, Franks, Sneyd, Theraulaz,
+  and Bonabeau}]{camazine2001selforg}
+Camazine S, Deneubourg JL, Franks NR, et~al (2001) Self-Organization in
+  Biological Systems. Princeton Studies in Complexity, Princeton University
+  Press, Princeton, NJ
+
+\bibitem[{Claes et~al.(2011)Claes, Holvoet, and Weyns}]{claes2011anticipatory}
+Claes R, Holvoet T, Weyns D (2011) A decentralized approach for anticipatory
+  vehicle routing using delegate multiagent systems. IEEE Transactions on
+  Intelligent Transportation Systems 12(2):364--373.
+  \doi{10.1109/TITS.2011.2105867}
 
 \bibitem[{Cohen and Levesque(1991)}]{cohen1991teamwork}
 Cohen PR, Levesque HJ (1991) Teamwork. No\^{u}s 25(4):487--512.
   \doi{10.2307/2216075}, special Issue on Cognitive Science and Artificial
   Intelligence
 
-\bibitem[{{CrewAI}(2024)}]{crewai2024}
-{CrewAI} (2024) Framework for orchestrating role-playing, autonomous {AI}
-  agents. \url{https://github.com/crewAIInc/crewAI}
-
 \bibitem[{De~Wolf and Holvoet(2005)}]{dewolf2005engineering}
 De~Wolf T, Holvoet T (2005) Towards a methodology for engineering
   self-organising emergent systems. In: Self-Organization and Autonomic
   Informatics (I). IOS Press
 
-\bibitem[{Decker and Lesser(1995)}]{decker1995gpgp}
-Decker K, Lesser V (1995) Designing a family of coordination algorithms. In:
-  Proceedings of the First International Conference on Multi-Agent Systems
-  (ICMAS-95), pp 73--80
-
-\bibitem[{Dignum(2009)}]{dignum2009handbook}
-Dignum V (ed)  (2009) Handbook of Research on Multi-Agent Systems: Semantics
-  and Dynamics of Organizational Models. IGI Global,
-  \doi{10.4018/978-1-60566-256-5}
-
 \bibitem[{Dorigo and Gambardella(1997)}]{dorigo1997acs}
 Dorigo M, Gambardella LM (1997) Ant colony system: A cooperative learning
   approach to the traveling salesman problem. IEEE Transactions on Evolutionary
   Computation 1(1):53--66. \doi{10.1109/4235.585892}
+
+\bibitem[{Dorigo and St{\"u}tzle(2004)}]{dorigo2004acobook}
+Dorigo M, St{\"u}tzle T (2004) Ant Colony Optimization. MIT Press, Cambridge,
+  MA
 
 \bibitem[{Dorigo et~al.(1996)Dorigo, Maniezzo, and Colorni}]{dorigo1996ant}
 Dorigo M, Maniezzo V, Colorni A (1996) Ant system: Optimization by a colony of
@@ -86,33 +100,11 @@ Du Y, Li S, Torralba A, et~al (2024) Improving factuality and reasoning in
   International Conference on Machine Learning (ICML),
   \doi{10.48550/arXiv.2305.14325}
 
-\bibitem[{Duetting et~al.(2024)Duetting, Feng, Narasimhan, Parkes, and
-  Ravindranath}]{duetting2024mechanism}
-Duetting P, Feng V, Narasimhan H, et~al (2024) Mechanism design for large
-  language models. In: Proceedings of The Web Conference (WWW),
-  \doi{10.1145/3589334.3645511}, best Paper Award
-
-\bibitem[{Feng et~al.(2025)Feng, Shi, Bai, Ye, Huang, Choi, and
-  Tsvetkov}]{feng2025modelswarms}
-Feng S, Shi Z, Bai Y, et~al (2025) Model swarms: Collaborative search to adapt
-  {LLM} experts via swarm intelligence. In: Proceedings of the Forty-Second
-  International Conference on Machine Learning (ICML),
-  \doi{10.48550/arXiv.2410.11163}
-
-\bibitem[{Gong et~al.(2023)Gong, Huang, Ma, Vo, Durante, Noda, Zheng, Zhu,
-  Terzopoulos, Fei-Fei, and Gao}]{gong2023mindagent}
-Gong R, Huang Q, Ma X, et~al (2023) {MindAgent}: Emergent gaming interaction.
-  arXiv preprint arXiv:230909971 \doi{10.48550/arXiv.2309.09971}
-
 \bibitem[{Grass{\'e}(1959)}]{grasse1959stigmergie}
 Grass{\'e} PP (1959) La reconstruction du nid et les coordinations
   interindividuelles chez {Bellicositermes natalensis} et {Cubitermes} sp. la
   th{\'e}orie de la stigmergie. Insectes Sociaux 6:41--80.
   \doi{10.1007/BF02223791}
-
-\bibitem[{Grosz and Kraus(1996)}]{grosz1996sharedplans}
-Grosz BJ, Kraus S (1996) Collaborative plans for complex group action.
-  Artificial Intelligence 86(2):269--357. \doi{10.1016/0004-3702(95)00103-4}
 
 \bibitem[{Guo et~al.(2024)Guo, Chen, Wang, Chang, Pei, Chawla, Wiest, and
   Zhang}]{guo2024llmmas_survey}
@@ -121,18 +113,16 @@ Guo T, Chen X, Wang Y, et~al (2024) Large language model based multi-agents: A
   International Joint Conference on Artificial Intelligence (IJCAI), Survey
   Track, pp 8048--8057, \doi{10.24963/ijcai.2024/890}
 
+\bibitem[{Hadeli et~al.(2004)Hadeli, Valckenaers, Kollingbaum, and
+  Van~Brussel}]{hadeli2004stigmergy}
+Hadeli, Valckenaers P, Kollingbaum M, et~al (2004) Multi-agent coordination and
+  control using stigmergy. Computers in Industry 53(1):75--96.
+  \doi{10.1016/S0166-3615(03)00123-4}
+
 \bibitem[{Han et~al.(2025)}]{han2025blackboard}
 Han B, et~al (2025) Exploring advanced {LLM} multi-agent systems based on
   blackboard architecture ({LbMAS}). arXiv preprint arXiv:250701701
   \doi{10.48550/arXiv.2507.01701}
-
-\bibitem[{He et~al.(2024)He, Ranathunga, Cranefield, and
-  Savarimuthu}]{he2024normviolation}
-He X, Ranathunga S, Cranefield S, et~al (2024) Norm violation detection in
-  multi-agent systems using large language models---a pilot study. In:
-  Coordination, Organizations, Institutions, Norms, and Ethics for Governance
-  of Multi-Agent Systems XVII (COINE 2024, at AAMAS 2024), LNCS, vol 15398.
-  Springer, p 146--159, \doi{10.1007/978-3-031-82039-7_10}
 
 \bibitem[{Hong et~al.(2024)Hong, Zhuge, Chen, Zheng, Cheng, Zhang, Wang, Wang,
   Yau, Lin, Zhou, Ran, Xiao, Wu, and Schmidhuber}]{hong2024metagpt}
@@ -141,11 +131,6 @@ Hong S, Zhuge M, Chen J, et~al (2024) {MetaGPT}: Meta programming for a
   International Conference on Learning Representations (ICLR),
   \doi{10.48550/arXiv.2308.00352}
 
-\bibitem[{Horling and Lesser(2004)}]{horling2004survey}
-Horling B, Lesser V (2004) A survey of multi-agent organizational paradigms.
-  The Knowledge Engineering Review 19(4):281--316.
-  \doi{10.1017/S0269888905000317}
-
 \bibitem[{Jimenez~Romero et~al.(2025)}]{jimenez2025swarm}
 Jimenez~Romero C, et~al (2025) Multi-agent systems powered by large language
   models: Applications in swarm intelligence. Frontiers in Artificial
@@ -153,40 +138,43 @@ Jimenez~Romero C, et~al (2025) Multi-agent systems powered by large language
 
 \bibitem[{Kim et~al.(2025)}]{kim2025scaling}
 Kim M, et~al (2025) Towards a science of scaling agent systems. arXiv preprint
-  arXiv:251208296 \doi{10.48550/arXiv.2512.08296}, google Research
+  arXiv:251208296 \doi{10.48550/arXiv.2512.08296}
 
 \bibitem[{Li et~al.(2023)Li, Hammoud, Itani, Khizbullin, and
   Ghanem}]{li2023camel}
 Li G, Hammoud HAAK, Itani H, et~al (2023) {CAMEL}: Communicative agents for
   ``mind'' exploration of large language model society. In: Advances in Neural
-  Information Processing Systems (NeurIPS), \doi{10.5555/3666122.3668386}
+  Information Processing Systems (NeurIPS), \doi{10.48550/arXiv.2303.17760}
 
-\bibitem[{Malone and Crowston(1994)}]{malone1994coordination}
-Malone TW, Crowston K (1994) The interdisciplinary study of coordination. ACM
-  Computing Surveys 26(1):87--119. \doi{10.1145/174666.174668}
+\bibitem[{Mamei and Zambonelli(2009)}]{mamei2009tota}
+Mamei M, Zambonelli F (2009) Programming pervasive and mobile computing
+  applications: The {TOTA} approach. ACM Transactions on Software Engineering
+  and Methodology 18(4):15:1--15:56. \doi{10.1145/1538942.1538945}
 
 \bibitem[{Monderer and Shapley(1996)}]{monderer1996potential}
 Monderer D, Shapley LS (1996) Potential games. Games and Economic Behavior
   14:124--143. \doi{10.1006/game.1996.0044}
-
-\bibitem[{Nedi{\'c} and Ozdaglar(2009)}]{nedic2009distributed}
-Nedi{\'c} A, Ozdaglar A (2009) Distributed subgradient methods for multi-agent
-  optimization. IEEE Transactions on Automatic Control 54(1):48--61.
-  \doi{10.1109/TAC.2008.2009515}
-
-\bibitem[{Pallagani et~al.(2024)Pallagani, Muppasani, Murugesan, Rossi,
-  Srivastava, Horesh, Fabiano, and Loreggia}]{pallagani2024planning}
-Pallagani V, Muppasani B, Murugesan K, et~al (2024) On the prospects of
-  incorporating large language models in automated planning and scheduling. In:
-  Proceedings of the Thirty-Fourth International Conference on Automated
-  Planning and Scheduling (ICAPS), \doi{10.1609/icaps.v34i1.31503}
 
 \bibitem[{Park et~al.(2023)Park, O'Brien, Cai, Morris, Liang, and
   Bernstein}]{park2023generative}
 Park JS, O'Brien JC, Cai CJ, et~al (2023) Generative agents: Interactive
   simulacra of human behavior. In: Proceedings of the 36th Annual ACM Symposium
   on User Interface Software and Technology (UIST),
-  \doi{10.1145/3586183.3606763}, best Paper Award
+  \doi{10.1145/3586183.3606763}
+
+\bibitem[{Parunak(1997)}]{parunak1997ant}
+Parunak HVD (1997) ``go to the ant'': Engineering principles from natural
+  multi-agent systems. Annals of Operations Research 75:69--101.
+  \doi{10.1023/A:1018980001403}
+
+\bibitem[{Parunak(2011)}]{parunak2011mean}
+Parunak HVD (2011) Between agents and mean fields. In: Multi-Agent-Based
+  Simulation XII (MABS 2011, at AAMAS 2011). Springer, Taipei, Taiwan, LNAI, pp
+  106--117
+
+\bibitem[{Parunak(2025)}]{parunak2025insects}
+Parunak HVD (2025) Insects and agents: Extending the metaphor. In:
+  Multi-Agent-Based Simulation XXVI (MABS 2025, at AAMAS 2025). Springer, LNCS
 
 \bibitem[{Qian et~al.(2024)Qian, Liu, Liu, Chen, Dang, Li, Yang, Chen, Su,
   Cong, Xu, Li, Liu, and Sun}]{qian2024chatdev}
@@ -201,6 +189,11 @@ Qian C, Zuo J, Chen W, et~al (2025) {MacNet}: Scaling large language
   International Conference on Learning Representations (ICLR),
   \doi{10.48550/arXiv.2406.07155}
 
+\bibitem[{Rao and Georgeff(1995)}]{raogeorgeff1995bdi}
+Rao AS, Georgeff MP (1995) {BDI} agents: From theory to practice. Proceedings
+  of the First International Conference on Multi-Agent Systems (ICMAS-95) pp
+  312--319
+
 \bibitem[{Ren et~al.(2024)Ren, Hu, Hu et~al.}]{ren2024norms}
 Ren S, Hu Z, Hu S, et~al (2024) Emergence of social norms in generative agent
   societies: Principles and architecture. In: Proceedings of the Thirty-Third
@@ -211,14 +204,12 @@ Ren S, Hu Z, Hu S, et~al (2024) Emergence of social norms in generative agent
 Riedl MO (2025) Emergent coordination in multi-agent language models. arXiv
   preprint arXiv:251005174 \doi{10.48550/arXiv.2510.05174}
 
-\bibitem[{Ruan et~al.(2025)}]{ruan2025swarmbench}
-Ruan S, et~al (2025) {SwarmBench}: Benchmarking {LLMs}' swarm intelligence.
-  arXiv preprint arXiv:250504364 \doi{10.48550/arXiv.2505.04364}
-
-\bibitem[{Salemi et~al.(2025)}]{salemi2025blackboard}
-Salemi B, et~al (2025) {LLM}-based multi-agent blackboard system for
-  information discovery in data science. arXiv preprint arXiv:251001285
-  \doi{10.48550/arXiv.2510.01285}
+\bibitem[{Sauter et~al.(2005)Sauter, Matthews, Parunak, and
+  Brueckner}]{sauter2005pheromones}
+Sauter JA, Matthews R, Parunak HVD, et~al (2005) Performance of digital
+  pheromones for swarming vehicle control. In: Proceedings of the Fourth
+  International Joint Conference on Autonomous Agents and Multiagent Systems
+  (AAMAS 2005). ACM, pp 903--910, \doi{10.1145/1082473.1082610}
 
 \bibitem[{Savarimuthu et~al.(2024)Savarimuthu, Ranathunga, and
   Cranefield}]{savarimuthu2024norms}
@@ -234,22 +225,21 @@ Serugendo GDM, Gleizes MP, Karageorgos A (2005) Self-organisation in
   multi-agent systems. The Knowledge Engineering Review 20(2):165--189.
   \doi{10.1017/S0269888905000494}
 
-\bibitem[{Shoham and Leyton-Brown(2008)}]{shoham2008multiagent}
-Shoham Y, Leyton-Brown K (2008) Multiagent Systems: Algorithmic,
-  Game-Theoretic, and Logical Foundations. Cambridge University Press,
-  \doi{10.5555/1483085}
-
-\bibitem[{Tran et~al.(2025)Tran, Bui, Phan, and Nguyen}]{tran2025collaboration}
-Tran D, Bui T, Phan N, et~al (2025) Multi-agent collaboration mechanisms: A
-  survey of {LLMs}. arXiv preprint arXiv:250106322
-  \doi{10.48550/arXiv.2501.06322}
+\bibitem[{Valckenaers and Van~Brussel(2015)}]{valckenaers2015design}
+Valckenaers P, Van~Brussel H (2015) Design for the Unexpected: From Holonic
+  Manufacturing Systems towards a Humane Mechatronics Society.
+  Butterworth-Heinemann
 
 \bibitem[{Valmeekam et~al.(2023)Valmeekam, Marquez, Sreedharan, and
   Kambhampati}]{valmeekam2023planning}
 Valmeekam K, Marquez M, Sreedharan S, et~al (2023) On the planning abilities of
   large language models---a critical investigation. In: Advances in Neural
-  Information Processing Systems (NeurIPS), \doi{10.48550/arXiv.2305.15771},
-  spotlight
+  Information Processing Systems (NeurIPS), \doi{10.48550/arXiv.2305.15771}
+
+\bibitem[{Weyns et~al.(2015)Weyns, Michel, Parunak, Boissier, Schumacher, and
+  Ricci}]{weyns2007environment}
+Weyns D, Michel F, Parunak HVD, et~al (eds)  (2015) Agent Environments for
+  Multi-Agent Systems --- A Research Roadmap. Springer, Berlin
 
 \bibitem[{Wu et~al.(2023)Wu, Bansal, Zhang, Wu, Zhang, Zhu, Li, Jiang, Zhang,
   and Wang}]{wu2023autogen}
@@ -261,11 +251,6 @@ Wu Q, Bansal G, Zhang J, et~al (2023) {AutoGen}: Enabling next-gen {LLM}
 Xu Y, Deng C, Chen X, et~al (2022) Stigmergic independent reinforcement
   learning for multiagent collaboration. IEEE Transactions on Neural Networks
   and Learning Systems 33(9):4285--4299. \doi{10.1109/TNNLS.2021.3056418}
-
-\bibitem[{Yuan et~al.(2016)Yuan, Ling, and Yin}]{yuan2016convergence}
-Yuan K, Ling Q, Yin W (2016) On the convergence of decentralized gradient
-  descent. SIAM Journal on Optimization 26(3):1835--1854.
-  \doi{10.1137/130943170}
 
 \bibitem[{Zhang et~al.(2025)}]{zhang2025agentprune}
 Zhang G, et~al (2025) Cut the crap: An economical communication pipeline for

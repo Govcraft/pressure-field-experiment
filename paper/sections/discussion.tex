@@ -3,167 +3,46 @@
 %% ============================================================================
 
 \section{Discussion}
+\label{sec:discussion}
 
-\subsection{Why Does Pressure-Field Dominate?}
+Decentralized symmetric-stigmergic coordination wins where strict hierarchical control collapses, and the way it collapses is itself evidence for the symmetric extension.
 
-Our results contradict the intuition that explicit coordination should outperform implicit coordination. We identify three factors explaining pressure-field's dominance:
+\subsection{Why Decentralized Coordination Wins in This Regime}
 
-\textbf{Coordination overhead harms performance.} Hierarchical systems spend computational budget on coordination rather than problem-solving. The manager-worker protocol requires multiple \ac{llm} calls per patch (planning, delegation, execution), while pressure-field requires only one (patch proposal). This overhead compounds: hierarchical attempts fewer patches per tick, reducing exploration. This finding aligns with Kim et al.'s~\cite{kim2025scaling} large-scale study of 180 agent configurations, which identifies a \emph{tool-coordination trade-off} where coordination overhead becomes a net cost, and with Zhang et al.'s~\cite{zhang2025agentprune} finding that 87\% of inter-agent communication is redundant.
+Three factors explain the advantage in the regime where it holds. First, centralized coordination spends budget on coordination rather than on the problem: a manager-worker protocol issues several model calls per applied patch, so it attempts fewer patches per tick and explores less. This matches the large-scale finding that coordination overhead can become a net cost~\cite{kim2025scaling} and that most inter-agent messages are redundant~\cite{zhang2025agentprune}. Second, the domain is locally decomposable: fixing a conflict in one time block rarely creates one in a distant block, so greedy local descent suffices and global planning buys nothing, consistent with the observation that language-model agents are stronger at reading environmental state than at reasoning about other agents~\cite{agashe2025coordination}. Third, addressing several distinct high-pressure regions per tick lets progress happen wherever it can, so no single hard region stalls the whole run.
 
-\textbf{Local greedy decisions are effective for constraint satisfaction.} Meeting room scheduling exhibits locality: fixing a conflict in one time block rarely creates conflicts in distant blocks. This matches pressure-field's locality assumption, making greedy local optimization effective. Hierarchical coordination's global planning provides no benefit for locally-decomposable problems. This is consistent with Agashe et al.'s~\cite{agashe2025coordination} finding that \ac{llm} agents excel at environment comprehension over Theory of Mind reasoning---pressure-field coordination leverages the capability \acp{llm} are best at.
+\subsection{Two Failure Modes: Rejection Loops and Legality Stalls}
+\label{sec:failure-analysis}
 
-\textbf{Parallel validation amplifies pressure-field's advantage.} Pressure-field validates patches for multiple regions simultaneously, applying the highest-scoring patch per region that reduces pressure. Hierarchical validates one patch at a time, requiring multiple ticks to explore alternatives. On problems with many valid solutions, parallel exploration finds solutions faster.
+Each coordination paradigm fails through its own characteristic mechanism, and the two mechanisms locate what escalation can and cannot repair.
 
-\subsection{Failure Analysis: Why Hierarchical Collapses}
+Hierarchical control collapses on the harder instances through the \emph{rejection loop}. Strict-greedy control always selects the highest-pressure region, but a region is highest-pressure precisely because it resists improvement. When the proposed patch fails validation, the region stays highest-pressure and is selected again, so the controller re-attacks the one region it cannot fix while the rest of the artifact goes untouched. The rate of this pathology is reported with the failure statistics: $13\%$ of hierarchical runs apply no patch at all, and roughly $94\%$ of the manager's proposals are rejected by the validation gate.
 
-The 30$\times$ performance gap (48.5\% vs 1.5\%) demands deeper investigation. Analysis of hierarchical trials reveals a catastrophic failure pattern: the \emph{rejection loop}.
+The loop is a selection pathology, not a capability deficit, and the protocol makes that distinction measurable. The hierarchical baseline shares the system's model-escalation trigger (Section~\ref{sec:experiments}), so when it stalls it eventually proposes with the largest model in the chain, and it still re-attacks the same region: escalated capability arrives at the same greedy choice. Two things are needed to escape, and the symmetric system supplies both. Field-based concurrent dispatch keeps progress flowing on the regions that are tractable while the hard region waits out its inhibition window, and the environment-to-agent escalation operator of Section~\ref{sec:symmetric-stigmergy} reallocates capability where the field has stalled, the share of solves requiring escalation rising with difficulty (Section~\ref{sec:escalation}). The hierarchical failure is therefore not a tuning accident but a structural consequence of coupling all capability, however escalated, to a single greedy selection rule; the experiments make that collapse the empirical case for coordinating selection through the field.
 
-\textbf{The rejection loop mechanism.} Hierarchical always selects the highest-pressure region for improvement. But the highest-pressure regions are high-pressure precisely because they are difficult to improve. When the \ac{llm} proposes a patch that fails validation (does not reduce pressure), the region remains highest-pressure and is selected again next tick. This creates a self-reinforcing cycle: 66.7\% of hierarchical runs (180/270) applied zero patches across all 50 ticks, stuck targeting the same intractable region repeatedly.
+Pheromone-field coordination fails through a different mechanism, the \emph{legality stall}, and its unsolved easy instances share one signature: the run descends to a single unscheduled meeting with zero overlaps ($P = 1.0$) and stays there (all $20$ of its unsolved easy instances end at exactly $P = 1.0$). Placing the last meeting requires first moving a placed meeting that blocks its attendees, but every legal first step of that rearrangement is non-improving: evicting the blocker to the pool raises $P$ by one, and an in-block swap that places one meeting while evicting another leaves $P$ unchanged, so the strict-decrease gate rejects both. This is greedy improving-move dynamics terminating at a local minimum of the potential rather than its global minimum~\cite{monderer1996potential}, realized in the gate. Escalation cannot repair it, because no amount of proposal quality makes a strictly improving single-region patch exist: in the stalled trials the proposal stream continues at full rate with the model escalated to the top of the chain, and the rejected proposals are dominated by exactly the swap and eviction moves that would begin the two-step escape ($33{,}821$ rejected proposals at $\Delta = 0$ and $50{,}177$ at $\Delta = +1$ across the grid, together $47\%$ of all rejections). The gate that contains model error (Section~\ref{sec:method}) is the same rule that forbids these neutral intermediate states; containment and greed are one mechanism, and the legality stall is its price.
 
-\textbf{Rejection rates confirm the pattern.} Across all hierarchical trials, only 173 patches were accepted out of 13,460 proposed---a 98.7\% rejection rate. By contrast, pressure-field's parallel exploration means that even if one agent's patch is rejected, other agents make progress on different regions. The non-blocking architecture prevents any single difficult region from stalling the entire system.
-
-\textbf{The architectural lesson.} Hierarchical's design embodies a reasonable intuition: focus intelligent effort on the worst problems. But this creates a trap when combined with strict validation: the hardest problems resist improvement, causing repeated rejection, which blocks progress everywhere. Pressure-field avoids this trap through distributed exploration---progress happens where it can, not where a central planner dictates it must.
+The taxonomy is then simple. Rejection loops are selection failures, cured by coordinating selection through the field. Capability stalls are proposal failures, cured by the $ASU$ escalation arrow. Legality stalls are action-space failures, and nothing in the present operator set cures them: an atomic evict-and-place move spanning two regions would clear the plateau under the same strict gate, at the cost of widening the single-region patch to a two-region transaction (Section~\ref{sec:discussion}, future work).
 
 \subsection{Limitations}
 
-Our experiments reveal several important limitations:
+\textbf{Propagation is one hop only.} The environment-propagation operator applies a single hop per tick from regions' own pressures, not multi-hop accumulated diffusion. This keeps the model near the agent-based end of the continuum and bounds how far a hot region's influence spreads in one tick; richer diffusion over the temporal chain, and over non-temporal region relations, is unexplored here.
 
-\textbf{Absolute solve rates are modest on hard problems.} Even pressure-field achieves only 15.6\% on hard problems. Meeting room scheduling with tight constraints (5 rooms, 60 meetings, 30\% pre-scheduled) remains challenging for small models (0.5b--3b parameters); larger models may achieve higher absolute solve rates.
+\textbf{Problem scale is small for a swarming method.} The instances are deliberately sized so that hierarchical and conversational baselines remain feasible to run, which is the opposite of the high-combinatorial regime where stigmergy is usually argued to excel. The regime characterization should therefore be read as a lower bound on where decentralized coordination helps, not as a test at swarm scale.
 
-\textbf{Domain specificity.} Results on meeting room scheduling may not generalize to domains lacking measurable pressure gradients or locality properties. Tasks requiring global planning or long-horizon reasoning may favor hierarchical approaches.
+\textbf{Absolute solve rates are bounded by capability and by the gate.} Even the pheromone-field strategy leaves many hard instances unsolved ($16.7\%$ solved on hard); with 0.5b--3b models, convergence analysis points to model capability as one limit on hard problems, and the legality stall of Section~\ref{sec:failure-analysis} as a second limit that larger models would not remove. Larger models would plausibly raise absolute rates on capability-bound instances, an effect this study does not measure.
 
-However, meeting scheduling is representative of a broader class of \emph{resource allocation problems with soft constraints}: cloud compute scheduling (VMs to hosts with affinity/anti-affinity rules), logistics optimization (packages to routes with capacity and time windows), and workforce rostering (employees to shifts with skill and availability constraints). These domains share the structural properties that enable pressure-field coordination: (1) decomposable quality metrics (utilization, constraint violations, balance), (2) locality (fixing one allocation rarely breaks distant allocations), and (3) multiple valid solutions (no single optimum, many acceptable configurations). We selected meeting scheduling as the evaluation domain because it is intuitive, reproducible, and exhibits these properties clearly. The coordination mechanism itself---pressure gradients, temporal decay, parallel validation---is domain-agnostic; only the pressure function requires domain-specific design.
+\textbf{Evidence is from a single domain.} Results on meeting room scheduling may not transfer to domains lacking measurable local quality signals or locality. The mechanism itself, the sensed field, evaporation, propagation, and two-stage validation, is domain-agnostic, but only the pressure function carries domain knowledge, and a mis-specified pressure function invites Goodhart-style gaming, where agents reduce the measured pressure without improving true quality.
 
-\textbf{Additional practical limitations:}
-\begin{itemize}
-\item Requires well-designed pressure functions (not learned from data)
-\item Decay rates $\lambda_f, \lambda_\gamma$ and inhibition period require task-specific tuning
-\item May not suit tasks requiring long-horizon global planning
-\item Goodhart's Law: agents may game poorly-designed metrics
-\item Resource cost of parallel validation: testing $K$ patches requires $O(K \cdot |A|)$ memory where $|A|$ is artifact size
-\end{itemize}
+\subsection{Societal Considerations}
 
-\subsubsection{Hallucination Filtering and Emergent Trajectories}
-
-The validation phase (Phase 2b) serves as a filter for individual \ac{fm} hallucinations: patches that increase pressure or violate syntactic constraints are rejected before application. This provides strong guarantees at the individual-action level---no single hallucination can directly harm artifact quality.
-
-However, system-level behavior emerges from \emph{sequences} of validated patches, and trajectory-level risks remain. Consider a hypothetical scenario: an agent proposes a patch that reduces pressure in region $R_1$ by making a change that creates a subtle dependency on region $R_2$. The patch is validated (pressure decreased), but subsequent patches to $R_2$ now have unpredictable effects on $R_1$. The individual patches are all pressure-reducing, but the emergent trajectory creates fragile coupling that was invisible to local validation.
-
-More generally, validation filters based on pressure reduction cannot detect:
-\begin{itemize}
-\item \emph{Coherence drift}: Individual improvements that collectively shift the artifact toward an inconsistent state
-\item \emph{Emergent gaming}: Patches that exploit pressure function weaknesses in ways only apparent over multiple steps
-\item \emph{Dependency accumulation}: Gradual introduction of hidden couplings that reduce future improvability
-\end{itemize}
-
-Mitigating trajectory-level risks requires mechanisms beyond local validation: periodic global coherence checks, trajectory logging for post-hoc analysis, and pressure functions that penalize not just local quality but also coupling metrics. These remain areas for future work.
-
-\subsubsection{Decay Miscalibration Failure Modes}
-
-Temporal decay is critical for escaping local optima (Theorem~\ref{thm:basin-separation}), but miscalibrated decay rates introduce distinct failure modes:
-
-\textbf{Too-fast decay prevents stability.} When fitness decays faster than agents can reinforce successful regions, the system cannot maintain any stable configuration. Solved regions immediately become high-pressure again, triggering unnecessary rework. In the limit, excessively fast decay produces perpetual oscillation: agents patch, decay erases, agents re-patch, indefinitely.
-
-\textbf{Too-slow decay traps in local minima.} When fitness decays slower than the exploration timescale, agents cannot escape suboptimal basins. Early patches establish fitness peaks that persist indefinitely, preventing reconsideration even when better solutions exist. This is the failure mode our ablation study suggests: without decay, we observed a 10 percentage point reduction in solve rate, consistent with agents remaining trapped in initial basins (though the effect did not reach statistical significance at $n=30$).
-
-The optimal decay rate depends on problem characteristics: harder problems with deeper local minima require faster decay to enable escape, while problems with fragile solutions require slower decay to maintain stability. Our experiments use fixed decay rates ($\lambda_f = 0.1$, fitness half-life 5 seconds), which may be suboptimal for some problem instances. Adaptive decay---adjusting rates based on pressure velocity---is a promising direction for future work.
-
-\subsection{When to Choose Each Approach}
-
-Our results suggest the following guidance:
-
-\textbf{Pressure-field coordination is preferable when:}
-\begin{enumerate}
-\item \textbf{Performance matters.} Pressure-field achieves 3--30$\times$ higher solve rates than alternatives.
-\item \textbf{Simplicity is valued.} No coordinator agent needed; coordination emerges from shared state.
-\item \textbf{Fault tolerance matters.} No single point of failure; agents can join/leave without protocol overhead.
-\item \textbf{Pressure signals are available.} The domain provides measurable quality gradients.
-\item \textbf{Problems are locally decomposable.} Local fixes improve global quality without cascading conflicts.
-\end{enumerate}
-
-\textbf{Hierarchical coordination may be appropriate when:}
-\begin{enumerate}
-\item \textbf{Explicit control is required.} Some domains require deterministic task assignment for regulatory or safety reasons.
-\item \textbf{Interpretability is critical.} Hierarchical task assignment provides clear audit trails.
-\item \textbf{Global planning is essential.} Tasks with strong non-local dependencies may benefit from centralized reasoning.
-\end{enumerate}
-
-\subsection{Band and Model Escalation as Adaptive Capability}
-
-All experiments use a two-level escalation mechanism. \emph{Band escalation} cycles through sampling strategies (Exploitation $\to$ Balanced $\to$ Exploration, 7 ticks each) before \emph{model escalation} progresses through model sizes (0.5b $\to$ 1.5b $\to$ 3b parameters). Model escalation triggers when regions remain high-pressure for 21 consecutive ticks.
-
-This mechanism proves beneficial for pressure-field: on hard problems, pressure-field achieves 15.6\% with escalation enabled. The escalation mechanism works because larger models have broader solution coverage and different sampling bands explore different regions of solution space.
+Decentralized coordination shifts three deployment concerns relative to hierarchical control, and each is addressable. Accountability diffuses, because several agents may improve a region with no record of which one ``owned'' the outcome, so regulated deployments need an audit log of patch provenance, the pressure signal at proposal time, and the validation result; the provenance log in region state already records this. Metric gaming is a standing risk, because agents optimize the pressure function rather than true quality, so the function should use multiple orthogonal axes and be audited against human judgment. Explainability is mechanistic but not causal: the system records that a region was high-pressure and a patch reduced it, not why that patch was chosen, which suits domains where outcomes are cheaply verified and is weaker where human justification is required. These are deployment requirements around a simple mechanism, not changes to the mechanism itself.
 
 \subsection{Future Work}
 
 \begin{itemize}
-\item \textbf{Learned pressure functions}: Current sensors are hand-designed. Can we learn pressure functions from solution traces?
-\item \textbf{Adversarial robustness}: Can malicious agents exploit pressure gradients to degrade system performance?
-\item \textbf{Multi-artifact coordination}: Extension to coupled artifacts where patches in one affect pressure in another
-\item \textbf{Larger-scale experiments}: Testing on schedules with more rooms and longer time horizons to characterize scaling limits
-\item \textbf{Alternative domains}: Applying pressure-field coordination to code refactoring, configuration management, and other artifact refinement tasks
+\item \textbf{Richer environment propagation.} Extend the one-hop operator to multi-hop diffusion and to non-temporal region relations, and measure where on the agent-to-equation continuum the best operating point lies.
+\item \textbf{Escaping legality stalls.} Either widen the action space to atomic two-region moves, which pass the strict gate unchanged, or relax acceptance to admit non-worsening patches under a cycle guard; the first preserves the gate's containment property, the second trades it for mobility.
+\item \textbf{Scale and capability.} Test at swarm-scale problem sizes and with larger models, to separate the regime boundary from the small-model ceiling.
+\item \textbf{Learned and multi-artifact pressure.} Learn pressure functions from solution traces, and extend to coupled artifacts where a patch in one shifts pressure in another.
 \end{itemize}
-
-\subsection{FM-MAS Reciprocity: Bidirectional Problem Solving}
-
-The intersection of \acp{fm} and \acp{mas} is not merely additive---each paradigm solves fundamental problems that the other cannot address alone. This reciprocity, central to the research agenda of integrating foundation models with multi-agent systems~\cite{savarimuthu2024norms,guo2024llmmas_survey}, suggests that pressure-field coordination represents a genuine synthesis rather than a simple combination.
-
-\subsubsection{Foundation Models Solve a MAS Coordination Problem}
-
-Traditional \ac{mas} coordination requires explicit action space enumeration. \Ac{gpgp} coordinates tasks through declared capabilities and commitments; SharedPlans reasons about action sequences and their preconditions; organizational models assign roles with specified behaviors. All these approaches assume that designers can enumerate what agents \emph{can do} and under what conditions.
-
-For open-ended artifact refinement---improving code quality, refining documents, optimizing configurations---this enumeration is intractable. The space of possible improvements is unbounded; no finite action language captures all valid patches. Traditional \ac{mas} approaches require either (a) restricting the problem to a tractable subset with enumerable actions, or (b) developing domain-specific action representations for each artifact type.
-
-\Acp{fm} eliminate this enumeration requirement. Their broad pretraining provides implicit coverage of improvement strategies across diverse domains without explicit action specification. An \ac{llm} actor can propose patches for code, natural language, structured data, or configuration files using the same interface: observe local context, receive pressure feedback, generate improvement proposals. This ``universal actor'' capability enables stigmergic coordination on problem classes where traditional \ac{mas} approaches would require extensive domain engineering.
-
-\subsubsection{Multi-Agent Systems Solve a FM Problem}
-
-Conversely, \acp{fm} face a fundamental problem that \ac{mas} coordination solves: how to combine multiple outputs coherently. A single \ac{fm} produces one response per query; scaling to complex artifacts requires orchestrating multiple generations. Current approaches use ad-hoc combination strategies: voting, ranking, chain-of-thought aggregation, or human-in-the-loop selection.
-
-Pressure-field coordination provides a principled framework for combining \ac{fm} outputs. Rather than voting on which response is ``best'' or ranking outputs by heuristic scores, the pressure gradient defines an objective criterion: accept patches that reduce pressure, reject those that do not. Multiple \ac{fm} outputs compete not through popularity or arbitrary ranking, but through their effect on a well-defined quality function.
-
-This framing clarifies why pressure-field coordination outperforms conversation baselines. AutoGen-style multi-agent dialogue is an ad-hoc combination strategy---agents exchange messages and reach conclusions through emergent consensus. Pressure-field coordination replaces emergent consensus with objective gradients: no negotiation is needed when the artifact state adjudicates quality.
-
-\subsubsection{Implications for FM-MAS Integration}
-
-This reciprocity suggests design principles for future FM-MAS systems:
-
-\begin{enumerate}
-\item \textbf{Leverage FM coverage, constrain via MAS gradients.} Use \acp{fm} for their broad solution coverage, but use \ac{mas} coordination mechanisms to filter and combine outputs objectively.
-\item \textbf{Prefer stigmergic over explicit coordination.} When \acp{fm} serve as actors, stigmergic coordination avoids the overhead of explicit protocols that FMs may not reliably follow. Evidence from Jimenez Romero et al.~\cite{jimenez2025swarm} confirms that \acp{llm} can interpret and respond to environmental gradients for collective coordination.
-\item \textbf{Design pressure functions as FM-MAS interfaces.} The pressure function is the critical interface: it must capture human intent precisely enough that \ac{fm} outputs reducing pressure are genuinely improvements. This connects to normative reasoning in \acp{mas}~\cite{savarimuthu2024norms}: the pressure function encodes behavioral expectations analogous to social norms, but through continuous signals rather than explicit rules.
-\end{enumerate}
-
-Our experimental results---pressure-field achieving $4\times$ higher solve rates than conversation baselines---provide empirical support for these principles. The coordination overhead of explicit dialogue exceeds its organizational benefit when objective gradients are available. These findings complement the collaborative scaling law discovered by Qian et al.~\cite{qian2025macnet}, which shows logistic growth with diminishing returns from adding agents---pressure-field coordination achieves coordination benefits without the communication overhead that drives those diminishing returns.
-
-\subsection{Societal Implications}
-
-Pressure-field coordination raises societal concerns that extend beyond technical performance. We identify three critical issues---accountability attribution, metric gaming through Goodhart's Law, and explainability challenges---that require deliberate design choices in deployment.
-
-\subsubsection{Accountability and Attribution}
-
-When coordination emerges from shared pressure gradients rather than explicit delegation, attributing outcomes to individual agents becomes challenging. In hierarchical systems, task assignment creates clear accountability chains. In pressure-field coordination, multiple agents may contribute to a region through independent pressure-reducing actions, with no record of which agent ``owned'' the outcome.
-
-This accountability diffusion has both benefits and risks. The benefit is fault tolerance: agent failures degrade performance gracefully rather than catastrophically. The risk is opacity in failure analysis: identifying which agent proposed a problematic patch---and what pressure signal motivated it---requires detailed logging that the minimal coordination mechanism does not inherently provide.
-
-For deployment in regulated domains, this suggests an augmentation requirement: pressure-field systems must maintain audit logs recording patch provenance, pressure signals at proposal time, and validation outcomes. The coordination mechanism remains simple---agents coordinate through shared state---but operational deployment adds logging infrastructure preserving accountability.
-
-\subsubsection{Goodhart's Law and Metric Gaming}
-
-Goodhart's Law states: ``When a measure becomes a target, it ceases to be a good measure.'' Pressure-field coordination is vulnerable to this dynamic because agents are optimized to reduce pressure as defined by designer-specified functions. If those functions imperfectly capture true quality---and they inevitably do---agents will discover and exploit the mismatch.
-
-Consider code quality pressure functions penalizing complexity metrics. An agent might reduce complexity by splitting functions excessively, harming readability while improving the metric. The mitigation is not abandoning pressure functions but designing them defensively: use multiple orthogonal pressure axes, include adversarial sensors detecting gaming strategies, and audit whether pressure reduction correlates with human quality judgments. Pressure functions should evolve as agents discover exploits.
-
-Foundation models introduce second-order gaming concerns: \acp{llm} trained on internet-scale text may have implicit knowledge of how to game specific benchmarks. This suggests pressure functions for \ac{llm}-based systems should favor domain-specific quality signals harder to optimize without genuine improvement.
-
-\subsubsection{Explainability Challenges}
-
-In hierarchical systems, explanations follow delegation chains: ``Manager X assigned task Y to Worker Z because condition C held.'' In pressure-field coordination, the explanation is: ``Region R had high pressure, agent A proposed patch $\Delta$ reducing pressure by $\delta$.'' This is mechanistically transparent but causally opaque---it describes what happened without explaining why that particular patch was chosen.
-
-This is the explainability trade-off inherent to emergent coordination: simplicity in mechanism comes at the cost of legibility in rationale. For many domains---code formatting, resource optimization, routine maintenance---the trade-off is acceptable: outcomes are verifiable even if reasoning is opaque. For high-stakes domains requiring human oversight, opacity is unacceptable.
-
-The design implication is domain-dependent deployment: pressure-field coordination suits domains where outcome verification is cheap even if reasoning transparency is limited. For domains requiring justification to human stakeholders, hierarchical coordination remains necessary despite overhead costs.
-
-\subsubsection{Design Implications}
-
-These concerns suggest three requirements for responsible deployment: comprehensive audit logging preserving patch provenance and pressure signals, defensive pressure function design with multiple orthogonal axes, and domain-appropriate verification matching coordination opacity with outcome verifiability. The coordination mechanism remains simple---but responsible deployment requires surrounding infrastructure addressing accountability, gaming, and explainability.

@@ -1,24 +1,44 @@
 \input{preamble}
 
+%% ============================================================================
+%% CANDIDATE TITLES (Parunak point 2: drop "pressure field", adopt pheromone /
+%% symmetric-stigmergy vocabulary). Candidate (A) is INSTALLED as the active
+%% \title below; (B) and (C) remain here if Roland re-picks:
+%%
+%% (A) [INSTALLED] Symmetric Stigmergy with Foundation-Model Agents:
+%%     Pheromone-Field Coordination for Decentralized Artifact Refinement
+%%
+%% (B) Foundation Models as Stigmergic Agents: A Symmetric-Stigmergic
+%%     Coordination Mechanism for Decentralized Artifact Refinement
+%%
+%% (C) From Ant Trails to Language Agents: Instantiating Symmetric Stigmergy
+%%     for LLM Multi-Agent Artifact Refinement
+%%
+%% "Pheromone field" is legitimate AAMAS11 vocabulary; the rejected coinage was
+%% "pressure field," retained in the body ONLY as the name of the sensed
+%% sematectonic field, explicitly mapped to the environment state es_i.
+%% ============================================================================
+
 \begin{document}
 
-\title[Emergent Coordination via Pressure Fields]{Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay}
+\title[Symmetric Stigmergy with Foundation-Model Agents]{Symmetric Stigmergy with Foundation-Model Agents: Pheromone-Field Coordination for Decentralized Artifact Refinement}
 
-\author*[1]{\fnm{Roland R.} \sur{Rodriguez, Jr.}}\email{rrrodzilla@proton.me}\orcid{0009-0007-0355-3179}
+\author*[1]{\fnm{Rolando Rene} \sur{Rodriguez, Jr.}\orcid{https://orcid.org/0009-0007-0355-3179}}\email{rrrodzilla@proton.me}
 
 \affil[1]{\orgname{Independent Researcher}, \city{Corpus Christi}, \state{TX}, \country{United States}}
 
-\abstract{Current multi-agent large language model (LLM) frameworks rely on explicit orchestration patterns borrowed from human organizational structures: planners delegate to executors, managers coordinate workers, and hierarchical control flow governs agent interactions. These approaches suffer from coordination overhead that scales poorly with agent count and task complexity. We propose a fundamentally different paradigm inspired by natural coordination mechanisms: agents operate locally on a shared artifact, guided only by pressure gradients derived from measurable quality signals, with temporal decay preventing premature convergence. We formalize this as optimization over a pressure landscape and prove convergence guarantees under mild conditions.
+\abstract{Stigmergy, coordination through marks left in a shared environment, has mostly been applied with simple reactive agents. We instantiate Parunak's symmetric-stigmergic schema in a foundation-model multi-agent system, where reasoning agents coordinate entirely through a shared artifact: each observes a region's local quality signals, the sensed pressure field, and proposes a patch, with no coordinating agent, no planner or manager making content decisions, and no inter-agent message. The instantiation realizes each primitive of the schema concretely, including the environment-to-agent arrow that classic asymmetric stigmergy lacks: when the field stops improving, the environment escalates agent sampling and model capability. Two pheromone stores evaporate each tick so that stale patches are forgotten, and a one-hop propagation operator spreads activation along the temporal structure of the domain. Foundation models and stigmergy each supply what the other lacks: foundation models propose the open-ended actions that classic stigmergy could not enumerate, and the symmetric schema supplies the objective, pressure-based criterion for combining those proposals. On meeting room scheduling across a regenerated 1350-trial grid, we characterize the regime in which this decentralized coordination outperforms hierarchical control (on medium and hard problems it is the only strategy to solve a non-trivial share, $37\%$ and $17\%$, while the centralized baselines fall to at most one solved instance in ninety) and the smaller-instance regime in which it does not, where the gap narrows to a finite multiple. We give one convergence result: aligned local descent terminates in time bounded by initial pressure.}
 
-Empirically, on meeting room scheduling across 1350 total trials (270 per strategy), pressure-field coordination achieves $4\times$ higher solve rates than conversation-based coordination and over $30\times$ higher than hierarchical control (48.5\% vs 11.1\% vs 1.5\%; all pairwise comparisons $p < 0.001$). Ablation studies suggest temporal decay is beneficial. On easy problems, pressure-field achieves 86.7\% solve rate compared to 33.3\% for the next-best baseline. Foundation models enable this approach: their broad pretraining and zero-shot reasoning allow quality-improving patches from local pressure signals alone, without domain-specific coordination protocols. This suggests that constraint-driven emergence offers a simpler and more effective foundation for multi-agent AI.}
+\keywords{stigmergy, symmetric stigmergy, multi-agent systems, LLM agents, emergent coordination}
 
-\keywords{multi-agent systems, emergent coordination, decentralized optimization, LLM agents, stigmergy}
-
-\maketitle
+{\singlespacing
+\maketitle}
+\doublespacing
 
 \input{sections/introduction}
 \input{sections/related-work}
 \input{sections/problem-formulation}
+\input{sections/symmetric-stigmergy}
 \input{sections/method}
 \input{sections/theoretical-analysis}
 \input{sections/experiments}
@@ -29,7 +49,7 @@ Empirically, on meeting room scheduling across 1350 total trials (270 per strate
 
 \bmhead{Code Availability}
 
-Code is available at \url{https://github.com/Govcraft/pressure-field-experiment}.
+Code is available at \url{https://github.com/Govcraft/pressure-field-experiment}. The repository and its CLI strategy key retain the project's historical name, \emph{pressure field}; the system they implement is the pheromone-field strategy described in this paper.
 
 \bmhead{Author Contributions}
 
