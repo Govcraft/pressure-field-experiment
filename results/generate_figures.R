@@ -43,7 +43,7 @@ cohens_h <- function(p1, p2) {
 
 # Consistent color palette
 strategy_colors <- c(
-  "Pressure Field" = "#2166AC",
+  "Pheromone Field" = "#2166AC",
   "Conversation"   = "#762A83",
   "Hierarchical"   = "#1B7837",
   "Sequential"     = "#B2182B",
@@ -57,7 +57,7 @@ strategy_colors <- c(
 cat("Loading grid results...\n")
 
 files <- list(
-  "Pressure Field" = "pressure-field-results.json",
+  "Pheromone Field" = "pressure-field-results.json",
   "Conversation" = "conversation-results.json",
   "Sequential" = "sequential-results.json",
   "Random" = "random-results.json",
@@ -93,7 +93,7 @@ df_grid$difficulty <- factor(
 )
 
 df_grid$strategy <- factor(df_grid$strategy,
-                           levels = c("Pressure Field", "Conversation",
+                           levels = c("Pheromone Field", "Conversation",
                                       "Hierarchical", "Sequential", "Random"))
 
 # ============================================================
@@ -120,7 +120,7 @@ df_fig1 <- df_grid %>%
 # Abbreviate strategy names for cleaner x-axis
 df_fig1 <- df_fig1 %>%
   mutate(strategy_abbrev = factor(case_when(
-    strategy == "Pressure Field" ~ "P-Field",
+    strategy == "Pheromone Field" ~ "P-Field",
     strategy == "Conversation" ~ "Conv",
     strategy == "Hierarchical" ~ "Hier",
     strategy == "Sequential" ~ "Seq",
@@ -165,27 +165,32 @@ if (file.exists("schedule-ablation.json")) {
   abl_data <- fromJSON("schedule-ablation.json")
   abl_results <- abl_data$results
 
-  df_abl <- data.frame(
+  # Per-trial frame carrying all FOUR ablation flags (propagation/ESP included).
+  abl_trials <- data.frame(
     decay = abl_results$config$decay_enabled,
     inhibition = abl_results$config$inhibition_enabled,
     examples = abl_results$config$examples_enabled,
+    propagation = abl_results$config$propagation_enabled,
     solved = abl_results$solved,
     stringsAsFactors = FALSE
-  ) %>%
+  )
+
+  df_abl <- abl_trials %>%
     mutate(
       config = case_when(
-        decay & inhibition & examples ~ "Full",
-        !decay & inhibition & examples ~ "No Decay",
-        decay & !inhibition & examples ~ "No Inhibition",
-        decay & inhibition & !examples ~ "No Examples",
-        !decay & !inhibition & examples ~ "No Decay + No Inhib",
-        !decay & inhibition & !examples ~ "No Decay + No Ex",
-        decay & !inhibition & !examples ~ "No Inhib + No Ex",
-        !decay & !inhibition & !examples ~ "Baseline",
+        decay & inhibition & examples & propagation ~ "Full",
+        !decay & inhibition & examples & propagation ~ "No Decay",
+        decay & !inhibition & examples & propagation ~ "No Inhibition",
+        decay & inhibition & !examples & propagation ~ "No Examples",
+        decay & inhibition & examples & !propagation ~ "No Propagation",
+        !decay & !inhibition & examples & propagation ~ "No Decay + No Inhib",
+        !decay & inhibition & !examples & propagation ~ "No Decay + No Ex",
+        decay & !inhibition & !examples & propagation ~ "No Inhib + No Ex",
+        !decay & !inhibition & !examples & !propagation ~ "Baseline",
         TRUE ~ "Unknown"
       )
     ) %>%
-    group_by(config, decay, inhibition, examples) %>%
+    group_by(config, decay, inhibition, examples, propagation) %>%
     summarise(
       solved = sum(solved),
       total = n(),
@@ -232,14 +237,14 @@ p_bars <- ggplot(df_abl, aes(x = rate, y = config)) +
 
 # Feature matrix
 p_features <- df_abl %>%
-  pivot_longer(cols = c(decay, inhibition, examples),
+  pivot_longer(cols = c(decay, inhibition, examples, propagation),
                names_to = "feature", values_to = "enabled") %>%
-  mutate(feature = factor(feature, levels = c("decay", "inhibition", "examples"))) %>%
+  mutate(feature = factor(feature, levels = c("decay", "inhibition", "examples", "propagation"))) %>%
   ggplot(aes(x = feature, y = config, fill = enabled)) +
   geom_tile(color = "white", linewidth = 0.8) +
   geom_text(aes(label = ifelse(enabled, "\u2713", "")), size = 4, color = "white") +
   scale_fill_manual(values = c("TRUE" = "#2166AC", "FALSE" = "#E0E0E0")) +
-  scale_x_discrete(labels = c("Decay", "Inhib", "Ex")) +
+  scale_x_discrete(labels = c("Evap", "Inhib", "Ex", "ESP")) +
   labs(x = NULL, y = NULL) +
   theme_minimal(base_size = 11) +
   theme(
@@ -265,7 +270,7 @@ cat("Generating Figure 3: Effect Sizes...\n")
 
 # Calculate effect sizes for each difficulty
 pf_rates <- df_grid %>%
-  filter(strategy == "Pressure Field") %>%
+  filter(strategy == "Pheromone Field") %>%
   group_by(difficulty) %>%
   summarise(rate = mean(solved), n = n(), .groups = "drop")
 
@@ -324,7 +329,7 @@ fig3 <- ggplot(df_effects, aes(x = h, y = comparison, color = strategy)) +
   labs(
     x = "Cohen's h (Effect Size)",
     y = NULL,
-    subtitle = "Pressure Field vs Baselines (Easy Difficulty)"
+    subtitle = "Pheromone Field vs Baselines (Easy Difficulty)"
   ) +
   theme_minimal(base_size = 11) +
   theme(
@@ -390,19 +395,31 @@ cat("  Saved: fig4_efficiency.pdf\n")
 
 cat("Generating Figure 5: Feature Contributions...\n")
 
-# Calculate contributions
-if (exists("df_abl")) {
-  full_rate <- df_abl$rate[df_abl$config == "Full"]
-
+# Calculate contributions: marginal effect of each feature, pooled across all
+# nine arms (rate with feature ON minus rate with it OFF). This uses the full
+# fractional design rather than a single arm pair, so each contribution rests on
+# ~135 trials per side rather than 30, and a negative value (feature hurts) is
+# shown with its sign rather than clipped.
+if (exists("abl_trials")) {
+  pooled_contribution <- function(flag) {
+    on  <- mean(abl_trials$solved[abl_trials[[flag]]])  * 100
+    off <- mean(abl_trials$solved[!abl_trials[[flag]]]) * 100
+    on - off
+  }
   contributions <- data.frame(
-    feature = c("Decay", "Inhibition", "Examples"),
+    feature = c("Evaporation", "Inhibition", "Examples", "Propagation"),
     contribution = c(
-      full_rate - df_abl$rate[df_abl$config == "No Decay"],
-      full_rate - df_abl$rate[df_abl$config == "No Inhibition"],
-      full_rate - df_abl$rate[df_abl$config == "No Examples"]
+      pooled_contribution("decay"),
+      pooled_contribution("inhibition"),
+      pooled_contribution("examples"),
+      pooled_contribution("propagation")
     )
   ) %>%
-    mutate(feature = factor(feature, levels = c("Decay", "Examples", "Inhibition")))
+    mutate(feature = factor(feature,
+      levels = c("Evaporation", "Inhibition", "Propagation", "Examples")))
+
+  cmax <- max(abs(contributions$contribution))
+  ylim <- c(-(cmax + 4), cmax + 4)
 
   fig5 <- ggplot(contributions, aes(x = feature, y = contribution, fill = contribution > 0)) +
     geom_col(width = 0.6, alpha = 0.85) +
@@ -411,12 +428,12 @@ if (exists("df_abl")) {
                   vjust = ifelse(contribution >= 0, -0.5, 1.5)),
               size = 4, fontface = "bold") +
     scale_fill_manual(values = c("TRUE" = "#2166AC", "FALSE" = "#878787")) +
-    scale_y_continuous(limits = c(-5, 15), breaks = seq(-5, 15, 5),
+    scale_y_continuous(limits = ylim,
                        labels = function(x) paste0(x, "%")) +
     labs(
       x = NULL,
       y = "Contribution to Solve Rate",
-      subtitle = "Full Configuration vs Single Feature Removed"
+      subtitle = "Marginal effect, feature on vs off (medium, pooled over 9 arms)"
     ) +
     theme_minimal(base_size = 11) +
     theme(
