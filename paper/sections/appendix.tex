@@ -9,6 +9,7 @@
 This appendix provides complete reproducibility information for all experiments.
 
 \subsection{Hardware and Software}
+\label{app:hardware}
 
 \textbf{Hardware:} NVIDIA RTX PRO 5000 Laptop \ac{gpu} (Blackwell, 24GB), Intel Core Ultra 9 275HX, 128GB RAM
 
@@ -34,69 +35,17 @@ A patch is the model's proposed schedule for one time block, parsed from a per-r
 
 \subsection{Sampling Diversity}
 
-Pheromone-field \ac{llm} calls sample temperature and top-p within one of three bands (Table~\ref{tab:bands}); the band escalates with stagnation as described in Section~\ref{sec:escalation}. This diversity prevents convergence to local optima.
+Pheromone-field \ac{llm} calls sample temperature and top-p within one of three bands (Table~\ref{tab:bands}); the band escalates with stagnation as described in Section~\ref{sec:escalation}. This diversity reduces premature convergence to local optima, though it cannot eliminate the legality stalls of Section~\ref{sec:failure-analysis}.
 
 \subsection{Baseline Implementation Details}
 
-To ensure fair comparison, all strategies use identical \ac{llm} prompts and parsing logic. The only differences are region selection and patch validation:
+All strategies share identical \ac{llm} prompts, models, and parsing logic; only region selection and patch validation differ. The per-region prompt casts the model as a meeting room scheduler and supplies the block's time range, the rooms with their capacities, the current assignments for the block, the unscheduled meetings that could fit (with durations and attendee counts), and two constraints (no attendee double-booked, room capacity fits attendees), then asks for the schedule for that block.\footnote{Representative fields: \texttt{Time Block: [time range]}; \texttt{Rooms:\ Room A: capacity 10, Room B: capacity 8, \ldots}; \texttt{Current assignments: [\ldots]}; \texttt{Unscheduled meetings that could fit: Meeting 5: 60min, 4 attendees; Meeting 12: 30min, 2 attendees; \ldots}; \texttt{Constraints: No attendee in multiple meetings at once; Room capacity must fit attendees}; \texttt{Output the schedule for this time block.}}
 
-\textbf{Prompt (identical across all strategies):}
-\begin{lstlisting}
-You are a meeting room scheduler. Output schedules in the exact format requested.
+The strategies differ only in region selection and validation. Pheromone-field selects multiple regions concurrently by pressure gradient, validates all proposed patches, and applies only those that reduce pressure. Hierarchical always selects the single highest-pressure region and validates its one patch, applying it only if pressure reduces. Sequential round-robins through regions in fixed order and random selects uniformly; neither validates, so each applies any syntactically valid patch. The one-patch-per-tick asymmetry for hierarchical is inherent to the paradigm, not an implementation choice (rationale in Section~\ref{sec:experiments}): the controller observes global state, selects a region, delegates, validates, and applies within one tick.
 
-Meeting Room Schedule Optimization.
-Goal: Schedule meetings to minimize gaps and avoid conflicts.
+The conversation baseline implements AutoGen-style dialogue with three roles, a \emph{Coordinator} that selects a high-pressure region, a \emph{Proposer} that suggests changes, and a \emph{Validator} that critiques them. Each tick the Coordinator identifies a region (1 \ac{llm} call), then Proposer and Validator run up to 5 dialogue turns (2 calls per turn), and the patch applies if the Validator approves before the turn limit. This yields 4--12 \ac{llm} calls per tick for one region, versus pheromone-field's concurrent proposals across that tick's distinct high-pressure regions. It uses fixed sampling (T=0.3, top-p=0.9) for structured dialogue rather than pheromone-field's exploration bands. This is one instantiation inspired by AutoGen; actual deployments may use different role configurations, turn protocols, or termination conditions.
 
-Time Block: [time range]
-
-Rooms:
-  Room A: capacity 10
-  Room B: capacity 8
-  ...
-
-Current assignments:
-[current schedule for this time block]
-
-Unscheduled meetings that could fit in this block:
-  Meeting 5: 60min, 4 attendees
-  Meeting 12: 30min, 2 attendees
-  ...
-
-Constraints:
-- No attendee can be in multiple meetings at the same time
-- Room capacity must fit attendees
-
-Output the schedule for this time block.
-\end{lstlisting}
-
-\textbf{Region selection per strategy:}
-\begin{itemize}
-\item \textbf{Pheromone-field}: Multiple agents select regions in parallel based on pressure gradients
-\item \textbf{Hierarchical}: Always selects the single highest-pressure region
-\item \textbf{Sequential}: Round-robin through regions in fixed order
-\item \textbf{Random}: Uniform random region selection
-\end{itemize}
-
-\textbf{Patch validation per strategy:}
-\begin{itemize}
-\item \textbf{Pheromone-field}: Validates all patches; applies only those reducing pressure
-\item \textbf{Hierarchical}: Validates single patch; applies only if pressure reduces
-\item \textbf{Sequential/Random}: No validation; applies any syntactically valid patch
-\end{itemize}
-
-\textbf{Why ``one patch per tick'' for hierarchical?} The asymmetry is inherent to the paradigm, not an implementation choice; the rationale is given with the baselines in Section~\ref{sec:experiments}. Operationally, the hierarchical controller observes global state, selects a target region, delegates to a worker, receives the proposed patch, and validates before applying, all within one tick.
-
-\textbf{Conversation baseline implementation} The conversation baseline implements AutoGen-style multi-agent dialogue with three roles: a \emph{Coordinator} that selects which region to address, a \emph{Proposer} that suggests schedule changes, and a \emph{Validator} that critiques proposals. Each tick proceeds as follows: (1) the Coordinator identifies a high-pressure region (1 \ac{llm} call), (2) the Proposer and Validator engage in up to 5 dialogue turns (2 calls per turn), (3) if the Validator approves, the patch is applied. This yields 4--12 \ac{llm} calls per tick for a single region, compared to pheromone-field's concurrent proposals across the distinct high-pressure regions of that tick. The conversation terminates when the Validator approves or the turn limit is reached. We use fixed sampling parameters (T=0.3, top-p=0.9) for structured dialogue, lower than pheromone-field's exploration bands. Note that this represents one instantiation of conversation-based coordination inspired by AutoGen's design principles; actual AutoGen deployments may use different role configurations, turn protocols, or termination conditions.
-
-\textbf{Fairness guarantees for baseline comparison:} To ensure the conversation baseline had equal opportunity to succeed:
-\begin{itemize}
-\item \textbf{Same models}: All strategies use the identical model chain (qwen2.5:0.5b $\to$ 1.5b $\to$ 3b) with the same model-escalation trigger (21 stalled ticks). Band escalation is part of the pheromone-field mechanism only; the conversation baseline uses fixed sampling (T=0.3, top-p=0.9) suited to structured dialogue
-\item \textbf{Same problem access}: All strategies observe identical schedule state, room capacities, meeting requirements, and constraint information
-\item \textbf{Retry logic}: The conversation baseline includes up to 5 dialogue turns per region, allowing the Proposer to refine proposals based on Validator feedback---this is more opportunity for refinement than pheromone-field's single-shot proposals
-\item \textbf{Same tick budget}: All strategies receive the same 50-tick limit to solve each problem
-\item \textbf{Output parsing}: All strategies use identical response parsing and schedule extraction logic
-\end{itemize}
-The only intentional differences are the coordination mechanisms themselves: how regions are selected, how proposals are generated, and how patches are validated.
+Fairness holds across baselines: all strategies use the identical model chain (qwen2.5:0.5b $\to$ 1.5b $\to$ 3b) with the same model-escalation trigger (21 stalled ticks), observe identical problem instances, receive the same 50-tick budget, and use identical output parsing. Band escalation is pheromone-field-only. The conversation baseline's up-to-5 dialogue turns per region give it more refinement opportunity than pheromone-field's single-shot proposals.
 
 \subsection{Problem Generation and Seeding}
 
@@ -120,19 +69,12 @@ The seed governs all stochastic generation:
 
 \subsection{Experiment Commands}
 
-All experiments run with the default 50-tick budget; the CLI strategy key \texttt{pressure\_field} is the project's historical name for the pheromone-field strategy.
-
-\textbf{Main Grid (Strategy Comparison):} all five strategies, \{1, 2, 4\} agents, \{easy, medium, hard\}, by default:
+All experiments run with the default 50-tick budget; the CLI strategy key \texttt{pressure\_field} is the project's historical name for the pheromone-field strategy. The main grid covers all five strategies, \{1, 2, 4\} agents, and \{easy, medium, hard\}; the ablation has 9 arms.
 \begin{lstlisting}
-schedule-experiment \
-  --model-chain qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b \
+CHAIN=qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b
+schedule-experiment --model-chain $CHAIN \
   grid --trials 30 --output results/main-grid.json
-\end{lstlisting}
-
-\textbf{Ablation Study (9 arms):}
-\begin{lstlisting}
-schedule-experiment \
-  --model-chain qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b \
+schedule-experiment --model-chain $CHAIN \
   ablation --trials 30 --agents 2 --difficulty easy \
   --output results/ablation.json
 \end{lstlisting}
@@ -158,7 +100,7 @@ Each configuration runs 30 independent trials with different random seeds to ens
 
 \subsection{Measured Runtime}
 
-Table~\ref{tab:runtime} reports wall-clock time for the two experiment campaigns on the hardware of Section~\ref{app:protocol}. The main grid (1350 trials) and the nine-arm ablation (270 trials) together took just under 100 hours of \acs{gpu} time. Per-trial cost concentrates on the harder instances, where pressure stagnation escalates proposals to the larger models in the chain.
+Table~\ref{tab:runtime} reports wall-clock time for the two experiment campaigns on the hardware described in Appendix~\ref{app:hardware}. The main grid (1350 trials) and the nine-arm ablation (270 trials) together took about 100 hours of \acs{gpu} time. Wall time is set by the number of sequential model calls, not by per-call \acs{gpu} throughput: an unsolved trial runs the full fifty-tick budget, and each tick issues up to about twenty calls, one per activated region. A faster \acs{gpu} shortens each call but not their count, so aggregate time scales with the volume of inference. Per-trial cost concentrates on the harder instances, where pressure stagnation escalates proposals to the larger models in the chain, lengthening individual calls without reducing their number.
 
 \begin{table}[htbp]
 \centering
@@ -185,9 +127,9 @@ This appendix verifies that the meeting scheduling domain satisfies the alignmen
 
 The per-region pressure function includes three components:
 \begin{itemize}
-\item \textbf{gap\_ratio}: Fraction of empty slots in this time block. \emph{Strictly local}---depends only on meetings scheduled within this region.
-\item \textbf{overlap\_count}: Number of attendee double-bookings within this time block. \emph{Strictly local}---the overlap sensor counts attendees with multiple meetings in \emph{this block only}, not across blocks.
-\item \textbf{utilization\_variance}: Variance in room utilization within this time block. \emph{Strictly local}---measures balance across rooms for meetings in this region.
+\item \textbf{gap\_ratio}: Fraction of empty slots in this time block. \emph{Strictly local}:depends only on meetings scheduled within this region.
+\item \textbf{overlap\_count}: Number of attendee double-bookings within this time block. \emph{Strictly local}:the overlap sensor counts attendees with multiple meetings in \emph{this block only}, not across blocks.
+\item \textbf{utilization\_variance}: Variance in room utilization within this time block. \emph{Strictly local}:measures balance across rooms for meetings in this region.
 \end{itemize}
 
 The \texttt{unscheduled\_count} component is added to \emph{total} pressure only, not to per-region pressure. This design choice ensures separability.

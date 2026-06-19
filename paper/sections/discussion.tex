@@ -5,11 +5,22 @@
 \section{Discussion}
 \label{sec:discussion}
 
-Decentralized symmetric-stigmergic coordination wins where strict hierarchical control collapses, and the way it collapses is itself evidence for the symmetric extension.
+Decentralized, field-based concurrent dispatch with strict two-stage validation outperforms hierarchical control in locally-decomposable domains, where centralized greedy selection collapses into the rejection loop. The way that collapse happens is itself evidence for the symmetric extension.
 
 \subsection{Why Decentralized Coordination Wins in This Regime}
 
-Three factors explain the advantage in the regime where it holds. First, centralized coordination spends budget on coordination rather than on the problem: a manager-worker protocol issues several model calls per applied patch, so it attempts fewer patches per tick and explores less. This matches the large-scale finding that coordination overhead can become a net cost~\cite{kim2025scaling} and that most inter-agent messages are redundant~\cite{zhang2025agentprune}. Second, the domain is locally decomposable: fixing a conflict in one time block rarely creates one in a distant block, so greedy local descent suffices and global planning buys nothing, consistent with the observation that language-model agents are stronger at reading environmental state than at reasoning about other agents~\cite{agashe2025coordination}. Third, addressing several distinct high-pressure regions per tick lets progress happen wherever it can, so no single hard region stalls the whole run.
+Three factors explain the advantage in the regime where it holds. First, centralized coordination spends budget on coordination rather than on the problem: a manager-worker protocol issues several model calls per applied patch, so it attempts fewer patches per tick and explores less. This matches the large-scale finding that coordination overhead can become a net cost~\cite{kim2025scaling} and that most inter-agent messages are redundant~\cite{zhang2025agentprune}. Second, the domain is locally decomposable, so a manager's global view buys nothing, consistent with the finding that language-model agents read environmental state better than they reason about other agents~\cite{agashe2025coordination}; this one fact also explains the propagation null and bounds the result (Section~\ref{sec:lower-bound}). Third, addressing several distinct high-pressure regions per tick lets progress happen wherever it can, so no single hard region stalls the whole run.
+
+\subsection{Local Decomposability Explains the Win, the Propagation Null, and the Lower Bound}
+\label{sec:lower-bound}
+
+At the scale tested, the calendar is locally decomposable: fixing a conflict in one time block rarely creates one in a distant block. This single property explains all three results.
+
+It is why decentralized greedy descent wins. When conflicts do not propagate across regions, a global plan buys nothing, so hierarchical control wastes budget on a global view while concurrent local dispatch advances wherever the artifact yields. The advantage is not tuning but structure.
+
+It is why one-hop $ESP$ propagation is null. Activation spillover helps only when relieving one region shifts work to a neighbor, which at this instance size and with a separable metric is rare. The ablation confirms it (Section~\ref{sec:ablations}): the propagation arm is statistically indistinguishable from the full system. This is the predicted outcome, not a failure of the operator, which we implement to complete the schema mapping (Section~\ref{sec:symmetric-stigmergy}) and report whatever it shows.
+
+It is why the result is a lower bound, not a ceiling. Propagation must bite where this study does not test: multi-hop diffusion, region relations beyond a single temporal chain, and combinatorial complexity high enough that relieving one region cascades conflict into others. That swarm-scale regime is future work; the present finding maps where the structure-exploiting version would live rather than showing the domain to be impoverished, and Section~\ref{sec:failure-analysis} traces the win to the two failure modes that separate the paradigms.
 
 \subsection{Two Failure Modes: Rejection Loops and Legality Stalls}
 \label{sec:failure-analysis}
@@ -26,9 +37,7 @@ The taxonomy is then simple. Rejection loops are selection failures, cured by co
 
 \subsection{Limitations}
 
-\textbf{Propagation is one hop only.} The environment-propagation operator applies a single hop per tick from regions' own pressures, not multi-hop accumulated diffusion. This keeps the model near the agent-based end of the continuum and bounds how far a hot region's influence spreads in one tick; richer diffusion over the temporal chain, and over non-temporal region relations, is unexplored here.
-
-\textbf{Problem scale is small for a swarming method.} The instances are deliberately sized so that hierarchical and conversational baselines remain feasible to run, which is the opposite of the high-combinatorial regime where stigmergy is usually argued to excel. The regime characterization should therefore be read as a lower bound on where decentralized coordination helps, not as a test at swarm scale.
+\textbf{Propagation and scale bound the regime, not the contribution.} The propagation operator is one hop, and the instances are sized to keep hierarchical and conversational baselines feasible, the opposite of the high-combinatorial regime where stigmergy is usually argued to excel. Section~\ref{sec:lower-bound} reads both as a lower bound on a locally-decomposable regime, mapping where multi-hop diffusion at swarm scale would have to be tested.
 
 \textbf{Absolute solve rates are bounded by capability and by the gate.} Even the pheromone-field strategy leaves many hard instances unsolved ($16.7\%$ solved on hard); with 0.5b--3b models, convergence analysis points to model capability as one limit on hard problems, and the legality stall of Section~\ref{sec:failure-analysis} as a second limit that larger models would not remove. Larger models would plausibly raise absolute rates on capability-bound instances, an effect this study does not measure.
 
@@ -36,12 +45,12 @@ The taxonomy is then simple. Rejection loops are selection failures, cured by co
 
 \subsection{Societal Considerations}
 
-Decentralized coordination shifts three deployment concerns relative to hierarchical control, and each is addressable. Accountability diffuses, because several agents may improve a region with no record of which one ``owned'' the outcome, so regulated deployments need an audit log of patch provenance, the pressure signal at proposal time, and the validation result; the provenance log in region state already records this. Metric gaming is a standing risk, because agents optimize the pressure function rather than true quality, so the function should use multiple orthogonal axes and be audited against human judgment. Explainability is mechanistic but not causal: the system records that a region was high-pressure and a patch reduced it, not why that patch was chosen, which suits domains where outcomes are cheaply verified and is weaker where human justification is required. These are deployment requirements around a simple mechanism, not changes to the mechanism itself.
+Decentralized coordination shifts three deployment concerns relative to hierarchical control, each addressable. Accountability diffuses across agents, so regulated deployments need an audit log of patch provenance, pressure at proposal time, and validation result, which the region-state provenance log already records. Metric gaming is a standing risk because agents optimize the pressure function rather than true quality, so the function should span multiple orthogonal axes and be audited against human judgment. Explainability is mechanistic, not causal: the system records that a patch reduced a high-pressure region, not why that patch was chosen, suiting cheaply verified outcomes and weaker where human justification is required. These are deployment requirements around the mechanism, not changes to it.
 
 \subsection{Future Work}
 
 \begin{itemize}
-\item \textbf{Richer environment propagation.} Extend the one-hop operator to multi-hop diffusion and to non-temporal region relations, and measure where on the agent-to-equation continuum the best operating point lies.
+\item \textbf{Richer environment propagation.} Extend the one-hop operator to the multi-hop diffusion and non-temporal region relations of Section~\ref{sec:lower-bound}, where propagation should bite, and locate the best operating point on the agent-to-equation continuum.
 \item \textbf{Escaping legality stalls.} Either widen the action space to atomic two-region moves, which pass the strict gate unchanged, or relax acceptance to admit non-worsening patches under a cycle guard; the first preserves the gate's containment property, the second trades it for mobility.
 \item \textbf{Scale and capability.} Test at swarm-scale problem sizes and with larger models, to separate the regime boundary from the small-model ceiling.
 \item \textbf{Learned and multi-artifact pressure.} Learn pressure functions from solution traces, and extend to coupled artifacts where a patch in one shifts pressure in another.

@@ -1,17 +1,17 @@
 %% ============================================================================
-%% SYMMETRIC-STIGMERGIC FORMALIZATION (NEW)
+%% SYMMETRIC-STIGMERGIC FORMALIZATION AND METHOD (MERGED)
 %% ============================================================================
 
-\section{Symmetric-Stigmergic Formalization}
+\section{Symmetric-Stigmergic Formalization and Method}
 \label{sec:symmetric-stigmergy}
 
-The coordination mechanism of Section~\ref{sec:problem-formulation} instantiates the symmetric-stigmergic schema of Parunak~\cite{parunak2025insects}, with foundation-model agents playing the role of stigmergic actors. Classic stigmergy is asymmetric: agents change the environment, but the environment does not change agent state~\cite{grasse1959stigmergie,parunak1997ant}. The symmetric extension adds the reverse arrow, so that the environment also updates agent state, and adds agent-side analogues of the environment's update, dynamics, and propagation operators. Each primitive maps to a concrete element of the system, some realized and some left null by design, and the result classifies on the schema's modeling continuum (Figure~3 of~\cite{parunak2025insects}).
+The coordination mechanism of Section~\ref{sec:problem-formulation} instantiates the symmetric-stigmergic schema of~\cite{parunak2025insects}, with foundation-model agents playing the role of stigmergic actors and the method applying Parunak's three pheromone operators, aggregate, propagate, and evaporate~\cite{parunak2011mean}, to the sensed quality field. Classic stigmergy is asymmetric: agents change the environment, but the environment does not change agent state~\cite{grasse1959stigmergie,parunak1997ant}. The symmetric extension adds the reverse arrow, so that the environment also updates agent state, and adds agent-side analogues of the environment's update, dynamics, and propagation operators. Each primitive maps to a concrete element of the system, some realized and some left null by design.
 
 \subsection{Mapping the Schema}
 
 Table~\ref{tab:stigmergy-mapping} states the correspondence. The environment $E(t)$ is the set of time-block regions of the schedule artifact; each region carries state $es_i$ consisting of a per-axis pressure exponential moving average, an inhibition window, and a provenance log. The agent set $A(t)$ is the pool of LLM actors, each with state $as_i$ (model identifier and sampling band) and a location $al_i$ (the high-pressure region it is dispatched to this tick). Agents never read each other directly: the agent adjacency relation $aa(t)$ is realized entirely through the shared artifact by a two-stage validation gate. A patch is first evaluated against a clone of the artifact, then re-evaluated against the now-current artifact, so two agents may both pass initial evaluation yet the second is rejected because the first has already changed the shared state.
 
-A runtime ticks the logical clock, evaporates the pheromone stores, propagates activation one hop, dispatches proposals round-robin over the pressure-activated regions, and serializes writes under a fixed acceptance rule (strict pressure decrease, re-checked against current artifact state). Every rule is content-blind: the runtime never chooses what to propose, never reasons about the schedule globally, and never distinguishes one agent from another. It is the analogue of the pheromone substrate, not of a manager. A physical pheromone field is itself a consistency-enforcing medium, since two ants cannot deposit on the same point and physics serializes them, and the two-stage re-evaluation is optimistic concurrency control playing that role; placing the aggregate, evaporate, and propagate operators in a central runtime is the standard digital-pheromone infrastructure~\cite{parunak2011mean}, with the environment carrying mediation responsibilities as a first-class component~\cite{weyns2007environment}. The hierarchical baseline, by contrast, centralizes a reasoner that makes content decisions: coordination by a manager rather than by a rule.
+A runtime ticks the logical clock, evaporates the pheromone stores, propagates activation one hop, dispatches proposals round-robin over the pressure-activated regions, and serializes writes under a fixed acceptance rule (strict pressure decrease, re-checked against current artifact state). Every rule is content-blind: the runtime never chooses what to propose, never reasons about the schedule globally, and never distinguishes one agent from another. It is the analogue of the pheromone substrate, not of a manager. A physical pheromone field is itself a consistency-enforcing medium: two ants cannot deposit on the same point, and physics serializes them. The two-stage re-evaluation is optimistic concurrency control playing that role. Placing the aggregate, evaporate, and propagate operators in a central runtime is standard digital-pheromone infrastructure~\cite{parunak2011mean}, with the environment carrying mediation responsibilities as a first-class component~\cite{weyns2007environment}. The hierarchical baseline, by contrast, centralizes a reasoner that makes content decisions: coordination by a manager rather than by a rule.
 
 \begin{table}[htbp]
 \centering
@@ -37,17 +37,74 @@ $ASP$ & $as_i \to N(as_j)$ & Example bank (environment-mediated): deposit on app
 \end{tabularx}
 \end{table}
 
-Two pheromone stores realize the environment-dynamics operator $ESD$ as evaporation, following pheromone evaporation~\cite{dorigo1996ant} and the $ESD$ operator~\cite{parunak2011mean}. A positive store deposits each applied patch into an example bank as a few-shot example; its weight decays by a factor of $0.95$ per logical tick and the example is evicted below weight $0.1$. A negative store deposits each harmful rejected patch on the artifact and injects it into later prompts as an avoid-tip, with its own independent evaporation. Both stores evaporate once per logical tick, gated by a single decay-ablation flag. Because the schedule is the modified task structure that agents sense, the pressure field is a sematectonic field rather than a deposited marker, and it is exactly the environment state $es_i$ of the schema, not a separate quantity.
+\subsection{The Field Operators: Aggregate, Propagate, Evaporate}
 
-The agent-state-update operator $ASU$ is realized as escalation driven by pressure stagnation, where stagnation means no pressure improvement above $0.01$. The sampling band escalates every $7$ stalled ticks (Exploitation $\to$ Balanced $\to$ Exploration); the model escalates every $21$ stalled ticks (qwen2.5 0.5b $\to$ 1.5b $\to$ 3b), resetting the band. This is the environment acting on agent capability: the sensed field, through its own lack of progress, reallocates reasoning capacity. The agent-state-propagation operator $ASP$ is realized by the example bank: an applied patch propagates as a few-shot example available to subsequent proposals across the population. The realization is mediated rather than direct: the bank is carried by the environment, and what spreads is deposited content, not agent state itself, since no agent's model tier or sampling band propagates to another. Under uniform per-tick evaporation, weight-ranked selection is recency-ranked; the bank carries no use-count reinforcement and follows no regional-similarity trail, so we claim deposit-and-evaporate propagation only, not positive-feedback trail-following.
+The sensed field evolves through the three operators of pheromone coordination~\cite{parunak2011mean}, each realized concretely.
 
-\subsection{Environment Propagation Along the Temporal Chain}
+\textbf{Aggregate} fuses signals into region state. Each region holds a per-axis pressure exponential moving average that combines the measurements of successive ticks, the smoothing analogue of pheromone cells averaging deposits from many agents.
 
-The environment-propagation operator $ESP$ addresses the intrinsic structure of the scheduling domain: adjacent time blocks are where a conflicting meeting can be shifted. The environment adjacency $ea(t)$ links each within-day time block to its immediate temporal neighbors, with no edges across days. Each tick the environment runtime computes an effective activation pressure
+\textbf{Propagate} ($ESP$) spreads activation along the temporal chain, addressing the intrinsic structure of the scheduling domain: adjacent time blocks are where a conflicting meeting can be shifted. The environment adjacency $ea(t)$ links each within-day time block to its immediate temporal neighbors, with no edges across days. Each tick the environment runtime computes an effective activation pressure
 \[
 g_i = p_i + \kappa \sum_{j \in N(i)} p_j, \qquad \kappa = 0.5,
 \]
-from regions' own pressures $p_j$, applied exactly one hop per tick. A high-pressure block thus recruits proposals in its idle temporal neighbors without those neighbors being individually above threshold. Because patches are strictly within-block, a meeting moves between blocks in two steps through the unscheduled pool: the hot block's own agent evicts a conflicting meeting (accepted because an overlap costs ten times an unscheduled meeting), and a recruited neighbor, seeing the meeting among the unscheduled candidates for its block, places it. The spillover affects only activation, which regions receive LLM proposals; the reported pressure metric is computed from regions' own state and is unaffected. Inhibited regions contribute spillover but are not themselves dispatched. This is single-application propagation, one hop per tick from own pressures, not multi-hop accumulated diffusion. The operator is flag-gated, and Section~\ref{sec:experiments} reports a no-propagation ablation arm against the full system.
+from regions' own pressures $p_j$, applied exactly one hop per tick, so a high-pressure block recruits proposals in its idle temporal neighbors without those neighbors being individually above threshold. Because patches are strictly within-block, a meeting moves between blocks in two steps through the unscheduled pool: the hot block's own agent evicts a conflicting meeting (accepted because an overlap costs ten times an unscheduled meeting), and a recruited neighbor, seeing the meeting among the unscheduled candidates for its block, places it. The spillover affects only activation, which regions receive LLM proposals; the reported pressure metric is computed from regions' own state and stays the sum of own pressures, unaffected by spillover. Inhibited regions contribute spillover but are not themselves dispatched. This is single-application propagation, one hop per tick from own pressures, not multi-hop accumulated diffusion. The operator is flag-gated, and Section~\ref{sec:experiments} reports a no-propagation ablation arm against the full system.
+
+\textbf{Evaporate} ($ESD$) discards stale information from two pheromone stores, following pheromone evaporation~\cite{dorigo1996ant} and the $ESD$ operator~\cite{parunak2011mean}. A positive store deposits each applied patch into an example bank as a few-shot example; its weight decays by a factor of $0.95$ per logical tick and the example is evicted below weight $0.1$. A negative store deposits each harmful rejected patch on the artifact and injects it into later prompts as an avoid-tip, with its own independent evaporation. Both run once per logical tick, gated by a single decay-ablation flag. Evaporation is truth maintenance in constant time~\cite{parunak2011mean}: stale patches are forgotten without any logical bookkeeping. Because the schedule is the modified task structure that agents sense, the pressure field is a sematectonic field rather than a deposited marker~\cite{parunak2006survey}, and it is exactly the environment state $es_i$ of the schema, not a separate quantity.
+
+\subsection{The Environment-to-Agent Operators: Escalation and Example Propagation}
+
+The agent-state-update operator $ASU$ is realized as escalation driven by pressure stagnation, where stagnation means no pressure improvement above $0.01$. The sampling band escalates every $7$ stalled ticks (Exploitation $\to$ Balanced $\to$ Exploration); the model escalates every $21$ stalled ticks (qwen2.5 0.5b $\to$ 1.5b $\to$ 3b), resetting the band. This is the environment acting on agent capability: the sensed field, through its own lack of progress, reallocates reasoning capacity.
+
+The agent-state-propagation operator $ASP$ is realized by the example bank: an applied patch propagates as a few-shot example available to subsequent proposals across the population. The realization is mediated rather than direct: the bank is carried by the environment, and what spreads is deposited content, not agent state itself, since no agent's model tier or sampling band propagates to another. Under uniform per-tick evaporation, weight-ranked selection is recency-ranked; the bank carries no use-count reinforcement and follows no regional-similarity trail, so we claim deposit-and-evaporate propagation only, not positive-feedback trail-following.
+
+\subsection{Alignment and the Potential-Game Observation}
+
+Decentralized descent succeeds only when local incentives track the global objective, because the locality constraint of Section~\ref{sec:problem-formulation} forbids agents from observing global state. We call a pressure system \emph{aligned} when reducing a region's own pressure cannot raise the total.
+
+\begin{definition}[Pressure Alignment]
+A pressure system is \emph{aligned} if, for any region $i$, state $s$, and action $a_i$ with $s' = s[c_i \mapsto a_i(c_i)]$,
+\[
+P_i(s') < P_i(s) \;\Longrightarrow\; P(s') < P(s).
+\]
+\end{definition}
+
+Alignment holds automatically when the pressure is \emph{separable}, each $P_i$ depending only on $c_i$ so that $P(s) = \sum_i P_i(s)$, and more generally under bounded coupling: if modifying region $i$ changes every other region's pressure by at most $\epsilon$, then a local reduction exceeding $(n-1)\epsilon$ still lowers the total. In the implementation alignment also holds by construction, because the acceptance rule itself evaluates the artifact's total pressure: the runtime applies a patch only if $P$ strictly decreases, so no accepted patch can trade a local gain for a global loss. The definition matters for variants whose gates check only local pressure; the separability analysis for this domain is in Appendix~\ref{app:coupling}.
+
+Under alignment the artifact pressure $P(s)$ is a potential function for the game whose players are regions, whose strategies are content choices, and whose common potential is $\Phi(s) = P(s)$. Any sequence of pressure-reducing moves is then a sequence of improving moves on $\Phi$, so the finite-improvement property of potential games~\cite{monderer1996potential} applies: greedy local descent terminates at a state where no region can reduce its pressure below the activation threshold. Section~\ref{sec:theoretical-analysis} bounds the convergence time.
+
+\subsection{The Tick Loop}
+\label{sec:method}
+
+Each tick measures the field, propagates activation, dispatches actors against the high-pressure regions, validates proposals in two stages against the shared artifact, applies the survivors, and updates the pheromone stores. As throughout, the loop runs on the logical tick clock (Section~\ref{sec:problem-formulation}).
+
+\begin{algorithm}[Pheromone-Field Tick]
+\textbf{Input:} state $s^t$; signal functions $\{\sigma_j\}$; pressure functions $\{\phi_j\}$; actor pool $\{a_k\}$; parameters $(\tau_{\text{act}}, \kappa, \tau_{\text{inh}})$
+
+\textbf{1. Measure and aggregate.}\\
+\hspace{1em} For each region $i$: $\boldsymbol{\sigma}_i \gets \sigma(c_i)$; update the pressure EMA in $es_i$; let $p_i \gets P_i(s^t)$.
+
+\textbf{2. Propagate (ESP).}\\
+\hspace{1em} For each region $i$: $g_i \gets p_i + \kappa \sum_{j \in N(i)} p_j$ \quad (one hop, from own pressures).
+
+\textbf{3. Dispatch.}\\
+\hspace{1em} Activate regions with $g_i \geq \tau_{\text{act}}$ and not inhibited; round-robin assign actors to them.\\
+\hspace{1em} Each actor $a_k$ observes only local $(c_i, es_i, \boldsymbol{\sigma}_i)$ and proposes a patch $\delta$.
+
+\textbf{4. Two-stage validation.}\\
+\hspace{1em} Stage 1: evaluate each $\delta$ on a clone of the artifact; keep those that reduce the total pressure $P$.\\
+\hspace{1em} Stage 2: re-evaluate survivors against the now-current artifact, so a patch is rejected if an earlier-applied patch this tick has already changed the shared state.
+
+\textbf{5. Apply and update stores.}\\
+\hspace{1em} For each accepted patch on region $i$: $c_i \gets \delta(c_i)$; deposit $\delta$ in the positive example bank; inhibit $i$ for $\tau_{\text{inh}}$ ticks.\\
+\hspace{1em} For each harmful rejected patch: deposit it in the negative store.\\
+\hspace{1em} Evaporate both stores once.
+
+\textbf{Return} updated state $s^{t+1}$.
+\end{algorithm}
+
+The loop has three properties. Coordination is \emph{stigmergic}: actors read and write only the shared artifact and never message one another, so the agent adjacency $aa(t)$ emerges entirely from stage-two validation. Concurrency is \emph{bounded}: distinct high-pressure regions are addressed in the same tick, with stage-two validation resolving same-tick conflicts and inhibition preventing repeated modification of one region. The same gate contains model error: a confabulated or ill-formed patch fails validation and leaves the artifact untouched, so a hallucinating agent costs a proposal, never a corrupted artifact. Capability is \emph{adaptive}: when pressure stalls, the environment escalates sampling band and then model tier through the $ASU$ operator described above.
+
+Termination is economic rather than logical: the loop halts when every region's effective pressure falls below the activation threshold, at which point no actor is dispatched, or when a tick budget is reached. Activity ceases when the field flattens, not when an external goal is declared met; we impose a maximum tick count to bound computation.
 
 \subsection{Position on the Modeling Continuum}
 
