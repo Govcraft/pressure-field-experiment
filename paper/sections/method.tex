@@ -1,68 +1,9 @@
 %% ============================================================================
-%% METHOD
+%% METHOD — MERGED into sections/symmetric-stigmergy.tex
 %% ============================================================================
-
-\section{Method}
-\label{sec:method}
-
-The coordination mechanism applies Parunak's three pheromone operators, aggregate, propagate, and evaporate~\cite{parunak2011mean}, to a sensed quality field and dispatches foundation-model actors against it each tick.
-
-\subsection{Alignment and the Potential-Game Observation}
-
-Decentralized descent succeeds only when local incentives track the global objective, because the locality constraint of Section~\ref{sec:problem-formulation} forbids agents from observing global state. We call a pressure system \emph{aligned} when reducing a region's own pressure cannot raise the total.
-
-\begin{definition}[Pressure Alignment]
-A pressure system is \emph{aligned} if, for any region $i$, state $s$, and action $a_i$ with $s' = s[c_i \mapsto a_i(c_i)]$,
-\[
-P_i(s') < P_i(s) \;\Longrightarrow\; P(s') < P(s).
-\]
-\end{definition}
-
-Alignment holds automatically when the pressure is \emph{separable}, each $P_i$ depending only on $c_i$ so that $P(s) = \sum_i P_i(s)$, and more generally under bounded coupling: if modifying region $i$ changes every other region's pressure by at most $\epsilon$, then a local reduction exceeding $(n-1)\epsilon$ still lowers the total. In the implementation alignment also holds by construction, because the acceptance rule itself evaluates the artifact's total pressure: the runtime applies a patch only if $P$ strictly decreases, so no accepted patch can trade a local gain for a global loss. The definition matters for variants whose gates check only local pressure; the separability analysis for this domain is in Appendix~\ref{app:coupling}.
-
-Under alignment the artifact pressure $P(s)$ is a potential function for the game whose players are regions, whose strategies are content choices, and whose common potential is $\Phi(s) = P(s)$. Any sequence of pressure-reducing moves is then a sequence of improving moves on $\Phi$, so the finite-improvement property of potential games~\cite{monderer1996potential} applies: greedy local descent terminates at a state where no region can reduce its pressure below the activation threshold. Section~\ref{sec:theoretical-analysis} bounds the convergence time.
-
-\subsection{The Three Pheromone Operators}
-
-The sensed field evolves through the three operators of pheromone coordination~\cite{parunak2011mean}, each realized concretely.
-
-\textbf{Aggregate} fuses signals into region state. Each region holds a per-axis pressure exponential moving average that combines the measurements of successive ticks, the smoothing analogue of pheromone cells averaging deposits from many agents.
-
-\textbf{Propagate} spreads activation along the temporal chain (Section~\ref{sec:symmetric-stigmergy}). Each tick the environment runtime computes an effective activation pressure $g_i = p_i + \kappa \sum_{j \in N(i)} p_j$ with $\kappa = 0.5$ from regions' own pressures, applied exactly one hop, so a high-pressure block recruits proposals in its idle temporal neighbors without those neighbors being individually above threshold. Spillover affects activation only, never the reported pressure.
-
-\textbf{Evaporate} discards stale information from the two pheromone stores. The positive example bank decays each stored patch by a factor of $0.95$ per logical tick and evicts below weight $0.1$; the negative rejected-patch store evaporates on its own schedule. Both run once per logical tick under a single decay flag. Evaporation is truth maintenance in constant time~\cite{parunak2011mean}: stale patches are forgotten without any logical bookkeeping.
-
-\subsection{The Tick Loop}
-
-Each tick measures the field, propagates activation, dispatches actors against the high-pressure regions, validates proposals in two stages against the shared artifact, applies the survivors, and updates the pheromone stores. The algorithm runs on the runtime's logical tick clock, so it is deterministic and hardware-independent.
-
-\begin{algorithm}[Pheromone-Field Tick]
-\textbf{Input:} state $s^t$; signal functions $\{\sigma_j\}$; pressure functions $\{\phi_j\}$; actor pool $\{a_k\}$; parameters $(\tau_{\text{act}}, \kappa, \tau_{\text{inh}})$
-
-\textbf{1. Measure and aggregate.}\\
-\hspace{1em} For each region $i$: $\boldsymbol{\sigma}_i \gets \sigma(c_i)$; update the pressure EMA in $es_i$; let $p_i \gets P_i(s^t)$.
-
-\textbf{2. Propagate (ESP).}\\
-\hspace{1em} For each region $i$: $g_i \gets p_i + \kappa \sum_{j \in N(i)} p_j$ \quad (one hop, from own pressures).
-
-\textbf{3. Dispatch.}\\
-\hspace{1em} Activate regions with $g_i \geq \tau_{\text{act}}$ and not inhibited; round-robin assign actors to them.\\
-\hspace{1em} Each actor $a_k$ observes only local $(c_i, es_i, \boldsymbol{\sigma}_i)$ and proposes a patch $\delta$.
-
-\textbf{4. Two-stage validation.}\\
-\hspace{1em} Stage 1: evaluate each $\delta$ on a clone of the artifact; keep those that reduce the total pressure $P$.\\
-\hspace{1em} Stage 2: re-evaluate survivors against the now-current artifact, so a patch is rejected if an earlier-applied patch this tick has already changed the shared state.
-
-\textbf{5. Apply and update stores.}\\
-\hspace{1em} For each accepted patch on region $i$: $c_i \gets \delta(c_i)$; deposit $\delta$ in the positive example bank; inhibit $i$ for $\tau_{\text{inh}}$ ticks.\\
-\hspace{1em} For each harmful rejected patch: deposit it in the negative store.\\
-\hspace{1em} Evaporate both stores once.
-
-\textbf{Return} updated state $s^{t+1}$.
-\end{algorithm}
-
-The loop has three properties. Coordination is \emph{stigmergic}: actors read and write only the shared artifact and never message one another, so the agent adjacency of Section~\ref{sec:symmetric-stigmergy} emerges entirely from stage-two validation. Concurrency is \emph{bounded}: distinct high-pressure regions are addressed in the same tick, with stage-two validation resolving same-tick conflicts and inhibition preventing repeated modification of one region. The same gate contains model error: a confabulated or ill-formed patch fails validation and leaves the artifact untouched, so a hallucinating agent costs a proposal, never a corrupted artifact. Capability is \emph{adaptive}: when pressure stalls, the environment escalates sampling band and then model tier through the $ASU$ operator of Section~\ref{sec:symmetric-stigmergy}.
-
-\subsection{Termination}
-
-The loop halts when every region's effective pressure falls below the activation threshold, at which point no actor is dispatched, or when a tick budget is reached. Termination is economic rather than logical: activity ceases when the field flattens, not when an external goal is declared met. We impose a maximum tick count to bound computation.
+%% The former Section 5 (Method) was merged with Section 4
+%% (Symmetric-Stigmergic Formalization) to remove duplicated descriptions of
+%% the aggregate/propagate/evaporate operators, band/model escalation, and the
+%% propagation equation. This file is no longer \input by the main document.
+%% The \label{sec:method} now lives on the "Tick Loop" subsection of the merged
+%% section so existing \ref{sec:method} cross-references still resolve.

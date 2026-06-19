@@ -1,4 +1,4 @@
-\begin{thebibliography}{45}
+\begin{thebibliography}{46}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{{#1}}
 \providecommand{\urlprefix}{URL }
@@ -166,6 +166,13 @@ Park JS, O'Brien JC, Cai CJ, et~al (2023) Generative agents: Interactive
 Parunak HVD (1997) ``go to the ant'': Engineering principles from natural
   multi-agent systems. Annals of Operations Research 75:69--101.
   \doi{10.1023/A:1018980001403}
+
+\bibitem[{Parunak(2006)}]{parunak2006survey}
+Parunak HVD (2006) A survey of environments and mechanisms for human-human
+  stigmergy. In: Weyns D, Parunak HVD, Michel F (eds) Environments for
+  Multi-Agent Systems II (E4MAS 2005), Selected Revised and Invited Papers,
+  Lecture Notes in Computer Science, vol 3830. Springer, pp 163--186,
+  \doi{10.1007/11678809_10}
 
 \bibitem[{Parunak(2011)}]{parunak2011mean}
 Parunak HVD (2011) Between agents and mean fields. In: Multi-Agent-Based

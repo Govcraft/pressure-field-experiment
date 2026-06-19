@@ -37,15 +37,35 @@ A patch is the model's proposed schedule for one time block, parsed from a per-r
 
 Pheromone-field \ac{llm} calls sample temperature and top-p within one of three bands (Table~\ref{tab:bands}); the band escalates with stagnation as described in Section~\ref{sec:escalation}. This diversity reduces premature convergence to local optima, though it cannot eliminate the legality stalls of Section~\ref{sec:failure-analysis}.
 
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Band} & \textbf{Temperature} & \textbf{Top-p} \\
+\midrule
+Exploitation & 0.15--0.35 & 0.80--0.90 \\
+Balanced & 0.35--0.55 & 0.85--0.95 \\
+Exploration & 0.55--0.85 & 0.90--0.98 \\
+\bottomrule
+\end{tabular}
+\caption{Sampling parameter ranges per band; temperature and top-p are sampled within range. Escalation proceeds Exploitation $\to$ Balanced $\to$ Exploration every 7 stalled ticks.}
+\label{tab:bands}
+\end{table}
+
+\subsection{Negative Pheromone Store}
+
+Alongside the positive example bank, a second pheromone store records harmful rejected patches as negative pheromones. On rejection of a harmful patch, the system deposits it on the artifact and injects it into later prompts for the same region. The injected text is phrased as positive guidance (``TIP: schedule meetings in Room A'') rather than a bare prohibition, restating what to try instead of what to avoid. This store evaporates on its own schedule, weight $\times 0.95$ per tick and evicted below 0.1, so stale avoid-tips lapse rather than permanently blocking a now-viable approach; up to three recent rejections per region are surfaced. The store carries no reinforcement on reuse, only deposit and evaporation.
+
 \subsection{Baseline Implementation Details}
 
 All strategies share identical \ac{llm} prompts, models, and parsing logic; only region selection and patch validation differ. The per-region prompt casts the model as a meeting room scheduler and supplies the block's time range, the rooms with their capacities, the current assignments for the block, the unscheduled meetings that could fit (with durations and attendee counts), and two constraints (no attendee double-booked, room capacity fits attendees), then asks for the schedule for that block.\footnote{Representative fields: \texttt{Time Block: [time range]}; \texttt{Rooms:\ Room A: capacity 10, Room B: capacity 8, \ldots}; \texttt{Current assignments: [\ldots]}; \texttt{Unscheduled meetings that could fit: Meeting 5: 60min, 4 attendees; Meeting 12: 30min, 2 attendees; \ldots}; \texttt{Constraints: No attendee in multiple meetings at once; Room capacity must fit attendees}; \texttt{Output the schedule for this time block.}}
 
-The strategies differ only in region selection and validation. Pheromone-field selects multiple regions concurrently by pressure gradient, validates all proposed patches, and applies only those that reduce pressure. Hierarchical always selects the single highest-pressure region and validates its one patch, applying it only if pressure reduces. Sequential round-robins through regions in fixed order and random selects uniformly; neither validates, so each applies any syntactically valid patch. The one-patch-per-tick asymmetry for hierarchical is inherent to the paradigm, not an implementation choice (rationale in Section~\ref{sec:experiments}): the controller observes global state, selects a region, delegates, validates, and applies within one tick.
+The strategies differ only in region selection and validation. Pheromone-field selects multiple regions concurrently by pressure gradient, validates all proposed patches, and applies only those that reduce pressure. Hierarchical always selects the single highest-pressure region and validates its one patch, applying it only if pressure reduces. Sequential round-robins through regions in fixed order and random selects uniformly; neither validates, so each applies any syntactically valid patch. Hierarchical processes one patch per tick by construction (rationale in Section~\ref{sec:experiments}): the controller observes global state, selects a region, delegates, validates, and applies within one tick.
 
 The conversation baseline implements AutoGen-style dialogue with three roles, a \emph{Coordinator} that selects a high-pressure region, a \emph{Proposer} that suggests changes, and a \emph{Validator} that critiques them. Each tick the Coordinator identifies a region (1 \ac{llm} call), then Proposer and Validator run up to 5 dialogue turns (2 calls per turn), and the patch applies if the Validator approves before the turn limit. This yields 4--12 \ac{llm} calls per tick for one region, versus pheromone-field's concurrent proposals across that tick's distinct high-pressure regions. It uses fixed sampling (T=0.3, top-p=0.9) for structured dialogue rather than pheromone-field's exploration bands. This is one instantiation inspired by AutoGen; actual deployments may use different role configurations, turn protocols, or termination conditions.
 
-Fairness holds across baselines: all strategies use the identical model chain (qwen2.5:0.5b $\to$ 1.5b $\to$ 3b) with the same model-escalation trigger (21 stalled ticks), observe identical problem instances, receive the same 50-tick budget, and use identical output parsing. Band escalation is pheromone-field-only. The conversation baseline's up-to-5 dialogue turns per region give it more refinement opportunity than pheromone-field's single-shot proposals.
+Fairness holds across baselines: all strategies use the identical model chain (qwen2.5:0.5b $\to$ 1.5b $\to$ 3b) with the same model-escalation trigger (21 stalled ticks), observe identical problem instances, receive the same 50-tick budget, and use identical output parsing. The conversation baseline's up-to-5 dialogue turns per region give it more refinement opportunity than pheromone-field's single-shot proposals.
 
 \subsection{Problem Generation and Seeding}
 
@@ -161,7 +181,7 @@ Analysis of the pheromone-field trials confirms separability:
 
 The near-total absence of pressure degradation ($2$ of $9{,}856$ transitions, $0.02\%$) is consistent with separable pressure: each accepted patch reduces local pressure, which directly reduces total pressure without adverse effects on other regions, because patches that would increase local pressure are rejected by validation.
 
-Mean improvement magnitude is $2.59$ pressure units against a mean initial pressure of $12.8$ units, so each accepted patch removes a substantial fraction of the typical starting pressure. This exceeds any plausible coupling bound, confirming that local improvements translate to global improvements.
+Mean improvement magnitude is $2.59$ pressure units against a mean initial pressure of $12.8$ units. This exceeds any plausible coupling bound, confirming that local improvements translate to global improvements.
 
 \textbf{Verification of $\delta_{\min} > 0$}: Lemma~\ref{thm:convergence} requires $\delta_{\min} > (n-1)\epsilon$. With $\epsilon = 0$ (separable pressure), this reduces to $\delta_{\min} > 0$. Empirically, the minimum observed pressure reduction across accepted patches is $1.0$ pressure units, confirming $\delta_{\min} > 0$. The convergence guarantee therefore applies to this domain.
 
