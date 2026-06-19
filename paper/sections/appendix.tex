@@ -95,7 +95,7 @@ CHAIN=qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b
 schedule-experiment --model-chain $CHAIN \
   grid --trials 30 --output results/main-grid.json
 schedule-experiment --model-chain $CHAIN \
-  ablation --trials 30 --agents 2 --difficulty easy \
+  ablation --trials 30 --agents 2 --difficulty medium \
   --output results/ablation.json
 \end{lstlisting}
 

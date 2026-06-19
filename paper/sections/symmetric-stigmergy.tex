@@ -5,7 +5,7 @@
 \section{Symmetric-Stigmergic Formalization and Method}
 \label{sec:symmetric-stigmergy}
 
-The coordination mechanism of Section~\ref{sec:problem-formulation} instantiates the symmetric-stigmergic schema of~\cite{parunak2025insects}, with foundation-model agents playing the role of stigmergic actors and the method applying Parunak's three pheromone operators, aggregate, propagate, and evaporate~\cite{parunak2011mean}, to the sensed quality field. Classic stigmergy is asymmetric: agents change the environment, but the environment does not change agent state~\cite{grasse1959stigmergie,parunak1997ant}. The symmetric extension adds the reverse arrow, so that the environment also updates agent state, and adds agent-side analogues of the environment's update, dynamics, and propagation operators. Each primitive maps to an element of the system, some realized and some left null by design.
+The coordination mechanism of Section~\ref{sec:problem-formulation} instantiates the symmetric-stigmergic schema of~\cite{parunak2025insects}, with foundation-model agents playing the role of stigmergic actors and the method applying Parunak's three pheromone operators, aggregate, propagate, and evaporate~\cite{parunak2011mean}, to the sensed quality field. Classic stigmergy is asymmetric: agents change the environment, but the environment does not change agent state~\cite{grasse1959stigmergie,parunak1997ant}. The symmetric extension adds the reverse arrow, so that the environment also updates agent state, and adds agent-side analogues of the environment's update, dynamics, and propagation operators. Each primitive maps to an element of the system.
 
 \subsection{Mapping the Schema}
 
@@ -15,7 +15,7 @@ A runtime ticks the logical clock, evaporates the pheromone stores, propagates a
 
 \begin{table}[htbp]
 \centering
-\caption{Symmetric-stigmergic primitives~\cite{parunak2025insects} and their realization in this system. Null entries are design choices, stated as such.}
+\caption{Symmetric-stigmergic primitives~\cite{parunak2025insects} and their realization in this system.}
 \label{tab:stigmergy-mapping}
 \begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
 \toprule
@@ -102,7 +102,7 @@ Each tick measures the field, propagates activation, dispatches actors against t
 \textbf{Return} updated state $s^{t+1}$.
 \end{algorithm}
 
-The loop has three properties. Coordination is \emph{stigmergic}: actors read and write only the shared artifact and never message one another, so the agent adjacency $aa(t)$ emerges entirely from stage-two validation. Concurrency is \emph{bounded}: distinct high-pressure regions are addressed in the same tick, with stage-two validation resolving same-tick conflicts and inhibition preventing repeated modification of one region. The same gate contains model error: a confabulated or ill-formed patch fails validation and leaves the artifact untouched, so a hallucinating agent costs a proposal, never a corrupted artifact. Capability is \emph{adaptive}: when pressure stalls, the environment escalates sampling band and then model tier through the $ASU$ operator described above.
+The loop has three properties. Coordination is \emph{stigmergic}: actors read and write only the shared artifact and never message one another, so the agent adjacency $aa(t)$ emerges entirely from stage-two validation. Concurrency is \emph{bounded}: distinct high-pressure regions are addressed in the same tick, with stage-two validation resolving same-tick conflicts and inhibition preventing repeated modification of one region; the same gate also contains model error, so a confabulated or ill-formed patch fails validation and leaves the artifact untouched, and a hallucinating agent costs a proposal, never a corrupted artifact. Capability is \emph{adaptive}: when pressure stalls, the environment escalates sampling band and then model tier through the $ASU$ operator described above.
 
 Termination is economic rather than logical: the loop halts when every region's effective pressure falls below the activation threshold, at which point no actor is dispatched, or when a tick budget is reached. Activity ceases when the field flattens, not when an external goal is declared met; we impose a maximum tick count to bound computation.
 
