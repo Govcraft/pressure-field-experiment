@@ -6,15 +6,16 @@
 \providecommand{\eprint}[2][]{\url{#2}}
  \bibcommenthead
 
-\bibitem[{Agashe et~al.(2025)Agashe, Fan et~al.}]{agashe2025coordination}
-Agashe S, Fan Y, et~al (2025) {LLM-Coordination}: Evaluating and analyzing
-  multi-agent coordination abilities in large language models. In: Findings of
-  the 2025 Conference of the North American Chapter of the Association for
-  Computational Linguistics (NAACL), \doi{10.18653/v1/2025.findings-naacl.448}
+\bibitem[{Agashe et~al.(2025)Agashe, Fan, Reyna, and
+  Wang}]{agashe2025coordination}
+Agashe S, Fan Y, Reyna A, et~al (2025) {LLM-Coordination}: Evaluating and
+  analyzing multi-agent coordination abilities in large language models. In:
+  Findings of the Association for Computational Linguistics: NAACL 2025, pp
+  8053--8072, \doi{10.18653/v1/2025.findings-naacl.448}
 
-\bibitem[{Aina et~al.(2025)}]{aina2025smadrl}
-Aina OA, et~al (2025) Deep reinforcement learning for multi-agent coordination
-  ({S-MADRL}). Artificial Life and Robotics \doi{10.1007/s10015-025-01089-z}
+\bibitem[{Aina and Ha(2025)}]{aina2025smadrl}
+Aina KO, Ha S (2025) Deep reinforcement learning for multi-agent coordination.
+  Artificial Life and Robotics 31:484--494. \doi{10.1007/s10015-025-01089-z}
 
 \bibitem[{Amaral et~al.(2023)Amaral, H{\"u}bner, and
   Cranefield}]{amaral2023organisations}
@@ -45,17 +46,18 @@ Brueckner SA (2000) Return from the ant: Synthetic ecosystems for manufacturing
   control. PhD thesis, Humboldt University Berlin, Department of Computer
   Science
 
-\bibitem[{Brueckner et~al.(2009)Brueckner, Parunak, and
-  Hilscher}]{brueckner2009saso}
-Brueckner SA, Parunak HVD, Hilscher R (2009) Swarming polyagents executing
+\bibitem[{Brueckner et~al.(2009)Brueckner, Belding, Bisson, Downs, and
+  Parunak}]{brueckner2009saso}
+Brueckner SA, Belding TC, Bisson R, et~al (2009) Swarming polyagents executing
   hierarchical task networks. In: Third IEEE International Conference on
   Self-Adaptive and Self-Organizing Systems (SASO 2009). IEEE, pp 51--60,
   \doi{10.1109/SASO.2009.21}
 
-\bibitem[{Buscemi et~al.(2025)}]{buscemi2025implicit}
-Buscemi A, et~al (2025) When numbers start talking: Implicit numerical
-  coordination among {LLM}-based agents. arXiv preprint arXiv:260103846
-  \doi{10.48550/arXiv.2601.03846}
+\bibitem[{Buscemi et~al.(2026)Buscemi, Proverbio, Di~Stefano, Han, Castignani,
+  and Li{\`o}}]{buscemi2026implicit}
+Buscemi A, Proverbio D, Di~Stefano A, et~al (2026) When numbers start talking:
+  Implicit numerical coordination among {LLM}-based agents. arXiv preprint
+  arXiv:260103846 \doi{10.48550/arXiv.2601.03846}
 
 \bibitem[{Camazine et~al.(2001)Camazine, Deneubourg, Franks, Sneyd, Theraulaz,
   and Bonabeau}]{camazine2001selforg}
@@ -78,6 +80,12 @@ Cohen PR, Levesque HJ (1991) Teamwork. No\^{u}s 25(4):487--512.
 De~Wolf T, Holvoet T (2005) Towards a methodology for engineering
   self-organising emergent systems. In: Self-Organization and Autonomic
   Informatics (I). IOS Press
+
+\bibitem[{{Di Marzo Serugendo} et~al.(2005){Di Marzo Serugendo}, Gleizes, and
+  Karageorgos}]{serugendo2005selforganisation}
+{Di Marzo Serugendo} G, Gleizes MP, Karageorgos A (2005) Self-organisation in
+  multi-agent systems. The Knowledge Engineering Review 20(2):165--189.
+  \doi{10.1017/S0269888905000494}
 
 \bibitem[{Dorigo and Gambardella(1997)}]{dorigo1997acs}
 Dorigo M, Gambardella LM (1997) Ant colony system: A cooperative learning
@@ -119,9 +127,9 @@ Hadeli, Valckenaers P, Kollingbaum M, et~al (2004) Multi-agent coordination and
   control using stigmergy. Computers in Industry 53(1):75--96.
   \doi{10.1016/S0166-3615(03)00123-4}
 
-\bibitem[{Han et~al.(2025)}]{han2025blackboard}
-Han B, et~al (2025) Exploring advanced {LLM} multi-agent systems based on
-  blackboard architecture ({LbMAS}). arXiv preprint arXiv:250701701
+\bibitem[{Han and Zhang(2025)}]{han2025blackboard}
+Han B, Zhang S (2025) Exploring advanced {LLM} multi-agent systems based on
+  blackboard architecture. arXiv preprint arXiv:250701701
   \doi{10.48550/arXiv.2507.01701}
 
 \bibitem[{Hong et~al.(2024)Hong, Zhuge, Chen, Zheng, Cheng, Zhang, Wang, Wang,
@@ -131,13 +139,14 @@ Hong S, Zhuge M, Chen J, et~al (2024) {MetaGPT}: Meta programming for a
   International Conference on Learning Representations (ICLR),
   \doi{10.48550/arXiv.2308.00352}
 
-\bibitem[{Jimenez~Romero et~al.(2025)}]{jimenez2025swarm}
-Jimenez~Romero C, et~al (2025) Multi-agent systems powered by large language
-  models: Applications in swarm intelligence. Frontiers in Artificial
-  Intelligence \doi{10.3389/frai.2025.1593017}
+\bibitem[{Jimenez-Romero et~al.(2025)Jimenez-Romero, Yegenoglu, and
+  Blum}]{jimenez2025swarm}
+Jimenez-Romero C, Yegenoglu A, Blum C (2025) Multi-agent systems powered by
+  large language models: Applications in swarm intelligence. Frontiers in
+  Artificial Intelligence 8. \doi{10.3389/frai.2025.1593017}
 
 \bibitem[{Kim et~al.(2025)}]{kim2025scaling}
-Kim M, et~al (2025) Towards a science of scaling agent systems. arXiv preprint
+Kim Y, et~al (2025) Towards a science of scaling agent systems. arXiv preprint
   arXiv:251208296 \doi{10.48550/arXiv.2512.08296}
 
 \bibitem[{Li et~al.(2023)Li, Hammoud, Itani, Khizbullin, and
@@ -176,12 +185,14 @@ Parunak HVD (2006) A survey of environments and mechanisms for human-human
 
 \bibitem[{Parunak(2011)}]{parunak2011mean}
 Parunak HVD (2011) Between agents and mean fields. In: Multi-Agent-Based
-  Simulation XII (MABS 2011, at AAMAS 2011). Springer, Taipei, Taiwan, LNAI, pp
-  106--117
+  Simulation XII (MABS 2011, at AAMAS 2011), LNAI, vol 7124. Springer, Taipei,
+  Taiwan, pp 113--126, \doi{10.1007/978-3-642-28400-7_9}
 
-\bibitem[{Parunak(2025)}]{parunak2025insects}
-Parunak HVD (2025) Insects and agents: Extending the metaphor. In:
-  Multi-Agent-Based Simulation XXVI (MABS 2025, at AAMAS 2025). Springer, LNCS
+\bibitem[{Parunak(2026)}]{parunak2025insects}
+Parunak HVD (2026) Insects and agents: Extending the metaphor. In: Vidler A,
+  Swarup S (eds) Multi-Agent-Based Simulation XXVI (MABS 2025, at AAMAS 2025),
+  Lecture Notes in Computer Science, vol 16227. Springer, Cham, pp 3--14,
+  \doi{10.1007/978-3-032-16328-8_1}
 
 \bibitem[{Qian et~al.(2024)Qian, Liu, Liu, Chen, Dang, Li, Yang, Chen, Su,
   Cong, Xu, Li, Liu, and Sun}]{qian2024chatdev}
@@ -190,25 +201,26 @@ Qian C, Liu W, Liu H, et~al (2024) {ChatDev}: Communicative agents for software
   for Computational Linguistics (ACL), pp 15174--15186,
   \doi{10.18653/v1/2024.acl-long.810}
 
-\bibitem[{Qian et~al.(2025)Qian, Zuo, Chen, Su, Liu, and Sun}]{qian2025macnet}
-Qian C, Zuo J, Chen W, et~al (2025) {MacNet}: Scaling large language
+\bibitem[{Qian et~al.(2025)Qian, Xie, Wang, Liu, Zhu, Xia, Dang, Du, Chen,
+  Yang, Liu, and Sun}]{qian2025macnet}
+Qian C, Xie Z, Wang Y, et~al (2025) {MacNet}: Scaling large language
   model-based multi-agent collaboration. In: Proceedings of the Thirteenth
   International Conference on Learning Representations (ICLR),
   \doi{10.48550/arXiv.2406.07155}
 
 \bibitem[{Rao and Georgeff(1995)}]{raogeorgeff1995bdi}
-Rao AS, Georgeff MP (1995) {BDI} agents: From theory to practice. Proceedings
-  of the First International Conference on Multi-Agent Systems (ICMAS-95) pp
-  312--319
+Rao AS, Georgeff MP (1995) {BDI} agents: From theory to practice. In:
+  Proceedings of the First International Conference on Multi-Agent Systems
+  (ICMAS-95). AAAI Press, pp 312--319
 
-\bibitem[{Ren et~al.(2024)Ren, Hu, Hu et~al.}]{ren2024norms}
-Ren S, Hu Z, Hu S, et~al (2024) Emergence of social norms in generative agent
-  societies: Principles and architecture. In: Proceedings of the Thirty-Third
-  International Joint Conference on Artificial Intelligence (IJCAI), HAI Track,
-  \doi{10.24963/ijcai.2024/874}
+\bibitem[{Ren et~al.(2024)Ren, Cui, Song, Wang, and Hu}]{ren2024norms}
+Ren S, Cui Z, Song R, et~al (2024) Emergence of social norms in generative
+  agent societies: Principles and architecture. In: Proceedings of the
+  Thirty-Third International Joint Conference on Artificial Intelligence
+  (IJCAI), HAI Track, pp 7895--7903, \doi{10.24963/ijcai.2024/874}
 
 \bibitem[{Riedl(2025)}]{riedl2025emergent}
-Riedl MO (2025) Emergent coordination in multi-agent language models. arXiv
+Riedl C (2025) Emergent coordination in multi-agent language models. arXiv
   preprint arXiv:251005174 \doi{10.48550/arXiv.2510.05174}
 
 \bibitem[{Sauter et~al.(2005)Sauter, Matthews, Parunak, and
@@ -226,12 +238,6 @@ Savarimuthu BTR, Ranathunga S, Cranefield S (2024) Harnessing the power of
   (COINE 2024, at AAMAS 2024), LNCS, vol 15398. Springer, p 132--145,
   \doi{10.1007/978-3-031-82039-7_9}
 
-\bibitem[{Serugendo et~al.(2005)Serugendo, Gleizes, and
-  Karageorgos}]{serugendo2005selforganisation}
-Serugendo GDM, Gleizes MP, Karageorgos A (2005) Self-organisation in
-  multi-agent systems. The Knowledge Engineering Review 20(2):165--189.
-  \doi{10.1017/S0269888905000494}
-
 \bibitem[{Valckenaers and Van~Brussel(2015)}]{valckenaers2015design}
 Valckenaers P, Van~Brussel H (2015) Design for the Unexpected: From Holonic
   Manufacturing Systems towards a Humane Mechatronics Society.
@@ -243,10 +249,12 @@ Valmeekam K, Marquez M, Sreedharan S, et~al (2023) On the planning abilities of
   large language models---a critical investigation. In: Advances in Neural
   Information Processing Systems (NeurIPS), \doi{10.48550/arXiv.2305.15771}
 
-\bibitem[{Weyns et~al.(2015)Weyns, Michel, Parunak, Boissier, Schumacher, and
-  Ricci}]{weyns2007environment}
-Weyns D, Michel F, Parunak HVD, et~al (eds)  (2015) Agent Environments for
-  Multi-Agent Systems --- A Research Roadmap. Springer, Berlin
+\bibitem[{Weyns and Michel(2015)}]{weyns2015environment}
+Weyns D, Michel F (2015) Agent environments for multi-agent systems --- a
+  research roadmap. In: Weyns D, Michel F (eds) Agent Environments for
+  Multi-Agent Systems IV (E4MAS 2014, 10 Years Later), Lecture Notes in
+  Computer Science, vol 9068. Springer, Berlin, p 3--21,
+  \doi{10.1007/978-3-319-23850-0_1}
 
 \bibitem[{Wu et~al.(2023)Wu, Bansal, Zhang, Wu, Zhang, Zhu, Li, Jiang, Zhang,
   and Wang}]{wu2023autogen}
@@ -254,10 +262,10 @@ Wu Q, Bansal G, Zhang J, et~al (2023) {AutoGen}: Enabling next-gen {LLM}
   applications via multi-agent conversation. arXiv preprint arXiv:230808155
   \doi{10.48550/arXiv.2308.08155}
 
-\bibitem[{Xu et~al.(2022)Xu, Deng, Chen, Liu et~al.}]{xu2022stigmergic}
-Xu Y, Deng C, Chen X, et~al (2022) Stigmergic independent reinforcement
-  learning for multiagent collaboration. IEEE Transactions on Neural Networks
-  and Learning Systems 33(9):4285--4299. \doi{10.1109/TNNLS.2021.3056418}
+\bibitem[{Xu et~al.(2022)Xu, Li, Zhao, and Zhang}]{xu2022stigmergic}
+Xu X, Li R, Zhao Z, et~al (2022) Stigmergic independent reinforcement learning
+  for multiagent collaboration. IEEE Transactions on Neural Networks and
+  Learning Systems 33(9):4285--4299. \doi{10.1109/TNNLS.2021.3056418}
 
 \bibitem[{Zhang et~al.(2025)}]{zhang2025agentprune}
 Zhang G, et~al (2025) Cut the crap: An economical communication pipeline for
