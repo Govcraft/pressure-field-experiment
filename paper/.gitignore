@@ -1,3 +1,6 @@
+# LaTeX build directory
+.build/
+
 # LaTeX build artifacts
 *.aux
 *.bbl

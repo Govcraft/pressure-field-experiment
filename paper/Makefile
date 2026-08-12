@@ -1,36 +1,39 @@
 # Pressure-Field Coordination Paper - Build System
+#
+# All LaTeX build artifacts go to $(BUILDDIR); only final PDFs land in this
+# directory. latexmk runs pdflatex/bibtex exactly as many times as needed.
 
-MAIN = rodriguez-pressure-field-coordination-2026
-LATEX = pdflatex
-BIBTEX = bibtex
+MAIN     = rodriguez-pressure-field-coordination-2026
+LETTERS  = cover-letter response-to-editor information-sheet
+BUILDDIR = .build
+LATEXMK  = latexmk -pdf -interaction=nonstopmode -outdir=$(BUILDDIR)
 
-.PHONY: all clean watch draft final
+.PHONY: all paper letters clean distclean watch
 
-# Default: build draft (single pass for speed)
-all: draft
+all: paper
 
-# Draft build (single pass for speed)
-draft:
-	$(LATEX) $(MAIN).tex
+# Main manuscript
+paper:
+	$(LATEXMK) $(MAIN).tex
+	@cp $(BUILDDIR)/$(MAIN).pdf .
+	@rm -f *-eps-converted-to.pdf
 
-# Final build (full bibliography)
-final:
-	$(LATEX) $(MAIN).tex
-	$(BIBTEX) $(MAIN)
-	$(LATEX) $(MAIN).tex
-	$(LATEX) $(MAIN).tex
+# Ancillary submission documents
+letters:
+	$(LATEXMK) $(addsuffix .tex,$(LETTERS))
+	@cp $(addprefix $(BUILDDIR)/,$(addsuffix .pdf,$(LETTERS))) .
+	@rm -f *-eps-converted-to.pdf
 
-# Clean auxiliary files
+# Remove the build directory and any stray artifacts left in this directory
 clean:
-	rm -f $(MAIN).aux $(MAIN).bbl $(MAIN).blg $(MAIN).log $(MAIN).out
-	rm -f $(MAIN).toc $(MAIN).lof $(MAIN).lot $(MAIN).fls $(MAIN).fdb_latexmk
-	rm -f $(MAIN).synctex.gz $(MAIN).bcf $(MAIN).run.xml
+	rm -rf $(BUILDDIR)
+	rm -f *.aux *.bbl *.blg *.log *.out *.toc *.lof *.lot *.fls *.fdb_latexmk
+	rm -f *.synctex.gz *.bcf *.run.xml *-eps-converted-to.pdf
 
-# Clean everything including PDF
+# Clean everything including the generated PDFs (figures are untouched)
 distclean: clean
-	rm -f $(MAIN).pdf
+	rm -f $(MAIN).pdf $(addsuffix .pdf,$(LETTERS))
 
-# Watch for changes (requires entr)
+# Rebuild on change; the live PDF is $(BUILDDIR)/$(MAIN).pdf while watching
 watch:
-	@echo "Watching for changes... (Ctrl+C to stop)"
-	@ls *.tex *.bib | entr -c make draft
+	latexmk -pdf -pvc -interaction=nonstopmode -outdir=$(BUILDDIR) $(MAIN).tex
